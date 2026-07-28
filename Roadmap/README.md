@@ -9,7 +9,7 @@ Status values: `planned` · `in progress` · `shipped` · `paused`. Only one pha
 
 | # | Phase | Player-facing | Status |
 |---|---|---|---|
-| 1 | [Turn_Economy_And_Hand_Size](Turn_Economy_And_Hand_Size.md) | yes | planned |
+| 1 | [Turn_Economy_And_Hand_Size](Turn_Economy_And_Hand_Size.md) | yes | in progress |
 | 2 | [Altar_Reward_Node](Altar_Reward_Node.md) | yes | planned |
 | 3 | [Harvest_And_Room_Elements](Harvest_And_Room_Elements.md) | yes | planned |
 | 4 | [Star_Tree](Star_Tree.md) | yes | planned |

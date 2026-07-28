@@ -11,8 +11,15 @@
  * `gameId` points back at this game's own spell. Order matters: chapters are
  * contiguous runs of pages, because they are physical sections with ribbon tabs.
  */
-import { SPELLS as GAME_SPELLS, SPELL_BY_ID } from './spells';
+import { ELEMENT_SPELLS, SPELL_BY_ID } from './spells';
 
+/**
+ * `transmutation` currently has no pages — Growth and Multishot were its two,
+ * and they are belt ingredients now. The value stays because it is a key in the
+ * ported `style/palette.ts` chapter colours, and because a later element may
+ * claim the chapter; `CHAPTERS` is derived from the pages that exist, so an
+ * unused school simply never produces a tab.
+ */
 export type SpellSchool = 'elementalism' | 'transmutation' | 'animancy';
 export type SpellRole = 'bolt' | 'modifier' | 'summon';
 
@@ -38,20 +45,23 @@ export interface Chapter {
   firstIndex: number;
 }
 
-/** gameId -> { sigil id, school } */
+/**
+ * gameId -> { sigil id, school }
+ *
+ * ELEMENTS ONLY. The book is the element registry made physical — Animate,
+ * Growth and Multishot are ingredients carried on the belt, so they have no page
+ * and no sigil here, which is what keeps `setBookPages` from ever surfacing one.
+ */
 const MAP: Record<string, { sigil: string; school: SpellSchool }> = {
   fire: { sigil: 'fireball', school: 'elementalism' },
   frost: { sigil: 'frostbolt', school: 'elementalism' },
   spark: { sigil: 'spark', school: 'elementalism' },
   gust: { sigil: 'gust', school: 'elementalism' },
-  grow: { sigil: 'growth', school: 'transmutation' },
-  split: { sigil: 'multishot', school: 'transmutation' },
   rot: { sigil: 'decay', school: 'animancy' },
-  animate: { sigil: 'summon', school: 'animancy' },
 };
 
 /** Page order — grouped by school so each chapter is one physical run. */
-const ORDER = ['fire', 'frost', 'spark', 'gust', 'grow', 'split', 'rot', 'animate'];
+const ORDER = ['fire', 'frost', 'spark', 'gust', 'rot'];
 
 function hex(n: number): string {
   return '#' + (n & 0xffffff).toString(16).padStart(6, '0');
@@ -132,10 +142,14 @@ export const CHAPTERS: Chapter[] = ALL_PAGES.reduce<Chapter[]>((list, s, i) => {
   return list;
 }, []);
 
-/** Sanity: every game spell must have a page, or it becomes uncastable. */
-if (ALL_PAGES.length !== GAME_SPELLS.length) {
-  console.warn(
-    `[pages] ${GAME_SPELLS.length} spells but ${ALL_PAGES.length} pages — ` +
-    `missing from ORDER: ${GAME_SPELLS.map((s) => s.id).filter((id) => !ORDER.includes(id)).join(', ')}`,
-  );
+/**
+ * Sanity: every ELEMENT must have a page, or the player can never cast it.
+ * Ingredients are deliberately absent, so comparing against every game spell
+ * would only ever warn about them.
+ */
+{
+  const missing = ELEMENT_SPELLS.map((s) => s.id).filter((id) => !ORDER.includes(id));
+  if (missing.length) {
+    console.warn(`[pages] elements missing from ORDER: ${missing.join(', ')}`);
+  }
 }

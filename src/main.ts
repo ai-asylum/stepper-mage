@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { Engine } from './core/engine';
 import { Floor, type Entity } from './game/floor';
 import { Stepper, PITCH } from './game/stepper';
-import { Combat, targetsInView, MAX_RANK, type PlayerState } from './game/combat';
+import {
+  Combat, targetsInView, MAX_RANK, type PlayerState, type TurnCause,
+} from './game/combat';
 import { CastFx } from './spells/vfx';
 import { Hud, type AltarOffer } from './ui/hud';
 import { Book } from './book/book';
@@ -11,10 +13,13 @@ import {
   bookScene, camera as bookCam, tickBook, resizeBook, sinks, sfx,
 } from './book/bridge';
 import { SPELLS as BOOK_PAGES, setBookPages } from './spells/pages';
-import { SPELLS, SPELL_BY_ID } from './spells/spells';
+import { ELEMENT_SPELLS, SPELL_BY_ID, isElement } from './spells/spells';
 import { Rng } from './core/rng';
 import type { Dir } from './dungeon/grid';
 import { THEMES } from './art/theme';
+import {
+  CHEST_HEAL_BASE, CHEST_HEAL_SPREAD, DESCEND_HEAL, PLAYER_MAX_HP,
+} from './game/tuning';
 
 /**
  * Persisted meta.
@@ -36,10 +41,27 @@ interface Meta {
   loadout: string[];
   /** How many pages the starting book can hold. */
   slots: number;
+  /**
+   * How many components you can hold at once — the fusion ceiling.
+   *
+   * One at the start, because a hand of one is where fusion gets SOLD rather
+   * than taught: you buy the second slot, try holding two pages, and work out
+   * combining for yourself. Nothing to do with `slots`, which is how big the
+   * starting book is.
+   */
+  handSize: number;
   best: number;
 }
 
 const META_KEY = 'stepper-mage.meta.v1';
+
+/**
+ * The loadout is a book, and the book holds elements only. Animate used to sit
+ * in the starting three, so every save from before the split has an id in here
+ * that no longer has a page — those are dropped rather than migrated to
+ * something else, because an ingredient is not a page's worth of value.
+ */
+const DEFAULT_LOADOUT = ['fire', 'frost', 'spark'];
 
 function loadMeta(): Meta {
   try {
@@ -52,16 +74,20 @@ function loadMeta(): Meta {
       const legacy = Array.isArray(m.unlocked) ? m.unlocked : [];
       const slots = m.slots ?? 3;
       const loadout = (Array.isArray(m.loadout) && m.loadout.length ? m.loadout : legacy)
-        .filter((id) => SPELL_BY_ID[id]);
+        .filter(isElement);
       return {
         stars: m.stars ?? 0,
-        loadout: loadout.length ? loadout.slice(0, slots) : ['fire', 'frost', 'animate'],
+        loadout: loadout.length ? loadout.slice(0, slots) : [...DEFAULT_LOADOUT],
         slots,
+        // A save from before the turn economy has no hand size, and it must
+        // migrate to ONE rather than to the old hardcoded three — the pre-reset
+        // saves paid nothing for those slots.
+        handSize: Math.max(1, m.handSize ?? 1),
         best: m.best ?? 0,
       };
     }
   } catch { /* corrupt or unavailable storage: fall through to defaults */ }
-  return { stars: 0, loadout: ['fire', 'frost', 'animate'], slots: 3, best: 0 };
+  return { stars: 0, loadout: [...DEFAULT_LOADOUT], slots: 3, handSize: 1, best: 0 };
 }
 
 function saveMeta(m: Meta): void {
@@ -74,7 +100,7 @@ async function boot(): Promise<void> {
   const runSeed = `run-${Date.now() % 100000}`;
 
   const state: PlayerState = {
-    hp: 24, maxHp: 24,
+    hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP,
     pages: [...meta.loadout],
     ranks: Object.fromEntries(meta.loadout.map((id) => [id, 1])),
     stars: 0,
@@ -106,13 +132,23 @@ async function boot(): Promise<void> {
   const book = new Book();
   const fan = new Fan();
 
+  /** Lifted only by the debug harness, so a scripted fusion still works. */
+  let handSizeBonus = 0;
   /**
-   * Tearing a page out. The only refusals are "you have not learned this spell"
-   * and "your hand is full" — there is no cost to pay, so the tear is limited by
-   * knowledge and by the three-page fusion ceiling.
+   * The fusion ceiling, read through one accessor so raising it later (the star
+   * tree) is a single write to `meta` and nothing else has to know.
+   */
+  const handSize = (): number => meta.handSize + handSizeBonus;
+
+  /**
+   * Tearing a page out. The only refusals here are "you have not learned this
+   * spell" and "your hand is full": the tear's real price is a TURN, and that is
+   * charged on the way out (see `spendComponentTurn`) rather than gating the
+   * gesture — you can always afford a turn, you just may not like what it buys
+   * the room.
    */
   book.canRip = (spell) => {
-    if (fan.count >= 3) return false;
+    if (fan.count >= handSize()) return false;
     return state.pages.includes(spell.gameId);
   };
 
@@ -127,9 +163,11 @@ async function boot(): Promise<void> {
     fan.add(spell, worldPos, worldQuat);
     // What you just tore out may change what is targetable.
     refreshTargets();
+    spendComponentTurn('tear');
   };
 
-  const tearPage = (index: number): boolean => book.tearAt(index);
+  const tearPage = (index: number): boolean =>
+    canTakeComponent() ? book.tearAt(index) : false;
 
   // The ported book throws its own sparkles and shakes; route them at the game.
   // The book works in hand-scale units (~0.4m from the eye); CastFx works in
@@ -152,7 +190,45 @@ async function boot(): Promise<void> {
   /** Altars already claimed, so a floor grants exactly one page. */
   const claimedAltars = new Set<Entity>();
 
+  /** Turns this hand has cost so far. Purely a readout; see the HUD. */
+  let assemblyTurns = 0;
+  /** The component turn currently resolving, for anything that must wait it out. */
+  let componentTurn: Promise<void> = Promise.resolve();
+
   // ------------------------------------------------------------------ helpers
+
+  /**
+   * May a component be taken right now?
+   *
+   * A "no" here is BLOCKED, never refused: the round a previous component bought
+   * is still animating, and the book must not scold you for the game's own
+   * animation. Refusals (unlearned page, full hand) live in `book.canRip`.
+   */
+  const canTakeComponent = (): boolean => !busy && !dead && !fan.busy;
+
+  /**
+   * Every component you take costs a turn, and "costs a turn" means the room
+   * gets to act — so this is the one place the price is paid. Harvesting from a
+   * fixture and drawing off the belt are later phases; they call this and are
+   * done, rather than re-deriving what a component costs.
+   *
+   * Out of combat it is free by construction: an empty room's round does nothing
+   * but tick timers, so leafing through the book at rest costs nothing you can
+   * see.
+   */
+  const spendComponentTurn = (cause: TurnCause): void => {
+    assemblyTurns++;
+    busy = true;
+    componentTurn = (async () => {
+      try {
+        await combat.takeTurn(cause);
+      } finally {
+        busy = false;
+      }
+      refreshTargets();
+      checkDeath();
+    })();
+  };
 
   /** World position of an entity's centre of mass, for aiming VFX at it. */
   const entityPos = (e: Entity, out: THREE.Vector3): THREE.Vector3 =>
@@ -229,8 +305,9 @@ async function boot(): Promise<void> {
    */
   const rollAltarOffers = (e: Entity): AltarOffer[] => {
     const rng = new Rng(`${runSeed}-altar-${state.depth}-${e.sprite.tx}-${e.sprite.ty}`);
-    const owned = state.pages;
-    const unowned = SPELLS.filter((sp) => !owned.includes(sp.id));
+    // Elements only: an altar grants PAGES, and ingredients have none.
+    const owned = state.pages.filter(isElement);
+    const unowned = ELEMENT_SPELLS.filter((sp) => !owned.includes(sp.id));
     const offers: AltarOffer[] = [];
     const used = new Set<string>();
 
@@ -315,7 +392,7 @@ async function boot(): Promise<void> {
     void floor.openChest(e);
     const rng = new Rng(`${runSeed}-chest-${state.depth}-${e.sprite.tx}-${e.sprite.ty}`);
     const stars = 3 + rng.int(0, 2) + state.depth;
-    const heal = 4 + rng.int(0, 3);
+    const heal = CHEST_HEAL_BASE + rng.int(0, CHEST_HEAL_SPREAD);
     state.stars += stars;
     state.hp = Math.min(state.maxHp, state.hp + heal);
     hud.setShout(`✦ ${stars} CELESTIAL STARS`, 0xffcf5c);
@@ -458,7 +535,7 @@ async function boot(): Promise<void> {
       return;
     }
     // Heal a little on descent, so a good floor is rewarded but attrition is real.
-    state.hp = Math.min(state.maxHp, state.hp + 8);
+    state.hp = Math.min(state.maxHp, state.hp + DESCEND_HEAL);
     await enterFloor(state.depth + 1);
   };
 
@@ -487,6 +564,11 @@ async function boot(): Promise<void> {
     // Lay the HUD out against the book's real edge too, so the cast bar and the
     // swipe boundary never disagree.
     hud.setBookTop(book.screenTop());
+    // The assembly's bill is cleared by the hand emptying, however it emptied —
+    // and the merge animation empties the fan from inside itself, so watching the
+    // count is the only place that catches a cast and a return with one rule.
+    if (fan.count === 0) assemblyTurns = 0;
+    hud.assemblyTurns = assemblyTurns;
     hud.update(dt);
   };
 
@@ -513,6 +595,7 @@ async function boot(): Promise<void> {
     // The torn pages converge and merge in a burst of gold, THEN the spell fires.
     await new Promise<void>((resolve) => fan.mergeAndCast(resolve));
     sfx.cast(dry ? 200 + (dry.colour & 255) : 300);
+    // Free: assembling the hand already paid, one turn per component.
     await combat.cast(ids, hud.target);
     busy = false;
     refreshTargets();
@@ -610,6 +693,9 @@ async function boot(): Promise<void> {
     // Commit to an axis: horizontal leafs, upward tears.
     if (Math.abs(dx) > Math.abs(dy)) book.flipDrag(dx);
     else if (dy < 0) {
+      // A round bought by the last component is still resolving: blocked, not
+      // refused, so it stays silent.
+      if (!canTakeComponent()) return;
       // pointermove fires dozens of times per swipe; the refusal must sound ONCE
       const r = book.ripDrag(dy);
       if (r === 'refused' && !deniedThisDrag) {
@@ -728,11 +814,18 @@ async function boot(): Promise<void> {
     },
     book, fan,
     bookPages: () => BOOK_PAGES.map((pg) => pg.gameId),
-    selectPages: (ids: string[]) => {
+    /**
+     * Assemble a hand outright. Async now: each tear buys the room a round, and
+     * the next tear is blocked until that round has finished animating. The hand
+     * size is lifted for the duration so a scripted three-page fusion still
+     * works at the real starting hand size of one.
+     */
+    selectPages: async (ids: string[]) => {
       fan.clear();
+      handSizeBonus = Math.max(handSizeBonus, ids.length - meta.handSize);
       for (const id of ids) {
         const i = BOOK_PAGES.findIndex((pg) => pg.gameId === id);
-        if (i >= 0) tearPage(i);
+        if (i >= 0 && tearPage(i)) await componentTurn;
       }
     },
     targetKind: (kind: string) => {
@@ -742,11 +835,11 @@ async function boot(): Promise<void> {
     },
     castNow: () => doCast(),
     grantAll: () => {
-      state.pages = SPELLS.map((s) => s.id);
+      state.pages = ELEMENT_SPELLS.map((s) => s.id);
       state.ranks = Object.fromEntries(state.pages.map((id) => [id, 1]));
       setBookPages(state.pages); book.refresh();
     },
-    spellNames: () => SPELLS.map((s) => `${s.glyph} ${s.name}`),
+    spellNames: () => ELEMENT_SPELLS.map((s) => `${s.glyph} ${s.name}`),
     spellById: SPELL_BY_ID,
   };
 }

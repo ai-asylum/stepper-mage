@@ -37,7 +37,7 @@ console.log(await p.evaluate(async () => {
     if (grid.walkable(px,py)) { g.place(px,py,d); break; }
   }
   g.hud.target = prop;
-  g.selectPages(['animate','fire']);
+  await g.selectPages(['animate','fire']);
   await new Promise(r=>setTimeout(r,60));
   return { fanCount: g.fan.count, fanIds: g.fan.gameIds, preview: g.hud.currentCast()?.name };
 }));

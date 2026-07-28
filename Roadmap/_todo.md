@@ -5,14 +5,14 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 1 — Turn_Economy_And_Hand_Size
 
-- [ ] Add `meta.handSize` (default 1) and gate `book.canRip` on it instead of the hardcoded 3.
-- [ ] Reduce the grimoire to five element pages; move Animate, Growth and Multishot to ingredients.
-- [ ] Refuse any cast that contains no element, ingredients included.
-- [ ] Charge one turn per component taken: tear, harvest, belt draw. Release the cast for free.
-- [ ] Make returning a component free, and never drop the hand when the player is hit.
-- [ ] Run the enemy round on each component taken, so assembling in combat is punished.
-- [ ] Show assembly cost in the HUD: turns spent this assembly, beside the cast bar.
-- [ ] Retune enemy damage and HP for the new tempo across all five floors.
+- [x] Add `meta.handSize` (default 1) and gate `book.canRip` on it instead of the hardcoded 3.
+- [x] Reduce the grimoire to five element pages; move Animate, Growth and Multishot to ingredients.
+- [x] Refuse any cast that contains no element, ingredients included.
+- [x] Charge one turn per component taken: tear, harvest, belt draw. Release the cast for free.
+- [x] Make returning a component free, and never drop the hand when the player is hit.
+- [x] Run the enemy round on each component taken, so assembling in combat is punished.
+- [x] Show assembly cost in the HUD: turns spent this assembly, beside the cast bar.
+- [x] Retune enemy damage and HP for the new tempo across all five floors.
 - [ ] Commit changes.
 
 ## Phase 2 — Altar_Reward_Node

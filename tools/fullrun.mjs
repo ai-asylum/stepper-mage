@@ -50,7 +50,7 @@ for (let depth = 1; depth <= 5; depth++) {
     for (let i = 0; i < 40 && boss.alive && boss.hp > 0; i++) {
       g.state.mana = 20; g.state.hp = g.state.maxHp;
       g.hud.target = boss;
-      g.selectPages(['fire','frost','spark']);
+      await g.selectPages(['fire','frost','spark']);
       await g.castNow();
       await new Promise(r => setTimeout(r, 40));
     }

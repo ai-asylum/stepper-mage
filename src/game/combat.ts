@@ -1,16 +1,21 @@
 /**
  * Turn-based combat.
  *
- * The loop: the player takes ONE action (step, cast, or animate), then every
- * hostile and every allied golem acts, then statuses tick. Turning in place is
- * free — you should never be punished for looking around, and on a phone that
- * would make the camera controls feel like a resource.
+ * The loop: the player takes ONE action, then every hostile and every allied
+ * golem acts, then statuses tick. Turning in place is free — you should never be
+ * punished for looking around, and on a phone that would make the camera
+ * controls feel like a resource.
  *
- * There is NO mana. The cost of a cast is the TURN it spends: every spell you
- * throw hands the whole room a free action back. A second currency on top of
- * that was pure friction — it gated the fusion you had already decided on, which
- * is the opposite of what a combo system wants. The only limits are the hand
- * size (three pages) and the fact that acting costs you time.
+ * There is NO mana. The cost of a spell is paid in turns while you ASSEMBLE it:
+ * every component you take (tearing a page, and later harvesting or drawing off
+ * the belt) hands the room a free action, and releasing the cast is free. That
+ * puts the price on the decision rather than on the trigger — a fusion is an
+ * investment of rounds you spent standing there, so it can be strictly stronger
+ * than a single page without being strictly better.
+ *
+ * Every stat this file reads is in `tuning.ts`, sized for that loop at a hand of
+ * one. Nothing here is a magic number; if a fight feels wrong, it is a tuning
+ * number that is wrong.
  */
 import { Rng } from '../core/rng';
 import { DIR_VEC, type Grid } from '../dungeon/grid';
@@ -19,6 +24,7 @@ import {
   STATUS_META, displayName, resolveCast,
   type CastTarget, type ResolvedCast, type StatusId,
 } from '../spells/spells';
+import { BURNING_DOT, DECAY_DOT, bossDamage, enemyDamage } from './tuning';
 
 /** How far a golem will break off from following you to engage something. */
 const GOLEM_AGGRO = 6;
@@ -56,6 +62,9 @@ export interface PlayerState {
 
 export type LogKind = 'cast' | 'hit' | 'status' | 'death' | 'info' | 'deny' | 'discover';
 
+/** What a component-turn was spent on. Harvest and belt land in later phases. */
+export type TurnCause = 'tear' | 'harvest' | 'belt';
+
 export interface GameEvent {
   kind: LogKind;
   text: string;
@@ -90,7 +99,7 @@ export class Combat {
     if (!['enemy', 'boss'].includes(e.kind) && !e.animated) return;
     this.combatants.set(e, {
       e, statuses: [], infuse: [],
-      damage: e.kind === 'boss' ? 9 + this.state.depth * 2 : 4 + this.state.depth,
+      damage: e.kind === 'boss' ? bossDamage(this.state.depth) : enemyDamage(this.state.depth),
     });
   }
 
@@ -123,7 +132,10 @@ export class Combat {
   }
 
   /**
-   * Cast. Returns true if the turn was spent.
+   * Release the assembled cast. Returns true if the spell actually went off —
+   * false means it was refused and the hand is untouched, so the caller can keep
+   * the pages. It does NOT mean a turn was spent: the turns were already paid,
+   * one per component, when the hand was assembled.
    *
    * `targetEntity` is the tapped thing. A volley (`count > 1`) spreads across
    * distinct hostiles before wrapping back onto the primary, so Multishot is
@@ -172,7 +184,6 @@ export class Combat {
       c.damage = cast.damage;
       c.infuse = cast.infuse;
       this.onCastFx(cast, null, [targetEntity]);
-      await this.enemyRound();
       return true;
     }
 
@@ -193,7 +204,6 @@ export class Combat {
       this.applyCast(cast, t);
     }
 
-    await this.enemyRound();
     return true;
   }
 
@@ -344,6 +354,19 @@ export class Combat {
     await this.enemyRound();
   }
 
+  /**
+   * Spend a turn on something that is not a step and not a cast — taking a
+   * spell component. "It costs a turn" and "the room gets a free action" are the
+   * same sentence, so this is deliberately a thin wrapper: there is exactly one
+   * round in the game and every price is paid through it.
+   *
+   * `_cause` is unused today; it is here so a harvest and a belt draw can be
+   * told apart from a tear once those exist, without changing every call site.
+   */
+  async takeTurn(_cause: TurnCause): Promise<void> {
+    await this.enemyRound();
+  }
+
   /** Every hostile and every allied golem takes its turn, then statuses tick. */
   private async enemyRound(): Promise<void> {
     const g = this.floor.grid;
@@ -476,8 +499,8 @@ export class Combat {
       if (!e.alive) continue;
       for (const s of c.statuses) {
         if (s.turns <= 0) continue;
-        if (s.id === 'burning') this.damage(e, 3, STATUS_META.burning.colour);
-        else if (s.id === 'decay') this.damage(e, 2, STATUS_META.decay.colour);
+        if (s.id === 'burning') this.damage(e, BURNING_DOT, STATUS_META.burning.colour);
+        else if (s.id === 'decay') this.damage(e, DECAY_DOT, STATUS_META.decay.colour);
         s.turns--;
       }
       c.statuses = c.statuses.filter((s) => s.turns > 0);

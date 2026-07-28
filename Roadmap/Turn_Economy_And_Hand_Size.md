@@ -1,8 +1,8 @@
 # Turn Economy And Hand Size
 
 **Player-facing:** yes
-**Started:** —
-**Status:** planned
+**Started:** 2026-07-29 00:20
+**Status:** in progress
 
 Re-bases the game's core cost. Every component you select costs a turn; releasing the cast is free. Hand size becomes a meta value starting at 1, and the grimoire shrinks to five element pages.
 

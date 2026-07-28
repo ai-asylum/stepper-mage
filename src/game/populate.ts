@@ -10,6 +10,7 @@
 import { Rng } from '../core/rng';
 import { Grid, DIR_VEC, type Room } from '../dungeon/grid';
 import type { Theme } from '../art/theme';
+import { ROOM_ENEMIES_BASE, ROOM_ENEMIES_MAX, roomEnemyChance } from './tuning';
 
 export type PlacedKind = 'prop' | 'enemy' | 'altar' | 'chest' | 'boss' | 'stairs';
 
@@ -28,11 +29,18 @@ export interface Placed {
   roomId: number;
 }
 
-/** How many enemies a room gets, by depth. Boss rooms get none — the boss is it. */
+/**
+ * How many enemies a room gets, by depth. Boss rooms get none — the boss is it.
+ * The altar room gets one fewer, so the room you go to for a page is the one you
+ * can afford to reach.
+ *
+ * See `tuning.ts`: the count is a tempo number, not a difficulty knob. Every body
+ * in here acts once per page you tear.
+ */
 function enemyCount(rng: Rng, depth: number, room: Room): number {
   if (room.kind === 'boss' || room.kind === 'entrance') return 0;
-  const base = room.kind === 'altar' ? 1 : 2;
-  return Math.min(4, base + (depth >= 3 ? 1 : 0) + (rng.chance(0.35) ? 1 : 0));
+  const base = room.kind === 'altar' ? ROOM_ENEMIES_BASE - 1 : ROOM_ENEMIES_BASE;
+  return Math.min(ROOM_ENEMIES_MAX, base + (rng.chance(roomEnemyChance(depth)) ? 1 : 0));
 }
 
 export function populate(grid: Grid, theme: Theme, seed: string, depth: number): Placed[] {

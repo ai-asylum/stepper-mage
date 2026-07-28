@@ -15,7 +15,7 @@
 import type { Engine } from '../core/engine';
 import type { Entity } from '../game/floor';
 import type { Combat, PlayerState } from '../game/combat';
-import { STATUS_META, displayName, type ResolvedCast } from '../spells/spells';
+import { STATUS_META, displayName, isElement, type ResolvedCast } from '../spells/spells';
 import * as THREE from 'three';
 import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
 import { spriteTexture } from '../dungeon/sprites';
@@ -96,6 +96,13 @@ export class Hud {
 
   /** An unused altar or chest within reach, set by the game each turn. */
   altarInReach: Entity | null = null;
+
+  /**
+   * Turns the hand currently held has cost. A readout, not a control: the price
+   * of a fusion is paid before you press CAST, so it has to be visible NEXT to
+   * CAST or the player never connects the two.
+   */
+  assemblyTurns = 0;
 
   /** Where the minimap reads the world from. Bound per floor. */
   private map: (() => { floor: Floor; x: number; y: number; dir: Dir }) | null = null;
@@ -530,7 +537,10 @@ export class Hud {
     // A refusal has to say what to DO about it. "Animate needs an object" with
     // no next step is why this read as the game being broken.
     let hint = cast.refusal ?? '';
-    if (!ok && this.tornIds.includes('animate')) {
+    // Only rewrite the refusal into a targeting hint when targeting is actually
+    // the problem — a hand with no element is refused whatever it is aimed at.
+    const hasElement = this.tornIds.some(isElement);
+    if (!ok && hasElement && this.tornIds.includes('animate')) {
       const anyObject = this.candidates.some((e) => e.kind === 'prop' && !e.animated);
       hint = anyObject
         ? 'Tap an object (violet ring) to animate it'
@@ -555,6 +565,19 @@ export class Hud {
     ctx.fillText(label, W / 2, by + 16.5);
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     if (ok) this.hits.push({ rect: [bx, by, tw, 32], action: { kind: 'cast' } });
+
+    // What this hand cost, tucked above the pill's leading edge. Left-aligned
+    // there rather than to the right of the pill, which is where the cycle-target
+    // button lives once there is more than one thing to shoot at.
+    if (this.assemblyTurns > 0) {
+      ctx.font = '10px ui-monospace, monospace';
+      ctx.textBaseline = 'bottom';
+      ctx.globalAlpha = 0.8;
+      ctx.fillStyle = PARCH;
+      ctx.fillText(`${this.assemblyTurns} turn${this.assemblyTurns > 1 ? 's' : ''}`, bx + 2, by - 4);
+      ctx.globalAlpha = 1;
+      ctx.textBaseline = 'top';
+    }
   }
 
   private drawLog(ctx: CanvasRenderingContext2D, W: number): void {

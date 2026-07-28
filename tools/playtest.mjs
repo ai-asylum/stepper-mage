@@ -100,11 +100,11 @@ const fight = await ev(async () => {
   }
   g.hud.target = foe;
   const before = foe.hp;
-  g.selectPages(['fire','frost']);        // Steam Burst -> soaked
+  await g.selectPages(['fire','frost']);        // Steam Burst -> soaked
   await g.castNow();
   const afterSoak = { hp: foe.hp, statuses: g.combat.statusesOf(foe).map(s=>s.id) };
   g.state.mana = 20;
-  g.selectPages(['spark']);               // shock on soaked -> CONDUCTION
+  await g.selectPages(['spark']);               // shock on soaked -> CONDUCTION
   await g.castNow();
   return { before, afterSoak, afterShock: { hp: foe.hp, statuses: g.combat.statusesOf(foe).map(s=>s.id) } };
 });

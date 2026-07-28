@@ -11,6 +11,7 @@ import { DungeonView } from '../dungeon/render';
 import { Sprite, preloadSprites, loadSprite } from '../dungeon/sprites';
 import { populate, spriteIdsFor, type Placed, type PlacedKind } from './populate';
 import { themeForDepth, type Theme } from '../art/theme';
+import { bossHp, enemyHp } from './tuning';
 
 export interface Entity {
   sprite: Sprite;
@@ -70,8 +71,8 @@ export class Floor {
     sprite.tx = p.x; sprite.ty = p.y; sprite.ox = p.ox; sprite.oz = p.oz;
     sprite.setTileLight(this.grid.lightAt(p.x, p.y));
 
-    const hp = p.kind === 'boss' ? 60 + this.depth * 22
-      : p.kind === 'enemy' ? 14 + this.depth * 5
+    const hp = p.kind === 'boss' ? bossHp(this.depth)
+      : p.kind === 'enemy' ? enemyHp(this.depth)
       : 20;
 
     const e: Entity = {

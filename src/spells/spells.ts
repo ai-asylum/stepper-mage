@@ -26,6 +26,17 @@ export interface SpellDef {
   name: string;
   glyph: string;
   role: SpellRole;
+  /**
+   * Elements are the castable roots: every cast must contain at least one, and
+   * only elements get a page in the grimoire. Ingredients shape a cast but can
+   * never be one, and they come off the belt instead.
+   *
+   * This is a property of the spell rather than a list of ids on purpose —
+   * later elements (Stone, Water, Oil, Starlight) are sourced from room
+   * fixtures and never get a page, so "is an element" cannot mean "is in the
+   * book".
+   */
+  kind: 'element' | 'ingredient';
   element: Element;
   cost: number;
   /** Page tint, used for the sigil, the shout and damage numbers. */
@@ -35,45 +46,49 @@ export interface SpellDef {
   flavor: string;
 }
 
-/** Every page in the game. A run starts with a few; altars grant the rest. */
+/**
+ * Every spell in the game. The five elements are the book's pages — a run starts
+ * with a few and altars grant the rest. The ingredients have no page; they are
+ * belt items, kept here because `COMBOS` and `resolveCast` consume them by id.
+ */
 export const SPELLS: SpellDef[] = [
   {
-    id: 'fire', name: 'Fireball', glyph: '🔥', role: 'bolt', element: 'fire', cost: 2,
+    id: 'fire', name: 'Fireball', glyph: '🔥', role: 'bolt', kind: 'element', element: 'fire', cost: 2,
     colour: 0xff7a2b, effect: 'A blazing orb. Sets the target burning.',
     flavor: '"The first spell anyone learns, and the last one they need."',
   },
   {
-    id: 'frost', name: 'Frostbolt', glyph: '❄', role: 'bolt', element: 'frost', cost: 2,
+    id: 'frost', name: 'Frostbolt', glyph: '❄', role: 'bolt', kind: 'element', element: 'frost', cost: 2,
     colour: 0x7ad4ff, effect: 'An ice shard. Freezes the target solid.',
     flavor: '"Cold does not kill. It simply waits with you."',
   },
   {
-    id: 'spark', name: 'Spark', glyph: '⚡', role: 'bolt', element: 'spark', cost: 2,
+    id: 'spark', name: 'Spark', glyph: '⚡', role: 'bolt', kind: 'element', element: 'spark', cost: 2,
     colour: 0xffe14a, effect: 'A snapping arc. Conducts through water.',
     flavor: '"Wet things conduct. Remember that, or learn it."',
   },
   {
-    id: 'gust', name: 'Gust', glyph: '💨', role: 'bolt', element: 'gust', cost: 2,
+    id: 'gust', name: 'Gust', glyph: '💨', role: 'bolt', kind: 'element', element: 'gust', cost: 2,
     colour: 0xa8f0d0, effect: 'Shoves the target back a tile. Fans flame.',
     flavor: '"Every locked door is only as good as its hinges."',
   },
   {
-    id: 'rot', name: 'Decay', glyph: '💀', role: 'bolt', element: 'rot', cost: 2,
+    id: 'rot', name: 'Decay', glyph: '💀', role: 'bolt', kind: 'element', element: 'rot', cost: 2,
     colour: 0x9de06a, effect: 'Rot that eats away over several turns.',
     flavor: '"Patience, rendered as a spell."',
   },
   {
-    id: 'animate', name: 'Animate', glyph: '💫', role: 'animate', element: 'none', cost: 3,
+    id: 'animate', name: 'Animate', glyph: '💫', role: 'animate', kind: 'ingredient', element: 'none', cost: 3,
     colour: 0xb98cff, effect: 'Wakes an object. It rises and fights for you.',
     flavor: '"Everything wants to stand up. Most things need asking."',
   },
   {
-    id: 'grow', name: 'Growth', glyph: '🌱', role: 'modifier', element: 'none', cost: 2,
+    id: 'grow', name: 'Growth', glyph: '🌱', role: 'modifier', kind: 'ingredient', element: 'none', cost: 2,
     colour: 0x8ce06a, effect: 'Makes the cast bigger and harder hitting.',
     flavor: '"More is a kind of answer."',
   },
   {
-    id: 'split', name: 'Multishot', glyph: '✨', role: 'modifier', element: 'none', cost: 3,
+    id: 'split', name: 'Multishot', glyph: '✨', role: 'modifier', kind: 'ingredient', element: 'none', cost: 3,
     colour: 0xffd9f0, effect: 'Splits the cast across three targets.',
     flavor: '"Why choose?"',
   },
@@ -82,6 +97,16 @@ export const SPELLS: SpellDef[] = [
 export const SPELL_BY_ID: Record<string, SpellDef> = Object.fromEntries(
   SPELLS.map((s) => [s.id, s]),
 );
+
+/** The castable roots — what the grimoire holds and what altars may offer. */
+export const ELEMENT_SPELLS: SpellDef[] = SPELLS.filter((s) => s.kind === 'element');
+
+/** Ingredients are belt items: they shape a cast but are never a cast. */
+export const INGREDIENT_SPELLS: SpellDef[] = SPELLS.filter((s) => s.kind === 'ingredient');
+
+export function isElement(id: string): boolean {
+  return SPELL_BY_ID[id]?.kind === 'element';
+}
 
 /** What a cast produces once resolved. */
 export type CastOutput = 'projectile' | 'golem' | 'buff';
@@ -239,6 +264,8 @@ export function costOf(ids: string[]): number {
  * Resolve a selection of pages against a target into one cast.
  *
  * Order of resolution:
+ *   0. No element, no cast. Ingredients shape a spell; they are never the spell,
+ *      so a hand holding only ingredients is refused before anything else runs.
  *   1. An `animate` page turns the cast into a GOLEM, whose body comes from the
  *      targeted prop and whose touch is infused by the element pages present.
  *   2. Otherwise an authored `COMBOS` row for the exact element set wins.
@@ -252,7 +279,7 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
   const distinct = [...new Set(ids)];
   const defs = distinct.map((id) => SPELL_BY_ID[id]).filter(Boolean);
 
-  const elements = defs.filter((d) => d.role === 'bolt').map((d) => d.element);
+  const elements = defs.filter((d) => d.kind === 'element').map((d) => d.element);
   const hasAnimate = defs.some((d) => d.role === 'animate');
   const mods = defs.filter((d) => d.role === 'modifier').map((d) => d.id);
 
@@ -271,6 +298,14 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
     damage: 0, count: 1, statuses: [], shove: 0, cost,
     infuse: [], authored: false,
   };
+
+  // ---- 0. the element invariant -----------------------------------------
+  // Ahead of the animate branch, so even Animate cannot fire on its own: the
+  // vessel needs something to be made OF. Every caller resolves through here, so
+  // this is the one gate the rule needs.
+  if (!elements.length) {
+    return { ...base, name: 'Nothing', refusal: 'Nothing to shape — a cast needs an element.' };
+  }
 
   // ---- 1. animate: the target supplies the body -------------------------
   if (hasAnimate) {
@@ -301,11 +336,6 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
       infuse: infuses.map((e) => INFUSE[e].status),
       authored: infuses.length > 0,
     };
-  }
-
-  if (!elements.length) {
-    // modifiers with nothing to modify
-    return { ...base, name: 'Nothing', refusal: 'Pick an element to shape.' };
   }
 
   // ---- 2/3. element identity -------------------------------------------
