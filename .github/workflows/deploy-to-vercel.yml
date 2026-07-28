@@ -1,0 +1,60 @@
+name: Deploy to Vercel
+
+# ai-asylum Vercel deploys run ONLY through GitHub Actions.
+# Do not deploy from a laptop and do not enable Vercel's Git integration.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: vercel-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # lfs: true is required when assets (.glb/.png/.mp3/…) are tracked by Git
+      # LFS — without it CI checks out pointer text, ships broken assets, and the
+      # app breaks at runtime (e.g. "Unexpected token 'v', version ht..." on load).
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel environment
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
+          else
+            vercel pull --yes --environment=preview --token="${{ secrets.VERCEL_TOKEN }}"
+          fi
+
+      - name: Build
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
+          else
+            vercel build --token="${{ secrets.VERCEL_TOKEN }}"
+          fi
+
+      - name: Deploy
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            vercel deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}"
+          else
+            vercel deploy --prebuilt --token="${{ secrets.VERCEL_TOKEN }}"
+          fi

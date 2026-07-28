@@ -1,0 +1,477 @@
+{
+  "$comment": "The art bible. Every sprite in the game is one row here. Shared style + framing live in tools/genart.py so this file stays about CONTENT. Five floors, each with a palette identity, three enemies, four animatable props, and a boss. Every prop has a matching golem form \u2014 animating the room is the core verb, so the golem roster is first-class content, not a variant.",
+  "assets": [
+    {
+      "id": "altar",
+      "kind": "prop",
+      "height": 148,
+      "seed": 1001,
+      "prompt": "A SPELL ALTAR: a waist-high stone pedestal carved with arcane runes, a single open spellbook floating and rotating above it wreathed in violet light, loose glowing pages drifting upward. Three thin candles melted down its sides. Ancient, holy, inviting."
+    },
+    {
+      "id": "altar_empty",
+      "kind": "prop",
+      "height": 148,
+      "seed": 1004,
+      "prompt": "A SPENT SPELL ALTAR: a waist-high stone pedestal carved with arcane runes, now EMPTY \u2014 no book, nothing floating above it. The runes are dark and dead, no glow at all. Three candles melted down to stubs, wicks snuffed and smoking faintly. A shallow dusty depression on top where a book used to rest, with a few torn scraps of parchment left behind. Cold, abandoned, used up."
+    },
+    {
+      "id": "chest",
+      "kind": "prop",
+      "height": 119,
+      "seed": 1002,
+      "prompt": "A TREASURE CHEST: a squat iron-banded wooden chest, lid shut, heavy padlock, gold coins spilling from a crack in the corner, faint warm glow leaking from the seams."
+    },
+    {
+      "id": "stairs_down",
+      "kind": "prop",
+      "height": 170,
+      "seed": 1003,
+      "prompt": "A STAIRWELL DOWN: a dark stone archway in a dungeon wall with worn steps descending into blackness, a cold blue glow rising from below, iron rings set in the stone, deep shadow swallowing the bottom steps."
+    },
+    {
+      "$floor": 1,
+      "$name": "The Drowned Library"
+    },
+    {
+      "id": "f1_enemy_ink",
+      "kind": "creature",
+      "height": 157,
+      "seed": 1101,
+      "prompt": "An INK WRETCH: a hunched gaunt humanoid made of living black ink, its body dripping and running downward in long streaks, no face except a wide smear of a mouth and two white pinprick eyes. Long dribbling arms ending in dagger-like ink claws. Torn scholar's robes soaked through and clinging. Cold teal highlights in the black."
+    },
+    {
+      "id": "f1_enemy_moth",
+      "kind": "creature",
+      "height": 139,
+      "seed": 1102,
+      "prompt": "A CANDLE MOTH: a large sinister moth the size of a dog, its furred body a stub of dripping white wax with a live flame burning at the top of its thorax, four ragged parchment-textured wings covered in eye-spot patterns that look like written runes, six thin black legs. Warm orange glow on the underside of the wings."
+    },
+    {
+      "id": "f1_enemy_wraith",
+      "kind": "creature",
+      "height": 168,
+      "seed": 1103,
+      "prompt": "A PAGE WRAITH: a floating hoodless spectre whose entire body is a swirling vortex of torn manuscript pages held in a human silhouette, hollow dark void where a face should be with two cold violet reading-lamp eyes, long trailing sleeves of loose parchment fraying into nothing at the bottom. It has no legs, tapering to a ragged wisp."
+    },
+    {
+      "id": "f1_prop_bookshelf",
+      "kind": "prop",
+      "height": 182,
+      "seed": 1111,
+      "prompt": "A DUNGEON BOOKSHELF: a tall dark oak shelf crammed with leather-bound spellbooks at crooked angles, some volumes fallen and stacked flat, brass clasps and coloured ribbon bookmarks, water-stained lower shelf, cobwebs in the top corner."
+    },
+    {
+      "id": "f1_prop_candelabra",
+      "kind": "prop",
+      "height": 159,
+      "seed": 1112,
+      "prompt": "A FLOOR CANDELABRA: a tall wrought-iron candle stand with five lit beeswax candles at different melted heights, thick wax drips frozen down the arms, warm orange flames, a small pool of hardened wax at the clawed iron base."
+    },
+    {
+      "id": "f1_prop_barrel",
+      "kind": "prop",
+      "height": 119,
+      "seed": 1113,
+      "prompt": "A WATER BARREL: a squat wooden barrel bound with rusted iron hoops, brimming with dark still water, the lid leaning against its side, damp stains and green algae on the lower staves, a slow drip at the seam."
+    },
+    {
+      "id": "f1_prop_lectern",
+      "kind": "prop",
+      "height": 153,
+      "seed": 1114,
+      "prompt": "A READING LECTERN: a carved wooden reading stand with a huge open illuminated manuscript resting on its slanted top, a guttering candle stub clamped to one side, an inkwell and quill, brass page-weight chains hanging down."
+    },
+    {
+      "id": "f1_boss",
+      "kind": "boss",
+      "height": 190,
+      "seed": 1150,
+      "prompt": "THE UNBOUND INDEX, a library boss: an enormous floating grimoire the size of a door, its covers spread wide like wings, hundreds of pages fanning out from the spine in a great peacock display. A single vast eye stares out of the open pages. Chains and brass clasps hang broken from its edges. Dozens of smaller books orbit it. Violet arcane light pours from between the pages."
+    },
+    {
+      "$floor": 2,
+      "$name": "The Ossuary Kitchens"
+    },
+    {
+      "id": "f2_enemy_cleaver",
+      "kind": "creature",
+      "height": 162,
+      "seed": 1201,
+      "prompt": "A CLEAVER SKELETON: an animated skeleton in a filthy blood-stained butcher's apron, a rusted meat cleaver fused into the bone of each forearm instead of hands, ribcage strung with hanging hooks, jaw hanging open in a grin, one eye socket lit with a sickly yellow flame. Grease-stained bone."
+    },
+    {
+      "id": "f2_enemy_imp",
+      "kind": "creature",
+      "height": 128,
+      "seed": 1202,
+      "prompt": "A GREASE IMP: a small squat fat demon with glistening translucent yellow-brown skin like rendered fat, wide toothy grin, tiny horns, a distended dripping belly, stubby arms, big splayed webbed feet leaving greasy prints. It cradles a ladle. Slick highlights all over its body."
+    },
+    {
+      "id": "f2_enemy_hound",
+      "kind": "creature",
+      "height": 128,
+      "seed": 1203,
+      "prompt": "A BONE HOUND: a skeletal dog assembled from mismatched animal bones, elongated snapping skull with too many teeth, exposed ribcage with a dull red ember burning inside, spine of stacked vertebrae, four bony legs with clawed paws, tail a whip of linked bones. Lean and predatory."
+    },
+    {
+      "id": "f2_prop_cauldron",
+      "kind": "prop",
+      "height": 136,
+      "seed": 1211,
+      "prompt": "A COOKING CAULDRON: a huge black cast-iron cauldron on three squat legs over a bed of glowing embers, thick green-brown stew bubbling over the rim, a bone handle sticking out of the broth, soot streaks up the belly, steam curling off the surface."
+    },
+    {
+      "id": "f2_prop_meatrack",
+      "kind": "prop",
+      "height": 182,
+      "seed": 1212,
+      "prompt": "A MEAT RACK: a tall iron frame hung with rusted S-hooks holding slabs of cured dark meat and a stripped ribcage, chains and pulleys at the top bar, a drip tray of congealed fat at the base, flies. Grim and utilitarian."
+    },
+    {
+      "id": "f2_prop_bonepile",
+      "kind": "prop",
+      "height": 108,
+      "seed": 1213,
+      "prompt": "A BONE PILE: a heaped mound of assorted yellowed bones and cracked skulls, femurs and ribs jutting out at angles, one intact skull sitting on top, scraps of dried sinew, dust. Loosely pyramidal and unstable-looking."
+    },
+    {
+      "id": "f2_prop_alebarrel",
+      "kind": "prop",
+      "height": 125,
+      "seed": 1214,
+      "prompt": "AN ALE BARREL: a fat oak keg on its side in a low wooden cradle, brass tap driven into the end, a dark sticky puddle beneath the tap, iron hoops, a chalked tally scrawled on the side, dented staves."
+    },
+    {
+      "id": "f2_boss",
+      "kind": "boss",
+      "height": 190,
+      "seed": 1250,
+      "prompt": "THE MARROW CHEF, a kitchen boss: a colossally obese towering butcher, skin pale and waxy, head a boiled ox skull wearing a filthy tall chef's toque, four arms each gripping a different implement - a cleaver, a two-tined fork, a ladle, a bone saw. Blood-soaked apron stretched over an enormous gut. Rings of sausages and hooks hang from a belt of chains. Steam rising off its shoulders."
+    },
+    {
+      "$floor": 3,
+      "$name": "The Verdant Rot"
+    },
+    {
+      "id": "f3_enemy_hulk",
+      "kind": "creature",
+      "height": 174,
+      "seed": 1301,
+      "prompt": "A SPORE HULK: a massive lumbering humanoid of rotted wet wood and packed moss, an enormous pale bracket-fungus cap growing where its head should be with no face at all, thick bursting puffball sacs clustered on its shoulders and back leaking green spore dust, arms like mossy logs, fingers of woody roots."
+    },
+    {
+      "id": "f3_enemy_creeper",
+      "kind": "creature",
+      "height": 151,
+      "seed": 1302,
+      "prompt": "A THORN CREEPER: a low quadrupedal beast woven entirely from barbed bramble vines and dead leaves, long wicked thorns bristling along its spine, a snapping jaw of splintered wood, two small hateful red flower-blooms for eyes, whipping vine tail. Hollow between the vines so you can see through its body."
+    },
+    {
+      "id": "f3_enemy_priest",
+      "kind": "creature",
+      "height": 180,
+      "seed": 1303,
+      "prompt": "A MYCELIUM PRIEST: a tall gaunt robed figure, its robes rotted grey sackcloth threaded with glowing pale mycelium veins, head a tall pointed toadstool cap shading a hollow dark face with three small glowing green eyes, long thin arms raised in benediction, fingertips trailing hanging white fungal threads."
+    },
+    {
+      "id": "f3_prop_fungus",
+      "kind": "prop",
+      "height": 131,
+      "seed": 1311,
+      "prompt": "A FUNGUS CLUSTER: a dense clump of oversized mushrooms of different heights, fat speckled caps in sickly green and violet, gills glowing faintly underneath, smaller toadstools crowding the base, moss and rotting leaf litter around them."
+    },
+    {
+      "id": "f3_prop_root",
+      "kind": "prop",
+      "height": 165,
+      "seed": 1312,
+      "prompt": "A GNARLED ROOT: a huge twisted tree root bursting up through a broken flagstone floor, bark split and weeping dark sap, tendrils curling in the air, clumps of wet moss and small ferns growing in its crevices, cracked stone shards pushed aside at the base."
+    },
+    {
+      "id": "f3_prop_statue",
+      "kind": "prop",
+      "height": 187,
+      "seed": 1313,
+      "prompt": "A MOSSY STATUE: a weathered stone statue of a robed hooded figure with its face eroded smooth and featureless, one arm broken off at the elbow, thick green moss and pale lichen swallowing its lower half, ivy wrapped around the plinth, deep cracks up the torso."
+    },
+    {
+      "id": "f3_prop_planter",
+      "kind": "prop",
+      "height": 125,
+      "seed": 1314,
+      "prompt": "A CRACKED PLANTER: a big terracotta urn split down one side, dark wet soil spilling out of the crack, a single sickly luminous flower with drooping violet petals growing from it, dead stems, tangled roots reaching out of the break."
+    },
+    {
+      "id": "f3_boss",
+      "kind": "boss",
+      "height": 190,
+      "seed": 1350,
+      "prompt": "MOTHER BLOOM, a fungal boss: an enormous swollen fungal queen, a vast bulbous sac-body of translucent pale flesh with dark spores swirling visibly inside it, crowned by a huge ring of luminous violet mushroom caps like a halo. A small withered humanoid torso and thin grasping arms emerge from the top of the sac. Thick root-tentacles anchor her to the ground and spread outward. Clouds of glowing spores drift around her."
+    },
+    {
+      "$floor": 4,
+      "$name": "The Brass Foundry"
+    },
+    {
+      "id": "f4_enemy_slag",
+      "kind": "creature",
+      "height": 168,
+      "seed": 1401,
+      "prompt": "A SLAG GOLEM: a broad humanoid of cooled black volcanic slag with molten orange lava glowing in every crack and seam of its body, no head - just a glowing furnace-hole in its chest, heavy asymmetric fists of fused metal and stone, thick stumpy legs, dripping embers falling from its knuckles, heat shimmer around its shoulders."
+    },
+    {
+      "id": "f4_enemy_bellows",
+      "kind": "creature",
+      "height": 145,
+      "seed": 1402,
+      "prompt": "A BELLOWS FIEND: a hunched brass automaton whose torso is a great leather-and-brass accordion bellows mid-wheeze, a riveted iron mask face with a single glowing yellow lens eye and a pipe-nozzle mouth venting steam, thin articulated copper-tube arms, bird-like clawed metal feet, pressure gauge on its shoulder in the red."
+    },
+    {
+      "id": "f4_enemy_wasp",
+      "kind": "creature",
+      "height": 122,
+      "seed": 1403,
+      "prompt": "A CINDER WASP: a large mechanical wasp with a segmented red-hot glowing iron abdomen, two pairs of blurred brass wire-mesh wings, a long white-hot needle stinger, faceted furnace-orange compound eyes, sharp black mandibles, six barbed metal legs tucked under. Trailing sparks."
+    },
+    {
+      "id": "f4_prop_forge",
+      "kind": "prop",
+      "height": 153,
+      "seed": 1411,
+      "prompt": "A FORGE ANVIL: a heavy black iron anvil on a scarred wooden stump, a glowing orange half-forged sword blade lying across its face, a hammer and tongs leaning against the stump, scattered slag and quench bucket, hot sparks on the ground."
+    },
+    {
+      "id": "f4_prop_gears",
+      "kind": "prop",
+      "height": 142,
+      "seed": 1412,
+      "prompt": "A GEAR STACK: a leaning tower of enormous brass and iron cogwheels of different sizes stacked on an axle, teeth chipped and worn, thick black grease in the gaps, one gear still slowly turning, bolts and washers scattered at the base."
+    },
+    {
+      "id": "f4_prop_oildrum",
+      "kind": "prop",
+      "height": 131,
+      "seed": 1413,
+      "prompt": "AN OIL DRUM: a dented riveted iron drum with a screw cap open at the top, thick black oil welling over the lip and running down the side into a slick puddle, rust blooms and a faded hazard stencil, a hand pump clamped to the rim."
+    },
+    {
+      "id": "f4_prop_hoist",
+      "kind": "prop",
+      "height": 185,
+      "seed": 1414,
+      "prompt": "A CHAIN HOIST: a heavy iron floor crane with a thick chain and a huge rusted hook hanging from its arm, a counterweight block, a hand crank with a ratchet, coiled slack chain heaped on the base plate, grease and rust."
+    },
+    {
+      "id": "f4_boss",
+      "kind": "boss",
+      "height": 190,
+      "seed": 1450,
+      "prompt": "THE OVERSEER ENGINE, a foundry boss: a towering brass and iron machine-god, a vast riveted boiler body with a roaring furnace door for a mouth spilling white-hot light, a crown of belching smokestacks, four long piston-driven arms ending in industrial claws and a glowing crucible, cracked pressure dials and a single enormous searchlight eye. Chains and cooling pipes wrap its frame. Standing on caterpillar treads."
+    },
+    {
+      "$floor": 5,
+      "$name": "The Celestial Vault"
+    },
+    {
+      "id": "f5_enemy_acolyte",
+      "kind": "creature",
+      "height": 168,
+      "seed": 1501,
+      "prompt": "A VOID ACOLYTE: a slender robed figure in deep midnight-blue vestments trimmed with gold constellation embroidery, no head at all - instead a slowly rotating sphere of starless black void hovering above the collar with a single ring of gold orbiting it, long sleeves, gloved hands cupping a tiny bright star. Hem of the robe frays into drifting stardust."
+    },
+    {
+      "id": "f5_enemy_husk",
+      "kind": "creature",
+      "height": 157,
+      "seed": 1502,
+      "prompt": "A STAR HUSK: the hollow cracked shell of a humanoid statue made of pale grey moonstone, its chest and skull split wide open with brilliant white starlight blazing out of the hollow interior, cracks across the whole body leaking light, blank eyeless face, one arm ending in a shattered stump, weightless stone shards floating in orbit around the breaks."
+    },
+    {
+      "id": "f5_enemy_sentinel",
+      "kind": "creature",
+      "height": 174,
+      "seed": 1503,
+      "prompt": "A MIRROR SENTINEL: an armoured guardian whose body is made of angular polished mirror shards held together by thin gold filigree, its face a perfectly flat oval mirror reflecting nothing, tall geometric shoulder plates, a gold circlet, hands of faceted glass blades. Its reflections show fragments of stars instead of the room."
+    },
+    {
+      "id": "f5_prop_orrery",
+      "kind": "prop",
+      "height": 165,
+      "seed": 1511,
+      "prompt": "AN ORRERY: an ornate brass astronomical model on a tripod stand, concentric engraved rings on gimbals holding small planet spheres of coloured stone, a glowing golden sun sphere at the centre, tiny star-charts etched on the rings, one ring bent out of true."
+    },
+    {
+      "id": "f5_prop_telescope",
+      "kind": "prop",
+      "height": 187,
+      "seed": 1512,
+      "prompt": "A TELESCOPE: a long brass refracting telescope on a heavy wooden tripod aimed upward at a steep angle, engraved focus rings and a small finder scope, a rolled star chart and a compass on the tripod's shelf, tarnish and fingerprints on the tube."
+    },
+    {
+      "id": "f5_prop_crystal",
+      "kind": "prop",
+      "height": 142,
+      "seed": 1513,
+      "prompt": "A CRYSTAL CLUSTER: a cluster of tall sharp translucent blue-white crystals of varying heights growing out of a cracked stone base, inner light glowing along their axes, smaller shards scattered around the foot, faint refracted highlights on the facets."
+    },
+    {
+      "id": "f5_prop_font",
+      "kind": "prop",
+      "height": 148,
+      "seed": 1514,
+      "prompt": "A STAR FONT: a carved pale stone basin on a fluted pedestal filled with liquid starlight, pinpricks of light drifting up out of the water like slow sparks, gold constellation inlay around the rim, worn zodiac carvings on the pedestal, a thin overflow of light spilling down one side."
+    },
+    {
+      "id": "f5_boss",
+      "kind": "boss",
+      "height": 190,
+      "seed": 1550,
+      "prompt": "THE CARTOGRAPHER, a celestial boss: a colossal robed astronomer whose head is a great armillary sphere of gold rings with a burning blue star trapped at its centre, six arms - some holding brass dividers, a quill, an unrolled star map, others empty and open. Its midnight robe is a window onto a real starfield with constellations moving in it. A vast slowly rotating gold zodiac ring floats behind its shoulders like a halo."
+    },
+    {
+      "$comment": "Golem forms. Animating a prop is the core verb, so every prop has an authored risen form. Shared cues: violet arcane eyes, a hunched bipedal stance built from the object's own material, the object still recognisable in the silhouette.",
+      "$golems": true
+    },
+    {
+      "id": "g_f1_bookshelf",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2111,
+      "prompt": "A BOOK GOLEM: a hulking humanoid built entirely out of old leather-bound spellbooks stacked and lashed together with brass clasps and torn ribbon bookmarks, loose pages fluttering at its shoulders, its head a single massive open tome with two glowing violet eyes burning in the pages, arms bundles of thick tomes ending in blocky fists, squat legs of stacked books. Menacing and arcane."
+    },
+    {
+      "id": "g_f1_candelabra",
+      "kind": "creature",
+      "height": 174,
+      "seed": 2112,
+      "prompt": "A CANDLE GOLEM: a spindly humanoid of twisted wrought iron and fused candle wax, five lit candles burning where its head should be casting warm light down its body, thick wax drips hardened over its iron ribs like melted armour, long thin arms of candle-stand arms with claw hooks, wax-pooled feet. Two glowing violet eyes in the wax of its chest."
+    },
+    {
+      "id": "g_f1_barrel",
+      "kind": "creature",
+      "height": 162,
+      "seed": 2113,
+      "prompt": "A WATER GOLEM: a squat barrel-bodied creature, an open wooden barrel bound in rusted hoops for a torso brimming with dark water that sloshes over the rim, thick arms and stubby legs formed of flowing water held in shape by nothing, two glowing violet eyes floating in the water inside the barrel mouth, water streaming constantly down its staves."
+    },
+    {
+      "id": "g_f1_lectern",
+      "kind": "creature",
+      "height": 177,
+      "seed": 2114,
+      "prompt": "A LECTERN GOLEM: a tall stooping creature built from a carved wooden reading stand, its slanted top opened wide like a snapping beak with an illuminated manuscript for a tongue, the lectern's post as a spine, splayed tripod legs of carved wood, two thin arms of brass page-chains with weight hooks, a guttering candle on one shoulder, glowing violet eyes above the beak."
+    },
+    {
+      "id": "g_f2_cauldron",
+      "kind": "creature",
+      "height": 168,
+      "seed": 2211,
+      "prompt": "A CAULDRON GOLEM: a big-bellied creature whose body is a black cast-iron cauldron on three squat legs, green-brown stew boiling and slopping over the rim, two thick arms of poured molten stew hardening into ladle-shaped fists, a bone handle jutting from its back, two glowing violet eyes in the broth, steam venting from under the rim."
+    },
+    {
+      "id": "g_f2_meatrack",
+      "kind": "creature",
+      "height": 190,
+      "seed": 2212,
+      "prompt": "A MEAT RACK GOLEM: a tall gangling creature of rusted iron frame bars and hanging chains, slabs of dark cured meat and a stripped ribcage strung on its S-hooks like a torso, long swinging chain-and-hook arms, thin bar legs, a pulley wheel for a head with two glowing violet eyes in the spokes. Dripping fat."
+    },
+    {
+      "id": "g_f2_bonepile",
+      "kind": "creature",
+      "height": 171,
+      "seed": 2213,
+      "prompt": "A BONE GOLEM: a lopsided humanoid assembled from a heap of mismatched yellowed bones jammed together at wrong angles, a cage of ribs for a chest, femurs for limbs, a cluster of three cracked skulls fused as its head with violet light burning in every eye socket, one oversized arm, bone shards flaking off as it moves."
+    },
+    {
+      "id": "g_f2_alebarrel",
+      "kind": "creature",
+      "height": 160,
+      "seed": 2214,
+      "prompt": "AN ALE GOLEM: a fat rollicking creature with an oak keg for a body, brass tap in its belly gushing dark foaming ale, staves bulging apart under the pressure, arms and legs of frothing spilling ale held in rough limb shapes, a small keg head with two glowing violet eyes and a bung for a nose, sticky puddles at its feet."
+    },
+    {
+      "id": "g_f3_fungus",
+      "kind": "creature",
+      "height": 168,
+      "seed": 2311,
+      "prompt": "A FUNGUS GOLEM: a lumpy squat creature grown from a clump of oversized mushrooms, a fat speckled green-and-violet cap as its head with glowing gills underneath, a body of packed pale mycelium and smaller toadstools sprouting from its shoulders, thick spongy arms, root-tangle feet, two glowing violet eyes under the cap brim, spore dust puffing off it."
+    },
+    {
+      "id": "g_f3_root",
+      "kind": "creature",
+      "height": 186,
+      "seed": 2312,
+      "prompt": "A ROOT GOLEM: a long-limbed creature of twisted tree roots and split weeping bark, its torso a knotted burl, arms of writhing tendrils ending in grasping root-fingers, clumps of wet moss and small ferns growing in its crevices, a hollow knot of a face with two glowing violet eyes deep inside, cracked flagstone shards still clinging to its feet."
+    },
+    {
+      "id": "g_f3_statue",
+      "kind": "creature",
+      "height": 190,
+      "seed": 2313,
+      "prompt": "A STATUE GOLEM: a weathered stone statue of a hooded robed figure come to life, its eroded featureless face now split by a jagged crack with violet light blazing out, one arm broken off at the elbow, thick green moss and lichen hanging from its stone shoulders, deep cracks across the torso glowing violet from within, chunks of its own plinth clutched in its remaining hand."
+    },
+    {
+      "id": "g_f3_planter",
+      "kind": "creature",
+      "height": 165,
+      "seed": 2314,
+      "prompt": "A PLANTER GOLEM: a top-heavy creature with a split terracotta urn for a body, dark wet soil spilling from the crack like guts, a single huge luminous violet flower blooming where its head should be with two glowing violet eyes at its centre, thick braided root arms reaching out of the break, stubby clay legs, trailing vines."
+    },
+    {
+      "id": "g_f4_forge",
+      "kind": "creature",
+      "height": 174,
+      "seed": 2411,
+      "prompt": "AN ANVIL GOLEM: an enormously top-heavy creature with a black iron anvil for a torso and head fused as one, the anvil's horn jutting forward like a snout, a glowing orange half-forged blade embedded in its shoulder, thick short arms of hammer heads and tongs, tiny stubby legs of scarred wood stump, two glowing violet eyes on the anvil face, sparks showering off it."
+    },
+    {
+      "id": "g_f4_gears",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2412,
+      "prompt": "A GEAR GOLEM: a humanoid assembled from enormous brass and iron cogwheels, a big gear as its chest still slowly turning, smaller gears as shoulder and hip joints, arms and legs of axles and toothed racks, a single large cogwheel for a head with two glowing violet eyes between the teeth, thick black grease weeping from its joints."
+    },
+    {
+      "id": "g_f4_oildrum",
+      "kind": "creature",
+      "height": 165,
+      "seed": 2413,
+      "prompt": "AN OIL GOLEM: a dented riveted iron drum for a body with its cap burst open, thick black oil surging up out of the top and welling over the sides, arms and legs of viscous dripping oil held in rough limb shape, a hand pump jutting from its shoulder like a weapon, two glowing violet eyes in the oil pouring from the drum's mouth, slick black puddles at its feet."
+    },
+    {
+      "id": "g_f4_hoist",
+      "kind": "creature",
+      "height": 190,
+      "seed": 2414,
+      "prompt": "A HOIST GOLEM: a tall crane-like creature of heavy iron frame bars, a long articulated arm ending in a huge rusted hook swinging low, a counterweight block hanging as its other fist, a ratchet crank wheel for a head with two glowing violet eyes in the spokes, coiled chains draped over its shoulders, spindly braced legs, grease and rust."
+    },
+    {
+      "id": "g_f5_orrery",
+      "kind": "creature",
+      "height": 177,
+      "seed": 2511,
+      "prompt": "AN ORRERY GOLEM: a floating creature of concentric engraved brass rings spinning on gimbals around a glowing golden sun-sphere core, small planet spheres of coloured stone orbiting as its hands, ring segments arranged into shoulders and a suggestion of a torso, no legs, two glowing violet eyes inside the innermost ring, star charts etched across every band."
+    },
+    {
+      "id": "g_f5_telescope",
+      "kind": "creature",
+      "height": 188,
+      "seed": 2512,
+      "prompt": "A TELESCOPE GOLEM: a tall one-eyed creature, a long brass telescope tube as its head and neck aimed forward like a cannon with a glowing violet lens for an eye, a wooden tripod as splayed legs, engraved focus rings as collar joints, thin brass arms holding a rolled star chart and a compass, tarnished metal."
+    },
+    {
+      "id": "g_f5_crystal",
+      "kind": "creature",
+      "height": 174,
+      "seed": 2513,
+      "prompt": "A CRYSTAL GOLEM: a jagged angular humanoid grown from tall translucent blue-white crystals, sharp shards jutting from its shoulders and spine, inner light glowing along every axis of its body, a faceted crystal head with two glowing violet eyes deep inside the stone, blocky crystal fists, cracked stone base fused to its feet, refracted highlights."
+    },
+    {
+      "id": "g_f5_font",
+      "kind": "creature",
+      "height": 171,
+      "seed": 2514,
+      "prompt": "A FONT GOLEM: a creature carrying a carved pale stone basin as its own hollow chest, filled with liquid starlight that slops over the edge, pinpricks of light drifting up out of it, limbs of pouring luminous starwater held in shape, gold constellation inlay glowing on its stone shoulders, two glowing violet eyes above the basin rim, light spilling down its legs."
+    }
+  ]
+}

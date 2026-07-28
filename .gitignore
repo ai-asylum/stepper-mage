@@ -1,0 +1,7 @@
+node_modules
+dist
+_shots
+.DS_Store
+.vercel
+tools/_dbg
+art/_work
