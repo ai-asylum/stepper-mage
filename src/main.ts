@@ -563,7 +563,12 @@ async function boot(): Promise<void> {
     tickBook(dt, engine.time);
     // Lay the HUD out against the book's real edge too, so the cast bar and the
     // swipe boundary never disagree.
-    hud.setBookTop(book.screenTop());
+    const top = book.screenTop();
+    hud.setBookTop(top);
+    // Frame the world for the strip above the book — but only off a settled book.
+    // `screenTop` projects live geometry, so during the intro glide and mid-flip it
+    // reports an edge the book never actually rests at.
+    if (!book.closed && !book.busy && Number.isFinite(top)) engine.frameAbove(top);
     // The assembly's bill is cleared by the hand emptying, however it emptied —
     // and the merge animation empties the fan from inside itself, so watching the
     // count is the only place that catches a cast and a return with one rule.

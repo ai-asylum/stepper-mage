@@ -14,13 +14,24 @@ import { WALL_H } from '../art/tiles';
 const STEP_TIME = 0.235;
 /** Seconds per 90-degree turn. */
 const TURN_TIME = 0.17;
-/** Eye height as a fraction of wall height. */
-const EYE = 0.60;
+/**
+ * Eye height as a fraction of wall height.
+ *
+ * Low on purpose. Everything worth looking at is standing on the floor and is
+ * about half the ceiling's height, so an eye at 60% of the wall looked down on
+ * the whole cast and pushed their feet off the bottom of the frame. At 50% the
+ * floor reads from a tile and a bit away and a creature three tiles off stands
+ * entirely inside the band above the grimoire.
+ */
+const EYE = 0.50;
 
 /**
  * Downward camera pitch, radians. Without this the view is all wall and ceiling:
  * you cannot see the floor, so you cannot count tiles, and a wall one step away
  * feels like a wall you are already touching.
+ *
+ * This is a rotation, so it keystones the walls; it stays small. The rest of the
+ * framing is a lens shift instead — see `Engine.frameAbove`.
  */
 export const PITCH = -0.135;
 

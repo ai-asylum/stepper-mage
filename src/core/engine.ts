@@ -138,6 +138,22 @@ export class Engine {
   private uiEl: HTMLCanvasElement;
   private internalHeight: number;
 
+  /**
+   * How far up the frame is shifted, as a fraction of the render height.
+   *
+   * The grimoire covers the bottom quarter of the screen, so a frame composed on
+   * the centre of the canvas puts its own centre of interest behind the book —
+   * and the floor line with it, which is where everything in the game is
+   * standing. This slides the frustum down so the OPTICAL centre lands in the
+   * middle of the clear band above the book instead.
+   *
+   * It is a lens shift, not a pitch: the frustum moves without rotating, so
+   * verticals stay vertical and the walls do not keystone. What ends up behind
+   * the book is spare world nobody looks at — until they close the book, and
+   * then it is the floor at their feet.
+   */
+  private frameShift = 0;
+
   private last = 0;
   private acc = 0;
   /** Fixed simulation step (120Hz-ish for stable tweens), max 4 per frame. */
@@ -245,6 +261,31 @@ export class Engine {
     this.postMat.uniforms.uVignette.value = amount;
   }
 
+  /**
+   * Compose the world for the band between the top of the screen and `topY`
+   * (CSS px, the top edge of whatever is covering the bottom — the grimoire).
+   *
+   * Deliberately latched rather than tracked live: the book slides away when it
+   * is closed, and re-framing as it moves would swing the whole world. The frame
+   * is built for the open book and closing it simply uncovers more floor.
+   */
+  frameAbove(topY: number): void {
+    const shift = Math.max(0, Math.min(0.35, 0.5 - topY / this.sh / 2));
+    if (Math.abs(shift - this.frameShift) < 0.002) return;
+    this.frameShift = shift;
+    this.applyProjection();
+  }
+
+  private applyProjection(): void {
+    this.camera.aspect = this.rw / this.rh;
+    // A positive offsetY lowers the frustum, which raises the image.
+    this.camera.setViewOffset(
+      this.rw, this.rh,
+      0, this.frameShift * this.rh,
+      this.rw, this.rh,
+    );
+  }
+
   private resize(): void {
     // Portrait stage: fill the viewport, but never exceed a phone-ish aspect on
     // desktop — a 21:9 monitor should letterbox, not stretch the dungeon.
@@ -273,8 +314,7 @@ export class Engine {
     this.target.setSize(this.rw, this.rh);
     (this.postMat.uniforms.uRes.value as THREE.Vector2).set(this.rw, this.rh);
 
-    this.camera.aspect = this.rw / this.rh;
-    this.camera.updateProjectionMatrix();
+    this.applyProjection();
 
     // UI layer is crisp at device resolution — pixel world, sharp glyphs.
     this.dpr = Math.min(window.devicePixelRatio || 1, 3);
