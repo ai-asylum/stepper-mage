@@ -142,7 +142,7 @@ export function populate(grid: Grid, theme: Theme, seed: string, depth: number):
 /** Every sprite id a floor needs, for preloading before the floor is shown. */
 export function spriteIdsFor(theme: Theme): string[] {
   return [
-    'altar', 'altar_empty', 'chest', 'stairs_down',
+    'altar', 'altar_empty', 'chest', 'chest_open', 'stairs_down',
     ...theme.props, ...theme.golems, ...theme.enemies, theme.boss,
   ];
 }

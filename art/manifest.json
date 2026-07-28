@@ -23,6 +23,13 @@
       "prompt": "A TREASURE CHEST: a squat iron-banded wooden chest, lid shut, heavy padlock, gold coins spilling from a crack in the corner, faint warm glow leaking from the seams."
     },
     {
+      "id": "chest_open",
+      "kind": "prop",
+      "height": 119,
+      "seed": 1005,
+      "prompt": "AN OPENED TREASURE CHEST: a squat iron-banded wooden chest with its lid thrown wide open on its hinges, the interior EMPTY except for a few scattered loose coins and a torn scrap of velvet lining. The broken padlock hangs off the hasp. No glow, no treasure left. Plundered and abandoned."
+    },
+    {
       "id": "stairs_down",
       "kind": "prop",
       "height": 170,

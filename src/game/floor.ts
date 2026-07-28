@@ -51,7 +51,7 @@ export class Floor {
   /** Build a floor, preloading every sprite it needs before returning. */
   static async create(depth: number, seed: string): Promise<Floor> {
     const f = new Floor(depth, seed);
-    await preloadSprites([...spriteIdsFor(f.theme), 'altar_empty']);
+    await preloadSprites([...spriteIdsFor(f.theme), 'altar_empty', 'chest_open']);
     const placed = populate(f.grid, f.theme, seed, depth);
     for (const p of placed) await f.spawn(p);
     return f;
@@ -138,6 +138,24 @@ export class Floor {
     this.group.add(dead.group);
     (e as { sprite: Sprite }).sprite = dead;
     e.spriteId = 'altar_empty';
+  }
+
+  /** Open a chest: swap to the plundered sprite so a looted room looks looted. */
+  async openChest(e: Entity): Promise<void> {
+    if (e.kind !== 'chest' || e.spent) return;
+    e.spent = true;
+    const tex = await loadSprite('chest_open');
+    const old = e.sprite;
+    const opened = new Sprite('chest_open', tex, this.view.uniforms, {
+      hover: 0, seed: old.tx * 7 + old.ty * 11, bob: 0.2, emissive: 0.25,
+    });
+    opened.tx = old.tx; opened.ty = old.ty; opened.ox = old.ox; opened.oz = old.oz;
+    opened.setTileLight(this.grid.lightAt(old.tx, old.ty));
+    this.group.remove(old.group);
+    old.dispose();
+    this.group.add(opened.group);
+    (e as { sprite: Sprite }).sprite = opened;
+    e.spriteId = 'chest_open';
   }
 
   entityAt(x: number, y: number): Entity | null {

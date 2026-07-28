@@ -28,6 +28,7 @@ export type UiAction =
   | { kind: 'cycle' }
   | { kind: 'bookToggle' }
   | { kind: 'altar'; entity: Entity }
+  | { kind: 'chest'; entity: Entity }
   | { kind: 'move'; m: 'forward' | 'back' }
   | { kind: 'turn'; d: -1 | 1 }
   | { kind: 'descend' }
@@ -76,7 +77,7 @@ export class Hud {
   /** Name of the open page when it is a spell not yet learned, else null. */
   sealedPage: string | null = null;
 
-  /** An unspent altar within reach, set by the game each turn. */
+  /** An unused altar or chest within reach, set by the game each turn. */
   altarInReach: Entity | null = null;
 
   /** Where the minimap reads the world from. Bound per floor. */
@@ -86,6 +87,11 @@ export class Hud {
     this.map = fn;
   }
 
+  /** The book's measured top edge, so HUD layout matches the gesture boundary. */
+  setBookTop(y: number): void {
+    this.measuredBookTop = Number.isFinite(y) ? y : null;
+  }
+
   /**
    * Top of the grimoire's screen footprint. The book is a 3D object rendered in
    * the overlay pass, so this is a measured constant rather than a layout value —
@@ -93,6 +99,7 @@ export class Hud {
    * above it.
    */
   private bookTop = 0;
+  private measuredBookTop: number | null = null;
 
   /**
    * @param torn  the pages currently ripped out, supplied by the Fan
@@ -182,7 +189,9 @@ export class Hud {
     this.drawShout(ctx, W, H);
 
     // The grimoire occupies roughly the bottom third of the screen.
-    this.bookTop = this.bookClosed ? Math.round(H * 0.90) : Math.round(H * 0.665);
+    this.bookTop = this.bookClosed || this.measuredBookTop === null
+      ? Math.round(H * 0.90)
+      : Math.round(this.measuredBookTop);
     this.drawCastBar(ctx, W);
     this.drawLog(ctx, W);
     this.drawVitals(ctx, W);
@@ -219,7 +228,7 @@ export class Hud {
       if (!e.alive || !e.sprite.group.visible) { e.sprite.setOutline(0xffffff, false); continue; }
 
       const animatable = e.kind === 'prop' && !e.animated;
-      const interactive = e.kind === 'altar' && !e.spent;
+      const interactive = (e.kind === 'altar' || e.kind === 'chest') && !e.spent;
       const legal = interactive ? true
         : wantsObject ? animatable
         : hasTorn ? e.hostile
@@ -232,7 +241,9 @@ export class Hud {
       // The whole silhouette is the touch target, with a small margin.
       this.hits.push({
         rect: [box.x - 6, box.y - 10, box.w + 12, box.h + 16],
-        action: interactive ? { kind: 'altar', entity: e } : { kind: 'target', entity: e },
+        action: interactive
+          ? (e.kind === 'chest' ? { kind: 'chest', entity: e } : { kind: 'altar', entity: e })
+          : { kind: 'target', entity: e },
       });
 
       // selection keyline, on the sprite itself
@@ -273,7 +284,8 @@ export class Hud {
       ctx.globalAlpha = 1;
 
       if (isTarget) {
-        const label = interactive ? 'TAKE A SPELL'
+        const label = e.kind === 'chest' && !e.spent ? 'OPEN'
+          : interactive ? 'TAKE A SPELL'
           : animatable && wantsObject ? `ANIMATE ${displayName(e.spriteId).toUpperCase()}`
           : displayName(e.spriteId).toUpperCase();
         ctx.font = 'bold 9px ui-monospace, monospace';
@@ -605,24 +617,28 @@ export class Hud {
     const e = this.altarInReach;
     if (!e || !e.alive || e.spent) return;
     const t = this.engine.time;
-    const label = 'TAP THE ALTAR';
+    const chest = e.kind === 'chest';
+    const label = chest ? 'TAP TO OPEN' : 'TAP THE ALTAR';
     ctx.font = 'bold 11px ui-monospace, monospace';
     const tw = ctx.measureText(label).width + 40;
     const bx = (W - tw) / 2, by = this.bookTop - 300;
     const pulse = 0.72 + Math.sin(t * 3.4) * 0.22;
     rr(ctx, bx, by, tw, 28, 14);
-    ctx.fillStyle = 'rgba(40,24,60,0.9)';
+    ctx.fillStyle = chest ? 'rgba(56,40,14,0.9)' : 'rgba(40,24,60,0.9)';
     ctx.fill();
     ctx.globalAlpha = pulse;
-    ctx.strokeStyle = '#b98cff';
+    ctx.strokeStyle = chest ? '#ffcf5c' : '#b98cff';
     ctx.lineWidth = 1.7;
     ctx.stroke();
     ctx.globalAlpha = 1;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#e8d8ff';
+    ctx.fillStyle = chest ? '#fff0c8' : '#e8d8ff';
     ctx.fillText(label, W / 2, by + 14.5);
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    this.hits.push({ rect: [bx, by, tw, 28], action: { kind: 'altar', entity: e } });
+    this.hits.push({
+      rect: [bx, by, tw, 28],
+      action: chest ? { kind: 'chest', entity: e } : { kind: 'altar', entity: e },
+    });
   }
 
   /**

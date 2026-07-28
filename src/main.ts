@@ -215,10 +215,34 @@ async function boot(): Promise<void> {
     }
   };
 
-  /** The nearest unspent altar you could reach right now, for the prompt. */
+  /**
+   * Open a chest. Chests are the run's star payout — the meta currency — plus a
+   * little healing, which is what makes a detour off the path to the boss worth
+   * taking rather than just being scenery you walk past.
+   */
+  const openChest = (e: Entity): void => {
+    if (e.kind !== 'chest' || e.spent) return;
+    const d = Math.abs(e.sprite.tx - stepper.x) + Math.abs(e.sprite.ty - stepper.y);
+    if (d > 1) { hud.addLog('Step closer to the chest.'); return; }
+    void floor.openChest(e);
+    const rng = new Rng(`${runSeed}-chest-${state.depth}-${e.sprite.tx}-${e.sprite.ty}`);
+    const stars = 3 + rng.int(0, 2) + state.depth;
+    const heal = 4 + rng.int(0, 3);
+    state.stars += stars;
+    state.hp = Math.min(state.maxHp, state.hp + heal);
+    hud.setShout(`✦ ${stars} CELESTIAL STARS`, 0xffcf5c);
+    hud.addLog(`The chest yields ${stars} stars and ${heal} health.`, 0xffcf5c);
+    entityPos(e, tmp);
+    fx.rise(tmp, 0xffcf5c);
+    sfx.shimmer(720);
+    refreshTargets();
+  };
+
+  /** The nearest unused altar or chest you could reach, for the prompt. */
   const altarInReach = (): Entity | null => {
     for (const e of floor.entities) {
-      if (e.kind !== 'altar' || e.spent || !e.alive) continue;
+      if (!e.alive || e.spent) continue;
+      if (e.kind !== 'altar' && e.kind !== 'chest') continue;
       if (Math.abs(e.sprite.tx - stepper.x) + Math.abs(e.sprite.ty - stepper.y) <= 1) return e;
     }
     return null;
@@ -371,6 +395,9 @@ async function boot(): Promise<void> {
     floor.update(wdt, engine.time, eye);
     fx.update(dt, engine.camera.quaternion);
     tickBook(dt, engine.time);
+    // Lay the HUD out against the book's real edge too, so the cast bar and the
+    // swipe boundary never disagree.
+    hud.setBookTop(book.screenTop());
     hud.update(dt);
   };
 
@@ -414,10 +441,12 @@ async function boot(): Promise<void> {
       case 'clear': hud.clearSelection(); break;
       case 'target':
         if (a.entity.kind === 'altar') { takeFromAltar(a.entity); break; }
+        if (a.entity.kind === 'chest' && !a.entity.spent) { openChest(a.entity); break; }
         hud.target = a.entity;
         break;
       case 'cycle': cycleTarget(); break;
       case 'altar': takeFromAltar(a.entity); break;
+      case 'chest': openChest(a.entity); break;
       case 'bookToggle':
         book.closed = !book.closed;
         hud.bookClosed = book.closed;
@@ -438,9 +467,9 @@ async function boot(): Promise<void> {
    * HUD or select a target.
    */
   // Swipe is the only movement input: left/right turns, up/down steps. The book
-  // owns the bottom of the screen ONLY while it is open — closed, the whole
-  // screen is the dungeon.
-  const BOOK_ZONE = 0.60;
+  // owns the screen BELOW ITS OWN TOP EDGE while open — measured from the book's
+  // projected geometry, not guessed, so the swipe zone and the visible cover line
+  // up exactly.
 
   let onBook = false;
   let px0 = 0, py0 = 0, lastT = 0, lastX = 0, vx = 0;
@@ -456,7 +485,8 @@ async function boot(): Promise<void> {
   const overBook = (x: number, y: number): boolean => {
     if (book.closed) return false;
     if (book.ribbonAt(x, y) !== null) return true;
-    return y > stage.clientHeight * BOOK_ZONE;
+    // a couple of px of grace so the very edge of the cover still grabs
+    return y > book.screenTop() - 4;
   };
 
   stage.addEventListener('pointerdown', (e) => {

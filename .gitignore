@@ -5,3 +5,4 @@ _shots
 .vercel
 tools/_dbg
 art/_work
+.env*

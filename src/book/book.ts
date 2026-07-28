@@ -86,6 +86,21 @@ export class Book {
     return this.flipActive || this.introT >= 0;
   }
 
+  /**
+   * Screen Y (CSS px) of the book's top edge, or Infinity when it is closed.
+   *
+   * The gesture boundary MUST come from the book's real projected geometry. A
+   * guessed fraction of the screen left a dead band above the cover where swipes
+   * meant to move the player tore pages instead.
+   */
+  screenTop(): number {
+    if (this.closed && this.closeT > 0.5) return Infinity;
+    const p = new THREE.Vector3(0, PAGE_H / 2 + 0.012, 0.014);
+    this.group.localToWorld(p);
+    const out = { x: 0, y: 0 };
+    return projectToScreen(p.x, p.y, p.z, out) ? out.y : Infinity;
+  }
+
   /** True once the book has glided far enough down to ignore page gestures. */
   get outOfReach(): boolean {
     return this.closed && this.closeT > 0.35;
