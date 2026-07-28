@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import { Engine } from './core/engine';
 import { Floor, type Entity } from './game/floor';
 import { Stepper, PITCH } from './game/stepper';
-import { Combat, targetsInView, type PlayerState } from './game/combat';
+import { Combat, targetsInView, MAX_RANK, type PlayerState } from './game/combat';
 import { CastFx } from './spells/vfx';
-import { Hud } from './ui/hud';
+import { Hud, type AltarOffer } from './ui/hud';
 import { Book } from './book/book';
 import { Fan } from './book/fan';
 import {
@@ -16,8 +16,28 @@ import { Rng } from './core/rng';
 import type { Dir } from './dungeon/grid';
 import { THEMES } from './art/theme';
 
-/** Persisted meta: stars carry across runs and buy starting pages. */
-interface Meta { stars: number; unlocked: string[]; best: number; }
+/**
+ * Persisted meta.
+ *
+ * `loadout` is the book you START each run with, and it does NOT grow just from
+ * finding spells — a run's discoveries are that run's. Every page you pick up at
+ * an altar is effectively sealed: it is gone when the run ends. That reset is the
+ * whole reason an altar choice matters, and letting found pages accumulate into
+ * the starting book quietly dissolved it (you drifted toward starting with
+ * everything, and altars stopped mattering).
+ *
+ * The only exception is a GOLDEN page, which is claimed into a `loadout` slot —
+ * rare enough to be an event, slot-limited so it stays a decision rather than
+ * accumulation.
+ */
+interface Meta {
+  stars: number;
+  /** The pages you begin every run holding. */
+  loadout: string[];
+  /** How many pages the starting book can hold. */
+  slots: number;
+  best: number;
+}
 
 const META_KEY = 'stepper-mage.meta.v1';
 
@@ -25,15 +45,23 @@ function loadMeta(): Meta {
   try {
     const raw = localStorage.getItem(META_KEY);
     if (raw) {
-      const m = JSON.parse(raw) as Meta;
+      const m = JSON.parse(raw) as Partial<Meta> & { unlocked?: string[] };
+      // `unlocked` is the pre-reset field name; migrate it but clamp to the slot
+      // count so an old save that had accumulated every page does not carry that
+      // advantage into the corrected rules.
+      const legacy = Array.isArray(m.unlocked) ? m.unlocked : [];
+      const slots = m.slots ?? 3;
+      const loadout = (Array.isArray(m.loadout) && m.loadout.length ? m.loadout : legacy)
+        .filter((id) => SPELL_BY_ID[id]);
       return {
         stars: m.stars ?? 0,
-        unlocked: Array.isArray(m.unlocked) && m.unlocked.length ? m.unlocked : ['fire', 'frost', 'animate'],
+        loadout: loadout.length ? loadout.slice(0, slots) : ['fire', 'frost', 'animate'],
+        slots,
         best: m.best ?? 0,
       };
     }
   } catch { /* corrupt or unavailable storage: fall through to defaults */ }
-  return { stars: 0, unlocked: ['fire', 'frost', 'animate'], best: 0 };
+  return { stars: 0, loadout: ['fire', 'frost', 'animate'], slots: 3, best: 0 };
 }
 
 function saveMeta(m: Meta): void {
@@ -47,7 +75,8 @@ async function boot(): Promise<void> {
 
   const state: PlayerState = {
     hp: 24, maxHp: 24,
-    pages: [...meta.unlocked],
+    pages: [...meta.loadout],
+    ranks: Object.fromEntries(meta.loadout.map((id) => [id, 1])),
     stars: 0,
     depth: 1,
   };
@@ -189,36 +218,95 @@ async function boot(): Promise<void> {
     hud.target = legal[(i + 1) % legal.length];
   };
 
-  /** An altar grants one page the player does not already hold — on a TAP. */
+  /**
+   * An altar offers a CHOICE of three, on a tap.
+   *
+   * Three options beat one grant for the obvious reason — a decision is more
+   * interesting than a gift — but also because it lets an offer be an UPGRADE to
+   * something you already hold. And when a rolled page is already maxed there is
+   * nothing left to give, so it pays out a celestial star instead: the run feeds
+   * the meta precisely when the run is out of things to teach you.
+   */
+  const rollAltarOffers = (e: Entity): AltarOffer[] => {
+    const rng = new Rng(`${runSeed}-altar-${state.depth}-${e.sprite.tx}-${e.sprite.ty}`);
+    const owned = state.pages;
+    const unowned = SPELLS.filter((sp) => !owned.includes(sp.id));
+    const offers: AltarOffer[] = [];
+    const used = new Set<string>();
+
+    // Bias toward pages you do not have — new options open more fusions than a
+    // rank does, so they should be the headline.
+    const bag = [
+      ...rng.shuffle(unowned.map((sp) => sp.id)),
+      ...rng.shuffle(owned.slice()),
+    ];
+
+    for (const id of bag) {
+      if (offers.length >= 3 || used.has(id)) continue;
+      used.add(id);
+      const def = SPELL_BY_ID[id];
+      if (!def) continue;
+      const rank = state.ranks[id] ?? 0;
+      if (rank === 0) offers.push({ kind: 'new', id, name: def.name, colour: def.colour, detail: def.effect });
+      else if (rank < MAX_RANK) {
+        offers.push({
+          kind: 'upgrade', id, name: def.name, colour: def.colour,
+          detail: `Rank ${rank} → ${rank + 1}. Casts as ${rank + 1} copies.`,
+        });
+      } else {
+        offers.push({
+          kind: 'star', id, name: def.name, colour: 0xffcf5c,
+          detail: 'Already mastered. Take a celestial star instead.',
+        });
+      }
+    }
+    return offers;
+  };
+
   const takeFromAltar = (e: Entity): void => {
     if (e.kind !== 'altar' || e.spent || claimedAltars.has(e)) return;
     const d = Math.abs(e.sprite.tx - stepper.x) + Math.abs(e.sprite.ty - stepper.y);
     if (d > 1) { hud.addLog('Step closer to the altar.'); return; }
-    {
-      claimedAltars.add(e);
-      void floor.spendAltar(e);
-      const rng = new Rng(`${runSeed}-altar-${state.depth}`);
-      const missing = SPELLS.filter((s) => !state.pages.includes(s.id));
-      const pick = missing.length ? rng.pick(missing) : rng.pick(SPELLS);
-      learnPage(pick.id);
-      hud.setShout(`${pick.name.toUpperCase()} LEARNED`, pick.colour);
-      hud.addLog(`The altar yields ${pick.name}. ${pick.effect}`, pick.colour);
-      entityPos(e, tmp);
-      fx.rise(tmp, pick.colour);
-      if (!meta.unlocked.includes(pick.id) && meta.unlocked.length < SPELLS.length) {
-        // Pages found in the dungeon become available to future runs — the
-        // knowledge-as-progression meta, rather than raw power creep.
-        meta.unlocked.push(pick.id);
-        saveMeta(meta);
-      }
-      refreshTargets();
+    hud.offers = rollAltarOffers(e);
+    hud.offerAltar = e;
+  };
+
+  /** Apply the offer the player picked, and empty the altar. */
+  const chooseOffer = (o: AltarOffer): void => {
+    const e = hud.offerAltar;
+    hud.offers = null;
+    hud.offerAltar = null;
+    if (!e) return;
+    claimedAltars.add(e);
+    void floor.spendAltar(e);
+
+    if (o.kind === 'new') {
+      state.ranks[o.id] = 1;
+      learnPage(o.id);
+      hud.setShout(`${o.name.toUpperCase()} LEARNED`, o.colour);
+      hud.addLog(`The altar yields ${o.name}. ${o.detail}`, o.colour);
+      // Deliberately NOT persisted. A page found in the dungeon belongs to this
+      // run only; next run you are back to your loadout. Golden pages are the
+      // one exception and they go through their own claim path.
+    } else if (o.kind === 'upgrade') {
+      state.ranks[o.id] = Math.min(MAX_RANK, (state.ranks[o.id] ?? 1) + 1);
+      hud.setShout(`${o.name.toUpperCase()} RANK ${state.ranks[o.id]}`, o.colour);
+      hud.addLog(`${o.name} deepens. ${o.detail}`, o.colour);
+    } else {
+      state.stars += 2;
+      hud.setShout('✦ 2 CELESTIAL STARS', 0xffcf5c);
+      hud.addLog(`${o.name} is already mastered — the altar pays in stars.`, 0xffcf5c);
     }
+
+    entityPos(e, tmp);
+    fx.rise(tmp, o.colour);
+    sfx.shimmer(o.kind === 'star' ? 720 : 880);
+    refreshTargets();
   };
 
   /**
-   * Open a chest. Chests are the run's star payout — the meta currency — plus a
-   * little healing, which is what makes a detour off the path to the boss worth
-   * taking rather than just being scenery you walk past.
+   * Open a chest. Chests are the run's star payout plus a little healing, which
+   * is what makes a detour off the path to the boss worth taking.
    */
   const openChest = (e: Entity): void => {
     if (e.kind !== 'chest' || e.spent) return;
@@ -301,10 +389,11 @@ async function boot(): Promise<void> {
     combat = new Combat(floor, state, `${runSeed}-floor-${depth}`);
     hud = new Hud(engine, state, combat, () => fan.gameIds, () => { fan.clear(); refreshTargets(); });
     hud.bookClosed = book.closed;
+    hud.bankedStars = meta.stars;
     hud.bindMap(() => ({ floor, x: stepper.x, y: stepper.y, dir: stepper.dir }));
     wireCombat();
 
-    stepper.canAct = () => !busy && !dead;
+    stepper.canAct = () => !busy && !dead && !hud.offers;
     /**
      * Furniture, altars and hostiles are solid. Your OWN golems are not — walking
      * into one swaps places with it, so a summon that follows you can never trap
@@ -446,6 +535,7 @@ async function boot(): Promise<void> {
         break;
       case 'cycle': cycleTarget(); break;
       case 'altar': takeFromAltar(a.entity); break;
+      case 'offer': chooseOffer(a.offer); break;
       case 'chest': openChest(a.entity); break;
       case 'bookToggle':
         book.closed = !book.closed;
@@ -481,9 +571,21 @@ async function boot(): Promise<void> {
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
 
-  /** Is this pointer position a book gesture rather than a dungeon gesture? */
+  /** UI actions that are explicit controls — these always beat a page gesture. */
+  const UI_CONTROLS: ReadonlySet<string> =
+    new Set(['cast', 'clear', 'descend', 'bookToggle', 'cycle', 'altar', 'chest']);
+
+  /**
+   * Is this pointer position a book gesture rather than a dungeon gesture?
+   *
+   * A HUD control wins outright, wherever it sits. The CAST pill lives right on
+   * the book's top edge, so without this a tap a few pixels low was claimed by the
+   * book and the natural jitter in a tap turned into a page flip.
+   */
   const overBook = (x: number, y: number): boolean => {
+    if (hud.offers) return false;          // the offer modal owns every tap
     if (book.closed) return false;
+    if (UI_CONTROLS.has(hud.hit(x, y).kind)) return false;
     if (book.ribbonAt(x, y) !== null) return true;
     // a couple of px of grace so the very edge of the cover still grabs
     return y > book.screenTop() - 4;
@@ -526,9 +628,13 @@ async function boot(): Promise<void> {
       onBook = false;
       book.dragEnd(vx);
       if (moved < 12) {
+        // A HUD control wins here too, not just in `overBook` — otherwise a tap
+        // that starts inside the book's zone can still leak into a chapter jump.
+        const ui = hud.hit(x, y);
+        if (UI_CONTROLS.has(ui.kind)) { act(ui); return; }
         const ribbon = book.ribbonAt(x, y);
         if (ribbon) { book.goToChapter(ribbon); return; }
-        act(hud.hit(x, y));
+        act(ui);
       }
       return;
     }
@@ -635,7 +741,11 @@ async function boot(): Promise<void> {
       return !!e;
     },
     castNow: () => doCast(),
-    grantAll: () => { state.pages = SPELLS.map((s) => s.id); setBookPages(state.pages); book.refresh(); },
+    grantAll: () => {
+      state.pages = SPELLS.map((s) => s.id);
+      state.ranks = Object.fromEntries(state.pages.map((id) => [id, 1]));
+      setBookPages(state.pages); book.refresh();
+    },
     spellNames: () => SPELLS.map((s) => `${s.glyph} ${s.name}`),
     spellById: SPELL_BY_ID,
   };

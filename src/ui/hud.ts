@@ -17,9 +17,18 @@ import type { Entity } from '../game/floor';
 import type { Combat, PlayerState } from '../game/combat';
 import { STATUS_META, displayName, type ResolvedCast } from '../spells/spells';
 import * as THREE from 'three';
-import { Tile, type Dir } from '../dungeon/grid';
+import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
 import { spriteTexture } from '../dungeon/sprites';
 import type { Floor } from '../game/floor';
+
+/** One of the three things an altar is offering. */
+export interface AltarOffer {
+  kind: 'new' | 'upgrade' | 'star';
+  id: string;
+  name: string;
+  colour: number;
+  detail: string;
+}
 
 export type UiAction =
   | { kind: 'cast' }
@@ -27,6 +36,7 @@ export type UiAction =
   | { kind: 'target'; entity: Entity }
   | { kind: 'cycle' }
   | { kind: 'bookToggle' }
+  | { kind: 'offer'; offer: AltarOffer }
   | { kind: 'altar'; entity: Entity }
   | { kind: 'chest'; entity: Entity }
   | { kind: 'move'; m: 'forward' | 'back' }
@@ -73,6 +83,13 @@ export class Hud {
   private descendReady = false;
   /** Mirrors Book.closed so the toggle can draw the right affordance. */
   bookClosed = false;
+
+  /** The three offers an altar is presenting, or null when none is open. */
+  offers: AltarOffer[] | null = null;
+  offerAltar: Entity | null = null;
+
+  /** Stars banked from previous runs, so the total is not invisible. */
+  bankedStars = 0;
 
   /** Name of the open page when it is a spell not yet learned, else null. */
   sealedPage: string | null = null;
@@ -201,6 +218,7 @@ export class Hud {
     this.drawBookToggle(ctx, W, H);
     if (this.candidates.length > 1) this.drawCycle(ctx, W);
     if (this.descendReady) this.drawDescend(ctx, W);
+    if (this.offers) this.drawOffers(ctx, W, H);
     if (this.state.hp <= 0) this.drawDeath(ctx, W, H);
   }
 
@@ -348,7 +366,15 @@ export class Hud {
 
     ctx.textAlign = 'right';
     ctx.fillStyle = GOLD;
-    ctx.fillText(`✦ ${this.state.stars}`, W - 12, 12);
+    // Run total plus the bank. Showing only the run made banked stars look lost.
+    const total = this.bankedStars + this.state.stars;
+    ctx.fillText(`✦ ${total}`, W - 12, 12);
+    if (this.state.stars > 0) {
+      ctx.font = '8px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(255,207,92,0.6)';
+      ctx.fillText(`+${this.state.stars} this run`, W - 12, 23);
+      ctx.font = '9px ui-monospace, monospace';
+    }
     ctx.textAlign = 'left';
     void 0;
   }
@@ -383,11 +409,26 @@ export class Hud {
 
     const gx = ox + 3, gy = oy + 3;
 
+    /**
+     * HEADING-LOCKED: the map rotates with you, so "up" on the map is always the
+     * way you are facing. In a stepper the question is never "where is north", it
+     * is "do I turn left or right" — and answering that off a world-aligned map
+     * means doing the rotation in your head every time.
+     *
+     * Facing is always cardinal, so this is an exact remap of which cell to
+     * sample. Nothing is interpolated and the grid stays perfectly crisp.
+     */
+    const [fx, fy] = DIR_VEC[dir];
+    const [rx, ry] = DIR_VEC[((dir + 1) % 4) as Dir];
+    /** screen offset (right, down) -> world tile offset */
+    const toWorld = (a: number, b: number): [number, number] =>
+      [a * rx - b * fx, a * ry - b * fy];
+
     /** A wall counts as known once any neighbouring floor tile has been seen. */
     const known = (tx: number, ty: number): boolean => {
       if (!g.inside(tx, ty)) return false;
       if (g.explored[g.idx(tx, ty)]) return true;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      for (const [dx, dy] of DIR_VEC) {
         const nx = tx + dx, ny = ty + dy;
         if (g.inside(nx, ny) && g.explored[g.idx(nx, ny)] && g.tiles[g.idx(nx, ny)] !== Tile.Wall) {
           return true;
@@ -398,7 +439,8 @@ export class Hud {
 
     for (let j = 0; j < N; j++) {
       for (let i = 0; i < N; i++) {
-        const tx = px - SPAN + i, ty = py - SPAN + j;
+        const [wdx, wdy] = toWorld(i - SPAN, j - SPAN);
+        const tx = px + wdx, ty = py + wdy;
         const cx = gx + i * CELL, cy = gy + j * CELL;
         if (!known(tx, ty)) continue;
         const wall = !g.inside(tx, ty) || g.tiles[g.idx(tx, ty)] === Tile.Wall;
@@ -408,20 +450,24 @@ export class Hud {
       }
     }
 
-    // things worth walking toward
+    // things worth walking toward, mapped through the same rotation
     for (const e of floor.entities) {
       if (!e.alive) continue;
-      const dx = e.sprite.tx - px, dy = e.sprite.ty - py;
-      if (Math.abs(dx) > SPAN || Math.abs(dy) > SPAN) continue;
+      if (!g.inside(e.sprite.tx, e.sprite.ty)) continue;
       if (!g.explored[g.idx(e.sprite.tx, e.sprite.ty)]) continue;
+      const edx = e.sprite.tx - px, edy = e.sprite.ty - py;
+      // project the world offset onto the player's right / forward axes
+      const a = edx * rx + edy * ry;
+      const b = -(edx * fx + edy * fy);
+      if (Math.abs(a) > SPAN || Math.abs(b) > SPAN) continue;
       const col = e.kind === 'altar' ? (e.spent ? '#6a5a80' : '#b98cff')
-        : e.kind === 'chest' ? '#ffcf5c'
+        : e.kind === 'chest' ? (e.spent ? '#7a6a44' : '#ffcf5c')
         : e.kind === 'stairs' ? '#8ce0ff'
         : e.kind === 'boss' ? '#ff4a4a'
         : e.hostile ? '#e0553c'
         : e.animated ? '#8ce06a'
         : '#8a7a68';
-      const cx = gx + (dx + SPAN) * CELL, cy = gy + (dy + SPAN) * CELL;
+      const cx = gx + (a + SPAN) * CELL, cy = gy + (b + SPAN) * CELL;
       ctx.fillStyle = col;
       ctx.fillRect(cx + 3, cy + 3, CELL - 6, CELL - 6);
     }
@@ -429,14 +475,15 @@ export class Hud {
     // the player, dead centre, as a wedge so facing is unambiguous
     const pcx = gx + SPAN * CELL + CELL / 2;
     const pcy = gy + SPAN * CELL + CELL / 2;
-    const a = [-Math.PI / 2, 0, Math.PI / 2, Math.PI][dir];
+    // The map rotates, so the marker is a fixed up-arrow. A rotating arrow on a
+    // rotating map would cancel out and tell you nothing.
     ctx.fillStyle = '#fff8e4';
     ctx.strokeStyle = '#1a1016';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(pcx + Math.cos(a) * 5, pcy + Math.sin(a) * 5);
-    ctx.lineTo(pcx + Math.cos(a + 2.45) * 4.4, pcy + Math.sin(a + 2.45) * 4.4);
-    ctx.lineTo(pcx + Math.cos(a - 2.45) * 4.4, pcy + Math.sin(a - 2.45) * 4.4);
+    ctx.moveTo(pcx, pcy - 5);
+    ctx.lineTo(pcx - 4.2, pcy + 4);
+    ctx.lineTo(pcx + 4.2, pcy + 4);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
@@ -495,7 +542,8 @@ export class Hud {
     // Directly beneath the torn pages: the button is the end of the gesture
     // chain, so it sits tight under the hand you just assembled rather than
     // floating in its own band.
-    const bx = (W - tw) / 2, by = this.bookTop - 30;
+    // Clear of the chapter tabs, which poke up past the book's top edge.
+    const bx = (W - tw) / 2, by = this.bookTop - 62;
     rr(ctx, bx, by, tw, 32, 16);
     ctx.fillStyle = ok ? 'rgba(28,18,12,0.9)' : 'rgba(70,26,26,0.86)';
     ctx.fill();
@@ -695,6 +743,62 @@ export class Hud {
     this.hits.push({ rect: [bx, by, tw, 30], action: { kind: 'descend' } });
   }
 
+  /**
+   * The altar's three offers. A modal, because this is the one moment in a run
+   * where the player should be reading rather than reacting.
+   */
+  private drawOffers(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    const offers = this.offers!;
+    ctx.fillStyle = 'rgba(8,5,12,0.86)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 12px ui-monospace, monospace';
+    ctx.fillStyle = '#b98cff';
+    ctx.fillText('THE ALTAR OFFERS', W / 2, H * 0.16);
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.55)';
+    ctx.fillText('choose one', W / 2, H * 0.16 + 16);
+
+    const cw = W - 48, ch = 78, gap = 12;
+    const total = offers.length * ch + (offers.length - 1) * gap;
+    let y = H / 2 - total / 2;
+
+    for (const o of offers) {
+      const x = 24;
+      rr(ctx, x, y, cw, ch, 8);
+      ctx.fillStyle = 'rgba(26,18,32,0.96)';
+      ctx.fill();
+      ctx.strokeStyle = hexCss(o.colour, 0.9);
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+
+      // a colour flash down the leading edge, so the three read as distinct
+      ctx.fillStyle = hexCss(o.colour, 0.85);
+      ctx.fillRect(x + 1, y + 10, 4, ch - 20);
+
+      const tag = o.kind === 'new' ? 'NEW SPELL'
+        : o.kind === 'upgrade' ? 'UPGRADE'
+        : 'CELESTIAL STARS';
+      ctx.textAlign = 'left';
+      ctx.font = '8px ui-monospace, monospace';
+      ctx.fillStyle = hexCss(o.colour, 0.85);
+      ctx.fillText(tag, x + 18, y + 14);
+
+      ctx.font = 'bold 15px ui-serif, Georgia, serif';
+      ctx.fillStyle = '#fff4dc';
+      ctx.fillText(o.kind === 'star' ? '✦  +2 Stars' : o.name, x + 18, y + 30);
+
+      ctx.font = '9px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(226,216,200,0.75)';
+      wrapLeft(ctx, o.detail, x + 18, y + 52, cw - 40, 12);
+
+      this.hits.push({ rect: [x, y, cw, ch], action: { kind: 'offer', offer: o } });
+      y += ch + gap;
+    }
+    ctx.textAlign = 'left';
+  }
+
   private drawDeath(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     ctx.fillStyle = 'rgba(8,4,10,0.72)';
     ctx.fillRect(0, 0, W, H);
@@ -704,7 +808,10 @@ export class Hud {
     ctx.fillText('YOU DIED', W / 2, H * 0.38);
     ctx.font = '10px ui-monospace, monospace';
     ctx.fillStyle = PARCH;
-    ctx.fillText(`depth ${this.state.depth}  \u00b7  \u2726 ${this.state.stars} earned`, W / 2, H * 0.44);
+    ctx.fillText(
+      `depth ${this.state.depth}  \u00b7  \u2726 ${this.state.stars} earned  \u00b7  \u2726 ${this.bankedStars + this.state.stars} banked`,
+      W / 2, H * 0.44,
+    );
     ctx.fillStyle = 'rgba(232,217,176,0.6)';
     ctx.fillText('tap to return to the surface', W / 2, H * 0.52);
     ctx.textAlign = 'left';
@@ -737,4 +844,19 @@ export class Hud {
     world.sort((a, b) => a.d2 - b.d2);
     return world[0].action;
   }
+}
+
+/** Left-aligned word wrap for the offer cards. */
+function wrapLeft(
+  ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number, lh: number,
+): void {
+  let line = '', yy = y;
+  for (const w of text.split(' ')) {
+    const test = line ? `${line} ${w}` : w;
+    if (ctx.measureText(test).width > maxW && line) {
+      ctx.fillText(line, x, yy);
+      line = w; yy += lh;
+    } else line = test;
+  }
+  if (line) ctx.fillText(line, x, yy);
 }

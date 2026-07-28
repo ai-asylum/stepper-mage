@@ -33,11 +33,23 @@ export interface Combatant {
   damage: number;
 }
 
+/** A page can be upgraded twice; past that a duplicate draw pays out a star. */
+export const MAX_RANK = 3;
+
 export interface PlayerState {
   hp: number;
   maxHp: number;
   /** Page ids in the book. Duplicates are allowed and empower casts. */
   pages: string[];
+  /**
+   * Rank per owned page, 1..MAX_RANK.
+   *
+   * Rank is expressed by counting the page as that many COPIES when the cast
+   * resolves, which means it reuses the empowerment ladder that already exists
+   * (Greater / Mighty) rather than bolting a separate damage multiplier on. A
+   * rank-2 Fireball torn once resolves exactly as two torn Fireballs would.
+   */
+  ranks: Record<string, number>;
   stars: number;
   depth: number;
 }
@@ -92,9 +104,22 @@ export class Combat {
 
   // ------------------------------------------------------------------ casting
 
+  /**
+   * Expand torn pages by their rank, so an upgraded page empowers the cast
+   * without the player having to tear the same spell twice.
+   */
+  private byRank(pages: string[]): string[] {
+    const out: string[] = [];
+    for (const id of pages) {
+      const n = Math.max(1, this.state.ranks[id] ?? 1);
+      for (let i = 0; i < n; i++) out.push(id);
+    }
+    return out;
+  }
+
   /** Can this selection be cast at this target right now? */
   preview(pages: string[], target: CastTarget): ResolvedCast {
-    return resolveCast(pages, target);
+    return resolveCast(this.byRank(pages), target);
   }
 
   /**

@@ -213,7 +213,23 @@ export class Book {
    * in portrait) — one per chapter, in its school color. The open chapter's
    * tab pulls out further. Tap one to leaf to that chapter.
    */
+  /**
+   * Chapter tabs are OFF.
+   *
+   * They competed with the CAST pill for the same pixels and their hit boxes
+   * leaked taps through it. A page-count threshold was the wrong fix — it just
+   * made them reappear the moment you picked up spells. The geometry is kept
+   * intact so this can become a star unlock later; until then it stays a hard
+   * off, not a condition.
+   */
+  private static ribbonsEnabled = false;
+
   private buildRibbons() {
+    // clear any existing tabs — this is re-run when the page list changes
+    for (const r of this.ribbons) this.group.remove(r.mesh);
+    this.ribbons.length = 0;
+    if (!Book.ribbonsEnabled) return;
+
     const len = 0.06; // tab length (mostly tucked under the stack)
     const h = 0.03; // tab width
     const shape = new THREE.Shape();
@@ -262,7 +278,10 @@ export class Book {
       tip.set(0.05, 0, 0.0017); // near the swallowtail, in tab-local space
       r.mesh.localToWorld(tip);
       if (!projectToScreen(tip.x, tip.y, tip.z, out)) continue;
-      if (Math.abs(out.x - px) < 34 && Math.abs(out.y - py) < 30) return r.school;
+      // Tightened from upstream's 34x30: these tabs sit directly under the CAST
+      // pill here, and a generous box meant taps on the pill leaked through to a
+      // chapter jump.
+      if (Math.abs(out.x - px) < 20 && Math.abs(out.y - py) < 18) return r.school;
     }
     return null;
   }
@@ -469,6 +488,7 @@ export class Book {
   refresh(): void {
     if (!SPELLS.length) return;
     this.index = Math.min(this.index, SPELLS.length - 1);
+    this.buildRibbons();
     this.flipTarget = -1;
     this.flipActive = false;
     this.flipAnim = null;
