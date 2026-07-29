@@ -6,3 +6,5 @@ _shots
 tools/_dbg
 art/_work
 .env*
+dist-playable
+ads/playable/*.map

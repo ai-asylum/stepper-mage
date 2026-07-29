@@ -16,6 +16,7 @@
  * which is why it looks like weight rather than scaling.
  */
 import * as THREE from 'three';
+import { assetUrl } from 'playable-kit/runtime';
 import { PPU } from '../art/tiles';
 import type { WorldUniforms } from './render';
 
@@ -153,7 +154,9 @@ export function loadSprite(id: string): Promise<THREE.Texture> {
   return new Promise((resolve, reject) => {
     const loader = new THREE.TextureLoader();
     loader.load(
-      `art/${id}.png`,
+      // Inside the playable-ad bundle this resolves to an embedded data URI;
+      // on web/Android the path falls through untouched.
+      assetUrl(`art/${id}.png`),
       (tex) => {
         tex.magFilter = THREE.NearestFilter;
         tex.minFilter = THREE.NearestFilter;

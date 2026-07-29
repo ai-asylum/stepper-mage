@@ -32,6 +32,32 @@ npm run dev          # http://localhost:5199
 npm run build
 ```
 
+## The playable ad
+
+```bash
+npm run build:playable                       # → ads/playable/index.html
+npx playable-smoke ads/playable/index.html   # headless behavioural check
+```
+
+One self-contained HTML file running the **real game** — `playable.html` boots
+`src/playable/`, which imports `src/main.ts` unchanged and layers the ad chrome
+(store CTA, end card, `ALPlayableAnalytics`) on top. Sprites are embedded as data
+URIs by the manifest in `scripts/build-playable.mjs` and resolved through
+`playable-kit/runtime`, so the creative makes no network requests while the web
+build is byte-for-byte the same fetch path it always was.
+
+The build/embed/verify pipeline is [`ai-asylum/playable-kit`](https://github.com/ai-asylum/playable-kit),
+vendored as a tarball in `vendor/` (never a `github:` dep — npm resolves those
+over ssh on CI runners, where there is no key). The kit owns the parts that must
+not drift per game, above all **`build.target: 'es2020'`**: ad WebViews are an
+old fleet, es2021+ syntax parse-errors there, and the whole creative dies before
+line one while impressions keep billing.
+
+> **The CTA is a placeholder.** Stepper Mage has no `capacitor.config.*` and no
+> Play listing, so there is no real appId. The build warns about this every run.
+> Set `PLAYABLE_APP_ID=<real.package.id>` before any campaign upload — and never
+> point it at the fake door, which detours the click out of store attribution.
+
 Useful harnesses:
 
 ```bash
@@ -67,3 +93,4 @@ for regeneration.
 | `src/book/` | the grimoire, ported from `ai-asylum/spellbook` |
 | `src/game/` | floors, population, stepper movement, turn-based combat |
 | `src/ui/` | HUD, minimap, targeting |
+| `src/playable/` | ad-only shell: CTA, end card, analytics (not in the web build) |

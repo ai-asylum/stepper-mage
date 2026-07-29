@@ -7,11 +7,15 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "build:playable": "node scripts/build-playable.mjs",
     "shot": "node tools/shot.mjs"
   },
-  "dependencies": { "three": "^0.169.0" },
+  "dependencies": {
+    "three": "^0.169.0"
+  },
   "devDependencies": {
     "@types/three": "^0.169.0",
+    "playable-kit": "file:vendor/playable-kit-1.0.0.tgz",
     "playwright-core": "^1.62.0",
     "typescript": "^5.9.3",
     "vite": "^5.4.21"

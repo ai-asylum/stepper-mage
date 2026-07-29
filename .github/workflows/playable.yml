@@ -1,0 +1,13 @@
+name: Playable
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  playable:
+    uses: ai-asylum/playable-kit/.github/workflows/playable-check.yml@v1
+    permissions:
+      contents: write
