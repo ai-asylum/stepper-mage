@@ -1,8 +1,8 @@
 # Star Tree
 
 **Player-facing:** yes
-**Started:** —
-**Status:** planned
+**Started:** 2026-07-29 13:30
+**Status:** shipped
 
 The pre-dungeon spend screen: a skill tree with prerequisite edges, fully refundable.
 

@@ -7,6 +7,7 @@ import {
 } from './game/combat';
 import { CastFx } from './spells/vfx';
 import { Hud, type AltarOffer } from './ui/hud';
+import { TreeScreen, type TreeAction } from './ui/tree';
 import { Book } from './book/book';
 import { Fan } from './book/fan';
 import {
@@ -24,6 +25,11 @@ import { THEMES } from './art/theme';
 import {
   CHEST_HEAL_SPREAD, PLAYER_MAX_HP, chestHealBase, descendHeal, healable,
 } from './game/tuning';
+import {
+  NODE_BY_ID, TREE, derivedBeltSlots, derivedGolemInfusion, derivedGolemsKept,
+  derivedHandSize, derivedSlots, buyBlocker, isNodeId, migrateOwned, owns,
+  refundBlocker, sanitizeOwned, type NodeId,
+} from './meta/tree';
 
 /**
  * Persisted meta.
@@ -43,7 +49,10 @@ interface Meta {
   stars: number;
   /** The pages you begin every run holding. */
   loadout: string[];
-  /** How many pages the starting book can hold. */
+  /**
+   * How many pages the starting book can hold. DERIVED from `nodes` — see
+   * `applyTree`, which is the only thing allowed to write it.
+   */
   slots: number;
   /**
    * How many components you can hold at once — the fusion ceiling.
@@ -52,9 +61,13 @@ interface Meta {
    * than taught: you buy the second slot, try holding two pages, and work out
    * combining for yourself. Nothing to do with `slots`, which is how big the
    * starting book is.
+   *
+   * Also DERIVED from `nodes`, for the same reason and through the same writer.
    */
   handSize: number;
   best: number;
+  /** The star tree nodes you own. The only thing on this object that is bought. */
+  nodes: NodeId[];
 }
 
 const META_KEY = 'stepper-mage.meta.v1';
@@ -69,15 +82,44 @@ const DEFAULT_LOADOUT = ['fire', 'frost', 'spark'];
 
 /**
  * A saved number is whatever was in localStorage — hand-edited, half-written by a
- * crash, or from a build that stored something else entirely. Both fields this
- * guards are ceilings, and a broken ceiling is not a cosmetic bug: a non-numeric
- * `handSize` made every `fan.count >= handSize()` comparison false (an unbounded
- * hand), and a `slots` of zero emptied the starting loadout, which left the book
- * falling back to a page the player has not learned and can never tear.
+ * crash, or from a build that stored something else entirely.
+ *
+ * `handSize` and `slots` are no longer read out of a save as answers — the star
+ * tree derives them, see `applyTree` — but they still pass through here on their
+ * way into `migrateOwned`, where a NaN would read an old save back as owning the
+ * wrong nodes. The failure that put this here is worth keeping in view: a
+ * non-numeric `handSize` made every `fan.count >= handSize()` comparison false,
+ * which is an unbounded hand.
  */
 function savedCount(v: unknown, fallback: number, min: number): number {
   const n = Math.floor(Number(v));
   return Math.max(min, Number.isFinite(n) ? n : fallback);
+}
+
+/**
+ * Recompute everything the star tree DERIVES, and the only place `handSize` and
+ * `slots` are ever written.
+ *
+ * Both fields already existed and are already read by gameplay — `handSize` every
+ * frame through the `handSize()` accessor, `slots` by every golden-page claim — so
+ * the one thing this phase must not do is add a second copy of the answer. Owning
+ * `hand2` does not SET the hand size; the hand size is a function of the owned set
+ * and nothing else, which is what makes it impossible for a refund to leave a
+ * stale ceiling behind. There is no write path that could disagree, because there
+ * is no other write path.
+ *
+ * Called on load and after every purchase and refund. Idempotent by construction.
+ */
+function applyTree(m: Meta): Meta {
+  m.nodes = sanitizeOwned(m.nodes);
+  m.handSize = derivedHandSize(m.nodes);
+  m.slots = derivedSlots(m.nodes);
+  // Refunding the fourth binding has to give the fourth page back too, or the
+  // loadout keeps a slot nobody owns. Trimmed from the FRONT for the same reason
+  // `claimGolden` trims from the front: the last page in the book is the one the
+  // player chose to put there, and the first ones are the defaults.
+  if (m.loadout.length > m.slots) m.loadout = m.loadout.slice(m.loadout.length - m.slots);
+  return m;
 }
 
 function loadMeta(): Meta {
@@ -89,26 +131,30 @@ function loadMeta(): Meta {
       // count so an old save that had accumulated every page does not carry that
       // advantage into the corrected rules.
       const legacy = Array.isArray(m.unlocked) ? m.unlocked : [];
-      const slots = savedCount(m.slots, 3, 1);
       const loadout = (Array.isArray(m.loadout) && m.loadout.length ? m.loadout : legacy)
         .filter(isPageElement);
-      return {
+      return applyTree({
         // Counts, not ceilings, but through the same coercion: a NaN here renders
         // as "✦ NaN" and poisons every total it is added to.
         stars: savedCount(m.stars, 0, 0),
-        // Sliced AFTER the fallback, so a save whose loadout filtered down to
-        // nothing still starts with a book rather than with one sealed page.
-        loadout: (loadout.length ? loadout : DEFAULT_LOADOUT).slice(0, slots),
-        slots,
-        // A save from before the turn economy has no hand size, and it must
-        // migrate to ONE rather than to the old hardcoded three — the pre-reset
-        // saves paid nothing for those slots.
-        handSize: savedCount(m.handSize, 1, 1),
+        // The fallback comes first, so a save whose loadout filtered down to
+        // nothing still starts with a book rather than with one sealed page;
+        // `applyTree` is what clamps it to the slots the tree actually grants.
+        loadout: loadout.length ? loadout : [...DEFAULT_LOADOUT],
+        // Deliberately not given a value here. `applyTree` is their one writer,
+        // and a literal would be exactly the second source of truth this phase
+        // exists to avoid. A save from before the tree has no owned set, so its
+        // saved ceilings are read BACK into one — see `migrateOwned`.
+        slots: 0,
+        handSize: 0,
         best: savedCount(m.best, 0, 0),
-      };
+        nodes: migrateOwned(m.nodes, savedCount(m.handSize, 1, 1), savedCount(m.slots, 3, 1)),
+      });
     }
   } catch { /* corrupt or unavailable storage: fall through to defaults */ }
-  return { stars: 0, loadout: [...DEFAULT_LOADOUT], slots: 3, handSize: 1, best: 0 };
+  return applyTree({
+    stars: 0, loadout: [...DEFAULT_LOADOUT], slots: 0, handSize: 0, best: 0, nodes: [],
+  });
 }
 
 function saveMeta(m: Meta): void {
@@ -1099,13 +1145,29 @@ async function boot(): Promise<void> {
     document.getElementById('boot')?.classList.add('gone');
   };
 
-  const checkDeath = (): void => {
-    if (state.hp > 0 || dead) return;
+  /**
+   * The one place a run ends, whichever way it ended.
+   *
+   * Both endings bank, both shut the book and both put up the same card — which is
+   * what makes the tree the single destination. `earned` is passed rather than read
+   * off `state`, because the vault pays a bonus the run never held.
+   */
+  const endRun = (kind: 'died' | 'won', earned: number): void => {
     dead = true;
-    engine.setDesat(0.85);
-    meta.stars += state.stars;
+    meta.stars += earned;
     meta.best = Math.max(meta.best, state.depth);
     saveMeta(meta);
+    // The grimoire shuts. An open book under the run-end card is a lit, legible
+    // control on a screen that has none, and it is the brightest thing on the frame.
+    book.closed = true;
+    hud.bookClosed = true;
+    hud.runEnd = { kind, depth: state.depth, earned };
+  };
+
+  const checkDeath = (): void => {
+    if (state.hp > 0 || dead) return;
+    engine.setDesat(0.85);
+    endRun('died', state.stars);
   };
 
   const descend = async (): Promise<void> => {
@@ -1115,19 +1177,159 @@ async function boot(): Promise<void> {
     const d = Math.abs(st.sprite.tx - stepper.x) + Math.abs(st.sprite.ty - stepper.y);
     if (d > 1) { hud.addLog('The stairs are further in.'); return; }
     if (state.depth >= THEMES.length) {
-      hud.setShout('THE VAULT IS YOURS', 0xffe58a);
-      hud.addLog('You have taken everything the dungeon had. For now.', 0xffe58a);
-      meta.stars += state.stars + 25;
-      meta.best = THEMES.length;
-      saveMeta(meta);
-      dead = true;
       engine.setDesat(0.5);
+      // Winning ends the run too, and it ends it holding the biggest bank the game
+      // ever hands out — so it leads to the tree by the same card and the same tap.
+      // Anything else makes the best outcome in the game the one dead end in it.
+      // The shout and the log line this used to raise are now ON that card: neither
+      // draws under it, and announcing the vault twice in two fonts read as a fault.
+      endRun('won', state.stars + 25);
       return;
     }
     // Heal on descent, sized off the depth being LEFT, so a good floor is rewarded
     // but attrition is real.
     state.hp += healable(state.hp, state.maxHp, descendHeal(state.depth));
     await enterFloor(state.depth + 1);
+  };
+
+  // ---------------------------------------------------------------- the star tree
+
+  /**
+   * Everything a purchase or a refund has to settle, in one place.
+   *
+   * The tree screen and the death-screen routing are a follow-up task; what has to
+   * exist first is that buying and selling are a single transaction — derive, save,
+   * and reconcile the live run with the new ceiling — so that no caller can perform
+   * half of one.
+   */
+  const afterTreeChange = (): void => {
+    applyTree(meta);
+    saveMeta(meta);
+    // A refund can drop the ceiling below what is already torn out. Returning a
+    // component is free and never punished (`docs/DESIGN.md`, Turn economy), so the
+    // hand goes back in the book rather than the ceiling being quietly exceeded.
+    if (fan.count > handSize()) { fan.clear(); refreshTargets(); }
+    hud.bankedStars = meta.stars;
+  };
+
+  interface TreeResult {
+    ok: boolean;
+    reason: string | null;
+    stars: number;
+    owned: NodeId[];
+    handSize: number;
+    slots: number;
+    /** Starting-book pages a refund gave up. Empty for everything but `slots4`. */
+    dropped: string[];
+  }
+
+  const treeResult = (ok: boolean, reason: string | null, dropped: string[] = []): TreeResult => ({
+    ok, reason, dropped,
+    stars: meta.stars, owned: [...meta.nodes], handSize: meta.handSize, slots: meta.slots,
+  });
+
+  const buyNode = (id: string): TreeResult => {
+    const why = buyBlocker(id, meta.nodes, meta.stars);
+    if (why || !isNodeId(id)) return treeResult(false, why ?? `No such node: ${id}.`);
+    meta.stars -= NODE_BY_ID[id].price;
+    meta.nodes = [...meta.nodes, id];
+    afterTreeChange();
+    return treeResult(true, null);
+  };
+
+  /**
+   * Sell a node back at exactly what it cost.
+   *
+   * Refused while anything that requires it is owned — see `refundBlocker` for why
+   * that is the rule rather than a cascade. The one thing a legal refund can still
+   * destroy is a page: selling the fourth binding gives up the fourth slot, so a
+   * golden page sitting in it is reported back rather than vanishing quietly.
+   */
+  const refundNode = (id: string): TreeResult => {
+    const why = refundBlocker(id, meta.nodes);
+    if (why || !isNodeId(id)) return treeResult(false, why ?? `No such node: ${id}.`);
+    const before = meta.loadout;
+    meta.stars += NODE_BY_ID[id].price;
+    meta.nodes = meta.nodes.filter((n) => n !== id);
+    afterTreeChange();
+    return treeResult(true, null, before.filter((p) => !meta.loadout.includes(p)));
+  };
+
+  /**
+   * The tree screen, and whether it currently owns the frame.
+   *
+   * It is a MODE rather than an overlay: while it is up the HUD is not drawn, not
+   * hit-tested and not laid out, because a run that has ended has no controls worth
+   * routing and two live hit-test surfaces on one canvas is the bug that would come
+   * of drawing both.
+   */
+  let treeOpen = false;
+  const treeScreen = new TreeScreen(() => ({
+    stars: meta.stars,
+    owned: meta.nodes,
+    handSize: meta.handSize,
+    slots: meta.slots,
+    /**
+     * What a refund would cost beyond stars. Selling a slot node drops pages off
+     * the front of the loadout (`applyTree`), and the only page that can be in
+     * there is one a golden altar offer put there — so it is named before the tap
+     * rather than reported after it.
+     */
+    atRisk: (id) => {
+      const lose = meta.loadout.length - derivedSlots(meta.nodes.filter((n) => n !== id));
+      return lose <= 0 ? [] : meta.loadout.slice(0, lose).map((p) => SPELL_BY_ID[p]?.name ?? p);
+    },
+  }));
+
+  /** Only ever from a finished run: the tree is between runs, not inside one. */
+  const openTree = (): void => {
+    if (!dead || treeOpen) return;
+    treeOpen = true;
+    treeScreen.open();
+  };
+
+  const actTree = (a: TreeAction): void => {
+    switch (a.kind) {
+      case 'buy': {
+        const r = buyNode(a.id);
+        if (r.ok) sfx.shimmer(760);
+        else sfx.deny();
+        treeScreen.say(
+          r.ok ? `${NODE_BY_ID[a.id].name} is yours — ✦ ${NODE_BY_ID[a.id].price} spent.`
+            : r.reason ?? '',
+          !r.ok,
+        );
+        break;
+      }
+      case 'sell': {
+        const r = refundNode(a.id);
+        if (r.ok) sfx.pageFlip();
+        else sfx.deny();
+        treeScreen.say(
+          r.ok
+            ? `${NODE_BY_ID[a.id].name} sold — ✦ ${NODE_BY_ID[a.id].price} back.`
+              + (r.dropped.length
+                ? ` Your book gave up ${r.dropped.map((p) => SPELL_BY_ID[p]?.name ?? p).join(' and ')}.`
+                : '')
+            : r.reason ?? '',
+          !r.ok,
+        );
+        break;
+      }
+      /**
+       * A fresh run is a RELOAD, deliberately.
+       *
+       * Everything a run holds lives in `boot`'s closure — the floor, the stepper,
+       * the combat, the book's pages, the fan, the seed, the depth — and there is no
+       * existing path that resets them together. Reloading re-reads `meta` from
+       * storage, which every purchase has already written, so the reload is honest:
+       * you spent, and the dungeon is new. A partial reset of half a dozen closures
+       * would be the more impressive answer and the one that leaves a stale floor
+       * standing.
+       */
+      case 'start': location.reload(); break;
+      case 'none': break;
+    }
   };
 
   await enterFloor(1);
@@ -1177,7 +1379,10 @@ async function boot(): Promise<void> {
     hud.update(dt);
   };
 
-  engine.onRender = (ctx) => hud.draw(ctx);
+  engine.onRender = (ctx) => {
+    if (treeOpen) treeScreen.draw(ctx, engine.sw, engine.sh);
+    else hud.draw(ctx);
+  };
 
   // ---------------------------------------------------------------------- input
 
@@ -1234,8 +1439,13 @@ async function boot(): Promise<void> {
 
   const act = (a: ReturnType<Hud['hit']>): void => {
     if (dead) {
-      // tap anywhere to start a fresh run
-      location.reload();
+      /**
+       * A finished run has exactly one way on: the star tree, where the stars it
+       * just banked are spent. Any tap takes it — the run-end card's button (a
+       * `tree` action) is the affordance, not the only route, which is why there is
+       * no case for it below.
+       */
+      openTree();
       return;
     }
     switch (a.kind) {
@@ -1278,6 +1488,15 @@ async function boot(): Promise<void> {
 
   let onBook = false;
   let px0 = 0, py0 = 0, lastT = 0, lastX = 0, vx = 0;
+  /**
+   * The tree screen's drag, which is a SCROLL and not a gesture.
+   *
+   * It is the one scrollable surface in the game — twelve cards do not fit on a
+   * phone — so it needs its own pointer branch rather than a share of the dungeon's:
+   * `treeMoved` is what separates a drag from a tap, and without it every scroll
+   * ends by buying whatever card the thumb came to rest on.
+   */
+  let treeDown = false, treeY0 = 0, treeScroll0 = 0, treeMoved = 0;
   /** Latch so one refused tear makes one sound, not one per pointermove. */
   let deniedThisDrag = false;
 
@@ -1288,7 +1507,7 @@ async function boot(): Promise<void> {
 
   /** UI actions that are explicit controls — these always beat a page gesture. */
   const UI_CONTROLS: ReadonlySet<string> =
-    new Set(['cast', 'clear', 'descend', 'bookToggle', 'cycle', 'altar', 'chest', 'harvest']);
+    new Set(['cast', 'clear', 'descend', 'bookToggle', 'cycle', 'altar', 'chest', 'harvest', 'tree']);
 
   /**
    * Is this pointer position a book gesture rather than a dungeon gesture?
@@ -1309,6 +1528,10 @@ async function boot(): Promise<void> {
   stage.addEventListener('pointerdown', (e) => {
     sfx.unlock();                       // browsers gate audio behind a gesture
     const { x, y } = local(e);
+    if (treeOpen) {
+      treeDown = true; treeY0 = y; treeScroll0 = treeScreen.scroll; treeMoved = 0;
+      return;
+    }
     st = performance.now();
     px0 = x; py0 = y; lastX = x; lastT = st; vx = 0;
     deniedThisDrag = false;
@@ -1317,6 +1540,13 @@ async function boot(): Promise<void> {
   });
 
   stage.addEventListener('pointermove', (e) => {
+    if (treeOpen) {
+      if (!treeDown) return;
+      const dy = local(e).y - treeY0;
+      treeMoved = Math.max(treeMoved, Math.abs(dy));
+      treeScreen.scrollTo(treeScroll0 - dy);
+      return;
+    }
     if (!onBook || dead) return;
     const { x, y } = local(e);
     const now = performance.now();
@@ -1340,7 +1570,15 @@ async function boot(): Promise<void> {
 
   stage.addEventListener('pointerup', (e) => {
     const { x, y } = local(e);
-    if (dead) { location.reload(); return; }
+    if (treeOpen) {
+      treeDown = false;
+      // A scroll that happens to end over a card must not buy it.
+      if (treeMoved < 10) actTree(treeScreen.hit(x, y));
+      return;
+    }
+    // A finished run resolves its tap through the HUD, so the run-end card's door to
+    // the tree is a real control — and `act` sends every other tap the same way.
+    if (dead) { act(hud.hit(x, y)); return; }
     const moved = Math.hypot(x - px0, y - py0);
 
     if (onBook) {
@@ -1366,7 +1604,15 @@ async function boot(): Promise<void> {
       else stepper.press({ kind: 'turn', d: dx < 0 ? -1 : 1 });
     }
   });
-  stage.addEventListener('pointercancel', () => { onBook = false; book.dragEnd(0); });
+  stage.addEventListener('pointercancel', () => {
+    onBook = false; treeDown = false; book.dragEnd(0);
+  });
+  // Desktop's scroll, since the tree is taller than any window it will be read in.
+  stage.addEventListener('wheel', (e) => {
+    if (!treeOpen) return;
+    e.preventDefault();
+    treeScreen.scrollBy(e.deltaY);
+  }, { passive: false });
 
   const keys: Record<string, () => void> = {
     ArrowUp: () => stepper.press({ kind: 'move', m: 'forward' }),
@@ -1397,6 +1643,14 @@ async function boot(): Promise<void> {
     keys[`Digit${i}`] = () => tearPage(i - 1);
   }
   window.addEventListener('keydown', (e) => {
+    // The tree owns the keyboard while it is up: every other binding drives a run
+    // that has already ended.
+    if (treeOpen) {
+      if (e.code === 'Enter') { e.preventDefault(); location.reload(); }
+      else if (e.code === 'ArrowDown') { e.preventDefault(); treeScreen.scrollBy(70); }
+      else if (e.code === 'ArrowUp') { e.preventDefault(); treeScreen.scrollBy(-70); }
+      return;
+    }
     const fn = keys[e.code];
     if (fn) { e.preventDefault(); fn(); }
   });
@@ -1645,6 +1899,62 @@ async function boot(): Promise<void> {
     },
     /** Same reach rule. Heals by `chestHealBase(depth)` and pays stars. */
     openChest: (e: Entity) => { openChest(e); },
+    /**
+     * The star tree, as data plus the two transactions.
+     *
+     * The tree screen is a follow-up task, so this is the ONLY way the tree can be
+     * driven today — and this project's only tests are these harnesses, so a node
+     * that cannot be bought from here is a node nothing verifies. `tree()` carries
+     * the prices and the edges rather than making a caller import the module, and
+     * `live` says whether the effect lands now or is recorded for the phase in
+     * `lands`.
+     */
+    tree: () => TREE.map((n) => ({ ...n, owned: owns(meta.nodes, n.id) })),
+    /** Everything the tree currently grants, derived — never stored twice. */
+    treeState: () => ({
+      stars: meta.stars,
+      owned: [...meta.nodes],
+      handSize: meta.handSize,
+      slots: meta.slots,
+      beltSlots: derivedBeltSlots(meta.nodes),
+      golemsKept: derivedGolemsKept(meta.nodes),
+      golemInfusion: derivedGolemInfusion(meta.nodes),
+    }),
+    /** The one question a later phase asks: is this owned? */
+    hasNode: (id: string) => owns(meta.nodes, id),
+    /**
+     * The tree SCREEN, as opposed to the tree.
+     *
+     * `controls` is the load-bearing one: every card is measured from its own copy
+     * and the list scrolls, so where a node's card IS this frame is only answerable
+     * by asking — the same reason `hudAt` exists. `tapTree` then drives the real
+     * dispatch, refusals included.
+     */
+    openTree: () => { openTree(); return treeOpen; },
+    treeOpen: () => treeOpen,
+    treeControls: () => treeScreen.controls(),
+    treeMessage: () => treeScreen.message,
+    treeReveal: (id: string) => (isNodeId(id) ? treeScreen.reveal(id) : false),
+    treeScrollBy: (dy: number) => { treeScreen.scrollBy(dy); return treeScreen.scroll; },
+    tapTree: (x: number, y: number) => {
+      const a = treeScreen.hit(x, y);
+      actTree(a);
+      return a.kind;
+    },
+    /** Both return why they refused rather than a bare false. */
+    buyNode: (id: string) => buyNode(id),
+    refundNode: (id: string) => refundNode(id),
+    /**
+     * Bank stars outright, so the SPEND path is drivable without first playing the
+     * runs that would pay for it — the same reason `grantRerolls` exists. Sets
+     * rather than adds, and goes through the same transaction, so the bank the HUD
+     * shows and the saved bank cannot part company.
+     */
+    grantStars: (n: number) => {
+      meta.stars = Math.max(0, Math.floor(n));
+      afterTreeChange();
+      return meta.stars;
+    },
     grantAll: () => {
       state.pages = ELEMENT_SPELLS.map((s) => s.id);
       state.ranks = Object.fromEntries(state.pages.map((id) => [id, 1]));

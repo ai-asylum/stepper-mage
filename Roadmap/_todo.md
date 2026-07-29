@@ -58,13 +58,13 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 4 — Star_Tree
 
-- [ ] Build the pre-dungeon tree screen with prerequisite edges and refunds.
-- [ ] Add nodes: hand size 2 and 3, belt 3 and 6, corpse raising, altar pool, loadout slots.
-- [ ] Add golem-on-descent nodes: keep one, keep its rank and infusion, keep two.
-- [ ] Make belt nodes require hand size 2, since every ingredient needs something to modify.
-- [ ] Persist purchases and refunds in `meta`, with save migration.
-- [ ] Route the death screen into the tree instead of reloading the page.
-- [ ] Commit changes.
+- [x] Build the pre-dungeon tree screen with prerequisite edges and refunds.
+- [x] Add nodes: hand size 2 and 3, belt 3 and 6, corpse raising, altar pool, loadout slots.
+- [x] Add golem-on-descent nodes: keep one, keep its rank and infusion, keep two.
+- [x] Make belt nodes require hand size 2, since every ingredient needs something to modify.
+- [x] Persist purchases and refunds in `meta`, with save migration.
+- [x] Route the death screen into the tree instead of reloading the page.
+- [x] Commit changes.
 
 ## Phase 5 — Ingredient_Belt
 

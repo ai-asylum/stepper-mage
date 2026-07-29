@@ -107,6 +107,12 @@ export type UiAction =
   | { kind: 'move'; m: 'forward' | 'back' }
   | { kind: 'turn'; d: -1 | 1 }
   | { kind: 'descend' }
+  /**
+   * Leave a finished run for the star tree. The run-end card's own button — any
+   * tap on that card goes the same way, so this is the affordance rather than the
+   * only route, and it exists so the thing drawn under the thumb is a real control.
+   */
+  | { kind: 'tree' }
   | { kind: 'none' };
 
 interface FloatNum {
@@ -116,16 +122,21 @@ interface FloatNum {
 }
 interface LogLine { text: string; colour: number; t: number; }
 
-const GOLD = '#ffcf5c';
-const PARCH = '#e8d9b0';
+/**
+ * The palette and the two paint helpers, exported because the star tree screen
+ * (`ui/tree.ts`) is a second surface in the same idiom. Exported one way only: the
+ * HUD knows nothing about that screen.
+ */
+export const GOLD = '#ffcf5c';
+export const PARCH = '#e8d9b0';
 
-function hexCss(n: number, a = 1): string {
+export function hexCss(n: number, a = 1): string {
   const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
   return a >= 1 ? `rgb(${r},${g},${b})` : `rgba(${r},${g},${b},${a})`;
 }
 
 /** Rounded rect path helper — the UI's one shape. */
-function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+export function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -159,6 +170,19 @@ export class Hud {
 
   /** Stars banked from previous runs, so the total is not invisible. */
   bankedStars = 0;
+
+  /**
+   * How the run ended, or null while it is still live.
+   *
+   * Set by the game rather than inferred from `hp <= 0`, because a run also ends by
+   * being WON — the vault is taken with health to spare — and that ending has to
+   * land on the same card and lead to the same place. `earned` is passed in for the
+   * same reason: the vault pays a bonus on top of the run's stars, so the number on
+   * the card cannot be recomputed here without knowing about that bonus. It is also
+   * what the bank is derived from, since `bankedStars` is still the pre-run figure —
+   * the same one the top bar adds the run's own stars to.
+   */
+  runEnd: { kind: 'died' | 'won'; depth: number; earned: number } | null = null;
 
   /** Name of the open page when it is a spell not yet learned, else null. */
   sealedPage: string | null = null;
@@ -305,6 +329,16 @@ export class Hud {
     this.drawWorldOverlay(ctx);
     this.drawTopBar(ctx, W);
     this.drawMiniMap(ctx, W);
+
+    /**
+     * A finished run keeps its world and its readouts and loses its controls.
+     *
+     * Everything below drew under the run-end card as well, which put a live-looking
+     * CAST bar, a DESCEND button and a spellbook tab on a screen that says the run is
+     * over — and on the vault win the run's own shout landed on the card's headline,
+     * so the game announced itself twice in two fonts.
+     */
+    if (this.runEnd) { this.drawRunEnd(ctx, W, H); return; }
     this.drawShout(ctx, W, H);
 
     // The grimoire occupies roughly the bottom third of the screen.
@@ -323,7 +357,6 @@ export class Hud {
     if (this.candidates.length > 1) this.drawCycle(ctx, W);
     if (this.descendReady) this.drawDescend(ctx, W);
     if (this.offers) this.drawOffers(ctx, W, H);
-    if (this.state.hp <= 0) this.drawDeath(ctx, W, H);
   }
 
   /**
@@ -1299,22 +1332,57 @@ export class Hud {
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   }
 
-  private drawDeath(ctx: CanvasRenderingContext2D, W: number, H: number): void {
-    ctx.fillStyle = 'rgba(8,4,10,0.72)';
+  /**
+   * The end of a run, and the way on from it.
+   *
+   * The moment has to LAND \u2014 the depth reached and the stars it paid, held still \u2014
+   * and then it has to lead somewhere, because a run that banks stars and offers
+   * nowhere to spend them is the dead end this card used to be. So the second half
+   * of it is a door to the star tree rather than "tap to return to the surface".
+   */
+  private drawRunEnd(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    const end = this.runEnd!;
+    const won = end.kind === 'won';
+    // Heavier than a modal veil: the grimoire is a lit 3D object in the overlay pass
+    // and it reads straight through a light one, so the card ends up sharing the
+    // frame with a page of Frostbolt.
+    ctx.fillStyle = 'rgba(8,4,10,0.86)';
     ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center';
-    ctx.font = 'bold 22px ui-monospace, monospace';
-    ctx.fillStyle = '#d8452f';
-    ctx.fillText('YOU DIED', W / 2, H * 0.38);
+    ctx.font = `bold ${won ? 17 : 22}px ui-monospace, monospace`;
+    ctx.fillStyle = won ? '#ffe58a' : '#d8452f';
+    ctx.fillText(won ? 'THE VAULT IS YOURS' : 'YOU DIED', W / 2, H * 0.38);
     ctx.font = '10px ui-monospace, monospace';
     ctx.fillStyle = PARCH;
     ctx.fillText(
-      `depth ${this.state.depth}  \u00b7  \u2726 ${this.state.stars} earned  \u00b7  \u2726 ${this.bankedStars + this.state.stars} banked`,
+      `depth ${end.depth}  \u00b7  \u2726 ${end.earned} earned  \u00b7  \u2726 ${this.bankedStars + end.earned} banked`,
       W / 2, H * 0.44,
     );
-    ctx.fillStyle = 'rgba(232,217,176,0.6)';
-    ctx.fillText('tap to return to the surface', W / 2, H * 0.52);
+    if (won) {
+      ctx.font = '9px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(255,229,138,0.72)';
+      ctx.fillText('You have taken everything the dungeon had. For now.', W / 2, H * 0.475);
+    }
+
+    const label = 'SPEND AT THE STAR TREE  \u25b8';
+    ctx.font = 'bold 12px ui-monospace, monospace';
+    const bw = Math.min(W - 56, ctx.measureText(label).width + 44), bh = 40;
+    const bx = (W - bw) / 2, by = Math.round(H * 0.51);
+    rr(ctx, bx, by, bw, bh, 20);
+    ctx.fillStyle = 'rgba(46,30,58,0.94)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,194,62,0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffe6b0';
+    ctx.fillText(label, W / 2, by + bh / 2 + 0.5);
+    ctx.textBaseline = 'top';
+    ctx.font = '8px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.45)';
+    ctx.fillText('a new run starts from there', W / 2, by + bh + 9);
     ctx.textAlign = 'left';
+    this.hits.push({ rect: [bx - 8, by - 8, bw + 16, bh + 16], action: { kind: 'tree' } });
   }
 
   /**
@@ -1351,7 +1419,7 @@ export class Hud {
  * themselves to their copy, so the line count has to be known before anything is
  * laid out. Measured in the caller's current font.
  */
-function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
+export function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
   const out: string[] = [];
   let line = '';
   for (const w of text.split(' ')) {
