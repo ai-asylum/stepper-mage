@@ -13,6 +13,7 @@
  * matters a lot when the alternative is a corridor of identical black squares.
  */
 import { Rng } from '../core/rng';
+import { WALL_H } from '../art/tiles';
 
 export const enum Tile {
   Wall = 0,
@@ -60,6 +61,14 @@ export class Grid {
   readonly roomOf: Uint8Array;
   /** 1 once the player has laid eyes on a tile — drives the minimap fog. */
   readonly explored: Uint8Array;
+  /**
+   * 1 once the player has actually STOOD on a tile.
+   *
+   * Separate from `explored` because the minimap rotates with your heading: after
+   * a couple of turns, "seen" and "been" look identical and you lose track of the
+   * way you came in. This is the trail.
+   */
+  readonly visited: Uint8Array;
 
   rooms: Room[] = [];
   lights: LightSource[] = [];
@@ -73,6 +82,7 @@ export class Grid {
     this.variant = new Uint8Array(w * h);
     this.roomOf = new Uint8Array(w * h).fill(255);
     this.explored = new Uint8Array(w * h);
+    this.visited = new Uint8Array(w * h);
   }
 
   idx(x: number, y: number): number { return y * this.w + x; }
@@ -250,7 +260,7 @@ function placeLights(g: Grid, rng: Rng, depth: number): void {
       for (let f = 0; f < 4; f++) {
         const [dx, dy] = DIR_VEC[f];
         if (g.walkable(x + dx, y + dy)) continue;
-        cands.push({ x, y, h: 1.02, reach: 4.4, strength: 0.85, face: f });
+        cands.push({ x, y, h: WALL_H * 0.49, reach: 4.4, strength: 0.85, face: f });
       }
     }
     rng.shuffle(cands);
@@ -274,7 +284,7 @@ function placeLights(g: Grid, rng: Rng, depth: number): void {
       for (let f = 0; f < 4; f++) {
         const [dx, dy] = DIR_VEC[f];
         if (g.walkable(x + dx, y + dy)) continue;
-        g.lights.push({ x, y, h: 1.02, reach: 3.8, strength: 0.7, face: f });
+        g.lights.push({ x, y, h: WALL_H * 0.49, reach: 3.8, strength: 0.7, face: f });
         break;
       }
     }

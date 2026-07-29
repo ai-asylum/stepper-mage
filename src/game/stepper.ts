@@ -8,7 +8,6 @@
  */
 import * as THREE from 'three';
 import { Grid, DIR_VEC, type Dir } from '../dungeon/grid';
-import { WALL_H } from '../art/tiles';
 
 /** Seconds per one-tile step. */
 const STEP_TIME = 0.235;
@@ -24,7 +23,7 @@ const TURN_TIME = 0.17;
  * lens holds at the same time as the horizon. So the eye comes down, the eye sits
  * back, and the lens widens, each paying part of the cost:
  *
- * - `EYE` — low. Cheap in distortion, expensive in drama: the world towers.
+ * - `EYE_H` — low. Cheap in distortion, expensive in drama: the world towers.
  * - `PULLBACK` — sitting back off the tile centre. The cheapest of the three; it
  *   costs no distortion at all, only a small camera arc when you turn.
  * - `PITCH` — nearly nothing now. Pitch raises the floor into frame but it takes
@@ -36,8 +35,13 @@ const TURN_TIME = 0.17;
  * 68% of the screen, against a grimoire whose top edge is at 74%. The horizon
  * sits at 36% and the ceiling three tiles out at 11%, so the band above the book
  * reads as a room rather than as all floor or all wall.
+ *
+ * Eye height is ABSOLUTE, in world units, not a fraction of the wall. The framing
+ * depends only on how high the eye is off the floor and how far back it sits, so
+ * expressing it against the ceiling meant that changing the ceiling silently moved
+ * the camera and broke everything above.
  */
-const EYE = 0.25;
+const EYE_H = 0.525;
 const PULLBACK = 0.30;
 
 /**
@@ -115,8 +119,8 @@ export class Stepper {
     this.fromYaw = this.toYaw = dirYaw(dir);
   }
 
-  /** Eye height as a fraction of wall height. See `EYE`. */
-  eyeFrac = EYE;
+  /** Eye height above the floor, in world units. See `EYE_H`. */
+  eyeHeight = EYE_H;
 
   /** How far back from the tile centre the eye sits. See `PULLBACK`. */
   pullback = PULLBACK;
@@ -143,7 +147,7 @@ export class Stepper {
     const back = Math.min(0.45, this.pullback);
     out.set(
       x + sway * Math.cos(yaw) + bdx * bk + Math.sin(yaw) * back,
-      WALL_H * this.eyeFrac + bob + idle,
+      this.eyeHeight + bob + idle,
       z - sway * Math.sin(yaw) + bdy * bk + Math.cos(yaw) * back,
     );
   }

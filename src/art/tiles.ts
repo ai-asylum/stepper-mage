@@ -17,7 +17,7 @@ import type { FloorDetail, Theme } from './theme';
 /** Texels per world unit. Every surface uses this so texel density is uniform. */
 export const PPU = 144;
 /** Wall height in world units. A real room, not a crawlspace. */
-export const WALL_H = 2.1;
+export const WALL_H = 1.05;
 
 const WALL_W = PPU;
 const WALL_PX_H = Math.round(PPU * WALL_H);

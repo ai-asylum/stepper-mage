@@ -251,16 +251,20 @@ async function boot(): Promise<void> {
   /**
    * Is this a legal target for the pages currently torn out?
    *
-   * Animate needs an OBJECT; a bolt wants something that can be hurt. Knowing
-   * this lets targeting follow the spell instead of making the player discover
-   * the mismatch from a refusal message.
+   * Animate needs an OBJECT; a bolt takes anything that is not on your side.
+   * Knowing this lets targeting follow the spell instead of making the player
+   * discover the mismatch from a refusal message.
+   *
+   * Furniture counts. A bookshelf in a doorway is a problem a Fireball should be
+   * able to solve, and refusing the target silently moved the reticle elsewhere —
+   * so the cast went off, the shelf stood there, and the game looked broken. Your
+   * own golems are excluded: they are on your side.
    */
   const isLegal = (e: Entity, ids: string[]): boolean => {
     const wantsObject = ids.includes('animate');
     const animatable = e.kind === 'prop' && !e.animated;
     if (wantsObject) return animatable;
-    if (!ids.length) return e.hostile || animatable;
-    return e.hostile;              // bolts want something that bleeds
+    return e.hostile || animatable;
   };
 
   const refreshTargets = (): void => {

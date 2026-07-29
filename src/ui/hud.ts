@@ -326,11 +326,14 @@ export class Hud {
         ctx.fillText(label, mx, ty - 23);
         ctx.textAlign = 'left';
 
-        if (e.maxHp > 0 && (e.hostile || e.animated)) {
+        // Furniture gets a bar too, but only once it has been hit — otherwise
+        // every room is full of health bars on scenery. Without it, breaking a
+        // blocker gives no feedback until it suddenly falls over.
+        if (e.maxHp > 0 && (e.hostile || e.animated || e.hp < e.maxHp)) {
           const bw = 40, bh = 3;
           ctx.fillStyle = 'rgba(0,0,0,0.6)';
           ctx.fillRect(mx - bw / 2 - 1, ty - 13, bw + 2, bh + 2);
-          ctx.fillStyle = e.hostile ? '#d8452f' : '#8ce06a';
+          ctx.fillStyle = e.hostile ? '#d8452f' : e.animated ? '#8ce06a' : '#b08c5a';
           ctx.fillRect(mx - bw / 2, ty - 12, bw * Math.max(0, e.hp / e.maxHp), bh);
 
           const st = this.combat.statusesOf(e).filter((sx) => sx.turns > 0);
@@ -394,7 +397,8 @@ export class Hud {
    * and it has to answer it at a glance. A prettier, zoomed-out map answered it
    * worse, so this trades all of its range for legibility. Walls adjacent to
    * explored floor are drawn too — you can see the wall you are standing against
-   * even if you never walked into it.
+   * even if you never walked into it, and floor you have walked is brighter than
+   * floor you have only seen.
    */
   private drawMiniMap(ctx: CanvasRenderingContext2D, W: number): void {
     if (!this.map) return;
@@ -451,8 +455,13 @@ export class Hud {
         const cx = gx + i * CELL, cy = gy + j * CELL;
         if (!known(tx, ty)) continue;
         const wall = !g.inside(tx, ty) || g.tiles[g.idx(tx, ty)] === Tile.Wall;
+        // Three levels, not two: wall, floor you have only SEEN, and floor you
+        // have actually walked. The map is heading-locked, so without the third
+        // level you cannot tell which way you came in after a couple of turns.
         // one-pixel inset gives every cell a hard edge, so the grid is countable
-        ctx.fillStyle = wall ? '#2b2029' : '#c9b590';
+        ctx.fillStyle = wall ? '#2b2029'
+          : g.visited[g.idx(tx, ty)] ? '#c9b590'
+          : '#6a5c48';
         ctx.fillRect(cx + 1, cy + 1, CELL - 2, CELL - 2);
       }
     }

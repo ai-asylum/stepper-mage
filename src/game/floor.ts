@@ -176,8 +176,11 @@ export class Floor {
   cull(px: number, py: number): void {
     const vis = visibleTiles(this.grid, px, py);
     // Visibility is recomputed every step anyway, so this is the natural place
-    // to accumulate the explored set the minimap draws from.
+    // to accumulate the explored set the minimap draws from. The tile the player
+    // is standing on is marked here too rather than off an arrival event, because
+    // this one call site also covers spawning, descending and debug teleports.
     for (const i of vis) this.grid.explored[i] = 1;
+    if (this.grid.inside(px, py)) this.grid.visited[this.grid.idx(px, py)] = 1;
     for (const e of this.entities) {
       if (e.kind === 'stairs' && !e.sprite.group.visible) continue;
       const on = vis.has(this.grid.idx(e.sprite.tx, e.sprite.ty));

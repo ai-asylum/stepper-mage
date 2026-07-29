@@ -179,12 +179,15 @@ export function preloadSprites(ids: string[]): Promise<THREE.Texture[]> {
 }
 
 /**
- * Readability scale. Texel-perfect mapping only holds at one exact distance
- * anyway, and at full size an adjacent creature blanks the entire screen — you
- * cannot read the room you are fighting in. 0.85 keeps sprites dominant in melee
- * without erasing the dungeon behind them.
+ * Readability scale — world units per 144 sprite pixels. Texel-perfect mapping
+ * only holds at one exact distance anyway, and at full size an adjacent creature
+ * blanks the entire screen: you cannot read the room you are fighting in.
+ *
+ * The ceiling is the hard cap. The tallest art in the manifest is 190px, so
+ * anything above ~0.72 puts a boss's head through `WALL_H` and the ceiling quad
+ * chops it off.
  */
-const SPRITE_SCALE = 0.85;
+const SPRITE_SCALE = 0.72;
 
 /** Texture pixel size -> world size, keeping texels close to the wall texels. */
 export function spriteWorldSize(tex: THREE.Texture): { w: number; h: number } {

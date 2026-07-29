@@ -267,7 +267,9 @@ export class DungeonView {
       this.disposables.push(t);
       return t;
     });
-    const geo = new THREE.PlaneGeometry(0.34, 0.52);
+    // Sized against the wall, not in absolute units — a torch that does not
+    // scale with the ceiling ends up hanging through it.
+    const geo = new THREE.PlaneGeometry(WALL_H * 0.162, WALL_H * 0.248);
     this.disposables.push(geo);
 
     for (const L of this.grid.lights) {
