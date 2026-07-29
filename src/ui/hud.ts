@@ -171,6 +171,16 @@ export class Hud {
   bankedStars = 0;
 
   /**
+   * What the player pinned at the star tree, and what the whole route to it costs.
+   *
+   * Here, in the run, and not only in the menu that set it — that is the entire
+   * point. A meta goal that lives behind a screen you reach after dying is a goal
+   * you cannot feel yourself approaching; printed under the star counter it turns
+   * every ✦ picked up on floor three into progress toward a named thing.
+   */
+  pinGoal: { name: string; need: number } | null = null;
+
+  /**
    * How the run ended, or null while it is still live.
    *
    * Set by the game rather than inferred from `hp <= 0`, because a run also ends by
@@ -348,6 +358,7 @@ export class Hud {
     this.drawLog(ctx, W);
     this.drawVitals(ctx, W);
     this.drawHand(ctx);
+    this.drawPin(ctx);
     this.drawParty(ctx, W);
     this.drawSealedNote(ctx, W);
     this.drawHarvest(ctx, W);
@@ -799,6 +810,28 @@ export class Hud {
       this.pill(ctx, 12 + w + 6, y, `↻ REROLL ×${this.state.rerolls}`,
         '#cfe6ff', 'rgba(140,200,255,0.6)');
     }
+  }
+
+  /**
+   * The star tree's pinned goal, in the run that is earning it.
+   *
+   * Left column, under the hand pill, because the top-right of this screen is the
+   * minimap's and the centre is the party bar's. A readout and not a control: the
+   * only place a pin can be set or cleared is the tree, and the only thing this has
+   * to do here is make the number the player is banking toward visible while they
+   * bank it. Absent entirely when nothing is pinned — an always-on empty goal is
+   * noise, and this screen has no pixels to spare for it.
+   */
+  private drawPin(ctx: CanvasRenderingContext2D): void {
+    const p = this.pinGoal;
+    if (!p) return;
+    const total = this.bankedStars + this.state.stars;
+    const done = total >= p.need;
+    this.pill(ctx, 12, 67, `✦ ${total} / ${p.need}`,
+      done ? GOLD : '#cfe6ff', done ? 'rgba(255,207,92,0.75)' : 'rgba(140,200,255,0.5)');
+    ctx.font = '7.5px ui-monospace, monospace';
+    ctx.fillStyle = done ? 'rgba(255,207,92,0.7)' : 'rgba(180,210,240,0.6)';
+    ctx.fillText(done ? `${p.name.toUpperCase()} · AFFORDED` : p.name.toUpperCase(), 12, 84);
   }
 
   /** One small readout pill, in the HUD's one shape. Returns its width. */

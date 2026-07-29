@@ -8,6 +8,7 @@ import {
 import { CastFx } from './spells/vfx';
 import { Hud, type AltarOffer } from './ui/hud';
 import { TreeScreen, type TreeAction } from './ui/tree';
+import { routeCost, routeTo } from './ui/treeCommon';
 import { Book } from './book/book';
 import { Fan } from './book/fan';
 import {
@@ -78,6 +79,17 @@ interface Meta {
   best: number;
   /** The star tree nodes you own. The only thing on this object that is bought. */
   nodes: NodeId[];
+  /**
+   * The tree node you are saving for, or null.
+   *
+   * Persisted rather than held by the tree screen, and that is the whole feature:
+   * a goal that only exists while the menu is open is a goal you forget the moment
+   * you start the run that would pay for it. The top bar reads it back as
+   * `✦ have / need`, so the thing you are banking toward is on screen in the
+   * dungeon. Not a purchase and not a permission — nothing gameplay reads gates on
+   * it — so it needs no sanitisation beyond "is this a node id".
+   */
+  pinned: NodeId | null;
 }
 
 const META_KEY = 'stepper-mage.meta.v1';
@@ -128,6 +140,9 @@ function applyTree(m: Meta): Meta {
   // loadout keeps a slot nobody owns. Trimmed from the FRONT, because the first
   // entries are the defaults and anything past them was put there deliberately.
   if (m.loadout.length > m.slots) m.loadout = m.loadout.slice(m.loadout.length - m.slots);
+  // A goal you have reached is not a goal. Cleared here rather than at the point of
+  // sale so it also clears for a save that was hand-edited into owning its own pin.
+  if (m.pinned && m.nodes.includes(m.pinned)) m.pinned = null;
   return m;
 }
 
@@ -163,12 +178,13 @@ function loadMeta(): Meta {
         // because "no page waiting" is the normal state.
         giftedPage: typeof m.giftedPage === 'string' && isPageElement(m.giftedPage)
           ? m.giftedPage : null,
+        pinned: isNodeId(m.pinned) ? m.pinned : null,
       });
     }
   } catch { /* corrupt or unavailable storage: fall through to defaults */ }
   return applyTree({
     stars: 0, loadout: [...DEFAULT_LOADOUT], slots: 0, handSize: 0, best: 0, nodes: [],
-    giftedPage: null,
+    giftedPage: null, pinned: null,
   });
 }
 
@@ -1161,6 +1177,7 @@ async function boot(): Promise<void> {
     hud = new Hud(engine, state, combat, () => fan.gameIds, () => { fan.clear(); refreshTargets(); });
     hud.bookClosed = book.closed;
     hud.bankedStars = meta.stars;
+    hud.pinGoal = pinReadout();
     hud.bindMap(() => ({ floor, x: stepper.x, y: stepper.y, dir: stepper.dir }));
     wireCombat();
 
@@ -1274,9 +1291,27 @@ async function boot(): Promise<void> {
    * and reconcile the live run with the new ceiling — so that no caller can perform
    * half of one.
    */
+  /**
+   * The pinned goal as the top bar wants it: a name and what the whole ROUTE costs.
+   *
+   * The route total and not the node's own price, because a pin on Second Servant
+   * with nothing owned is a bill for five nodes, and a readout that promised ✦ 220
+   * would be lying by a factor of three.
+   */
+  const pinReadout = (): { name: string; need: number } | null => {
+    if (!meta.pinned) return null;
+    return {
+      name: NODE_BY_ID[meta.pinned].name,
+      need: routeCost(routeTo(meta.pinned, meta.nodes)),
+    };
+  };
+
   const afterTreeChange = (): void => {
     applyTree(meta);
     saveMeta(meta);
+    // The pinned goal is a readout in the run, not just in the menu, so every
+    // transaction that could move it has to refresh it.
+    hud.pinGoal = pinReadout();
     // A refund can drop the ceiling below what is already torn out. Returning a
     // component is free and never punished (`docs/DESIGN.md`, Turn economy), so the
     // hand goes back in the book rather than the ceiling being quietly exceeded.
@@ -1344,6 +1379,7 @@ async function boot(): Promise<void> {
     owned: meta.nodes,
     handSize: meta.handSize,
     slots: meta.slots,
+    pinned: meta.pinned,
     /**
      * What a refund would cost beyond stars. Selling a slot node drops pages off
      * the front of the loadout (`applyTree`), so anything that would fall off is
@@ -1364,6 +1400,50 @@ async function boot(): Promise<void> {
 
   const actTree = (a: TreeAction): void => {
     switch (a.kind) {
+      /**
+       * Selection is not a transaction, so it goes nowhere near `buyNode`. A tap on
+       * a node fills the docked panel and nothing else; the panel's one button is
+       * the only thing on the screen that spends. Clearing the message with it is
+       * deliberate — a refusal is about the node you just tried, and leaving it up
+       * while the panel describes a different node makes the screen contradict
+       * itself.
+       */
+      case 'select':
+        treeScreen.selected = a.id;
+        treeScreen.message = null;
+        sfx.pageFlip();
+        break;
+      case 'deselect':
+        treeScreen.selected = null;
+        treeScreen.message = null;
+        break;
+      /**
+       * Pin a goal. Saved immediately, because the point of the pin is that it
+       * survives into the run — and a run is reached from here by a page reload, so
+       * anything not written to storage is a pin the player never sees again.
+       */
+      case 'pin':
+        meta.pinned = a.id;
+        afterTreeChange();
+        // Deselected on purpose and with no message: the panel's idle state IS the
+        // confirmation — it becomes the route, its node count and its running total,
+        // which says more than a sentence would and says it for as long as the pin
+        // lasts.
+        treeScreen.selected = null;
+        treeScreen.message = null;
+        sfx.shimmer(520);
+        break;
+      case 'unpin':
+        meta.pinned = null;
+        afterTreeChange();
+        treeScreen.message = null;
+        sfx.pageFlip();
+        break;
+      case 'mode':
+        treeScreen.mode = treeScreen.mode === 'sky' ? 'list' : 'sky';
+        treeScreen.selected = null;
+        sfx.pageFlip();
+        break;
       case 'buy': {
         const r = buyNode(a.id);
         if (r.ok) sfx.shimmer(760);
@@ -1411,6 +1491,15 @@ async function boot(): Promise<void> {
   // ------------------------------------------------------------------- the loop
 
   engine.onUpdate = (dt) => {
+    /**
+     * The tree's own clock. It has exactly two moving things — an affordable node's
+     * breath and the pinned route's spark — and no other surface in the game needs a
+     * tick that the HUD's does not already provide. Additive rather than an early
+     * return: the world behind the tree is hidden by an opaque fill, not torn down,
+     * and stopping its update while the screen is up would be a second code path
+     * through the loop for no visible gain.
+     */
+    if (treeOpen) treeScreen.update(dt);
     // hitstop: freeze the world briefly on impact, but keep the UI ticking
     const scale = fx.hitstop > 0 ? 0.12 : 1;
     const wdt = dt * scale;
@@ -2011,10 +2100,35 @@ async function boot(): Promise<void> {
      * by asking — the same reason `hudAt` exists. `tapTree` then drives the real
      * dispatch, refusals included.
      */
+    /**
+     * End the run where it stands.
+     *
+     * The star tree only ever opens from a FINISHED run — it is between runs, not
+     * inside one — so without this there is no scripted route to the screen at all,
+     * and this project's only tests are these harnesses. Goes through the real
+     * `endRun`, so the bank, the best depth and the card cannot disagree with a
+     * genuine death.
+     */
+    endRun: (kind?: 'died' | 'won') => {
+      if (!dead) endRun(kind === 'won' ? 'won' : 'died', state.stars);
+      return dead;
+    },
     openTree: () => { openTree(); return treeOpen; },
     treeOpen: () => treeOpen,
     treeControls: () => treeScreen.controls(),
     treeMessage: () => treeScreen.message,
+    /**
+     * The screen's own presentation state, read-only. The three things a harness
+     * cannot infer from a bitmap: which view is up, what the panel is describing,
+     * and what route is pinned.
+     */
+    treeUi: () => ({
+      mode: treeScreen.mode,
+      selected: treeScreen.selected,
+      pinned: meta.pinned,
+      route: meta.pinned ? routeTo(meta.pinned, meta.nodes) : [],
+      routeCost: meta.pinned ? routeCost(routeTo(meta.pinned, meta.nodes)) : 0,
+    }),
     treeReveal: (id: string) => (isNodeId(id) ? treeScreen.reveal(id) : false),
     treeScrollBy: (dy: number) => { treeScreen.scrollBy(dy); return treeScreen.scroll; },
     tapTree: (x: number, y: number) => {
