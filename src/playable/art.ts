@@ -11,8 +11,17 @@ import { Rng } from '../core/rng';
 import { book, gold } from '../style/palette';
 
 /** Art pixels are this many CSS pixels across. Chunky on purpose. */
-export const LOGO_SCALE = 4;
 export const BUTTON_SCALE = 4;
+
+/**
+ * The largest whole-number upscale of `artWidth` that still fits the stage.
+ *
+ * Whole numbers only: a fractional scale resamples the art off its own grid and
+ * the pixels stop being pixels, which is the entire look.
+ */
+export function fitScale(artWidth: number, stageWidth: number, max = 4): number {
+  return Math.max(1, Math.min(max, Math.floor((stageWidth * 0.88) / artWidth)));
+}
 
 const INK = hex(0x140a18);
 const OUTLINE = hex(0x2a1420);
@@ -74,20 +83,31 @@ function trimmed(p: Pix): Pix {
  * Paint a mask with a vertical ramp plus a lit top edge, and knock a hard
  * outline around it — the three things that make flat text read as a wordmark.
  */
-function emboss(mask: Pix, ramp: Ramp, top: number): Pix {
+function emboss(
+  mask: Pix,
+  ramp: Ramp,
+  top: number,
+  opts: { outline?: boolean; shadow?: number } = {},
+): Pix {
+  const { outline = true, shadow = 3 } = opts;
   const out = new Pix(mask.w + 4, mask.h + 6);
   const ox = 2, oy = 2;
 
   // Drop shadow first, offset down-right, so it sits under everything.
-  for (let j = 0; j < mask.h; j++) {
-    for (let i = 0; i < mask.w; i++) {
-      if (mask.alpha(i, j)) out.set(ox + i + 1, oy + j + 3, rgba(0, 0, 0, 150));
+  if (shadow > 0) {
+    for (let j = 0; j < mask.h; j++) {
+      for (let i = 0; i < mask.w; i++) {
+        if (mask.alpha(i, j)) out.set(ox + i + 1, oy + j + shadow, rgba(0, 0, 0, 150));
+      }
     }
   }
   for (let j = 0; j < mask.h; j++) {
     for (let i = 0; i < mask.w; i++) {
       if (!mask.alpha(i, j)) continue;
-      const t = j / Math.max(1, mask.h - 1);
+      // Light at the TOP: the ramp runs dark→light, and the light end belongs
+      // where the light is. Running it the other way makes struck metal look
+      // like it is lit from underneath, which just reads as muddy.
+      const t = 1 - j / Math.max(1, mask.h - 1);
       out.set(ox + i, oy + j, ramp.step(t), { mode: 'set' });
     }
   }
@@ -99,62 +119,107 @@ function emboss(mask: Pix, ramp: Ramp, top: number): Pix {
       }
     }
   }
-  out.outline(OUTLINE);
+  if (outline) out.outline(OUTLINE);
   return out;
 }
 
 /**
- * The wordmark: SPELLTORN over DEEP, on a page whose bottom edge is ripped.
+ * A ragged edge depth per index, walked rather than sampled independently —
+ * uncorrelated noise reads as static, while a walk reads as torn fibre.
+ */
+function ragged(rng: Rng, count: number, max: number): number[] {
+  const out: number[] = [];
+  let d = Math.round(max / 2);
+  for (let i = 0; i < count; i++) {
+    d = Math.max(0, Math.min(max, d + rng.int(-1, 1)));
+    out.push(d);
+  }
+  return out;
+}
+
+/**
+ * The wordmark: SPELLTORN over DEEP, printed on a page torn out of the book.
  *
- * The tear is the game's verb and the name's other half, so the logo carries it
- * literally rather than leaning on a font choice to imply it.
+ * The tear is the game's verb and half its name, so the logo carries it
+ * literally — all four edges are ripped — rather than leaning on a font choice
+ * to imply it. DEEP is set in ink rather than in a pale metal, because on
+ * parchment a light-on-light subtitle simply disappears.
  */
 export function buildLogo(title: string, sub: string): HTMLCanvasElement {
-  const goldRamp = new Ramp([0x6d3d10, 0xb8781f, 0xf0a91e, 0xffd977, 0xfff2c4]);
-  const paleRamp = new Ramp([0x8a6a4a, 0xc9ab84, 0xefdcb6, 0xfdf3dc]);
+  const goldRamp = new Ramp([0x7a4512, 0xc08422, 0xf0a91e, 0xffd977, 0xfff2c4]);
+  // Ink barely varies: at eight pixels tall a subtitle needs to be a shape you
+  // can read, and every extra tone inside a stroke that thin is just noise.
+  const inkRamp = new Ramp([0x3a2130, 0x4a2b3a]);
 
-  const main = emboss(trimmed(textMask(title, 22, 2)), goldRamp, 0xfff6e0);
-  const small = emboss(trimmed(textMask(sub, 11, 6)), paleRamp, 0xfdf3dc);
+  // Sized so the finished art still clears a 3x upscale on a phone-width stage
+  // — a wordmark that can only afford 1x is not pixel art, it is just small.
+  const main = emboss(trimmed(textMask(title, 14, 1)), goldRamp, 0xfff2c4);
+  // No outline, no shadow: dark ink on parchment already has all the contrast
+  // it needs, and either one at this size closes the letters into blobs.
+  const small = emboss(
+    trimmed(textMask(sub, 9, 5)), inkRamp, 0x5e3a49,
+    { outline: false, shadow: 0 },
+  );
 
-  const padX = 10;
-  const gap = 3;
-  const w = Math.max(main.w, small.w) + padX * 2;
-  const bannerH = main.h + gap + small.h + 12;
-  const tearH = 6;
-  const out = new Pix(w, bannerH + tearH);
+  const rag = 4;
+  const padX = 6;
+  const padY = 4;
+  const gap = 1;
+  const bodyW = Math.max(main.w, small.w) + padX * 2;
+  const bodyH = main.h + gap + small.h + padY * 2;
+  const w = bodyW + rag * 2;
+  const h = bodyH + rag * 2;
+  const out = new Pix(w, h);
 
-  // ---- the parchment the wordmark is printed on ------------------------
+  // ---- the page ---------------------------------------------------------
   const rng = new Rng('spelltorn-logo');
-  const parch = new Ramp([book.pageEdge, book.pageFace]);
-  for (let j = 0; j < bannerH; j++) {
-    const t = 1 - j / bannerH;
-    out.rect(0, j, w, 1, parch.step(t * 0.85 + 0.1));
+  const parch = new Ramp([0xc9a469, 0xdfbc83, 0xefd6a4, 0xf8e8c6]);
+  for (let j = 0; j < h; j++) {
+    // Lighter through the middle, aged toward the top and bottom edges.
+    const t = 1 - Math.abs(j / (h - 1) - 0.42) * 1.7;
+    out.rect(0, j, w, 1, parch.step(Math.max(0, Math.min(0.999, t))));
   }
 
-  // Ragged bottom: a per-column random depth, walked so neighbours stay close —
-  // a purely random edge reads as noise rather than as torn fibre.
-  let depth = 3;
+  // Foxing — sparse darker specks, so the page is not a flat swatch.
+  for (let n = 0; n < w * h * 0.02; n++) {
+    out.set(rng.int(0, w - 1), rng.int(0, h - 1), rgba(150, 116, 66, 40));
+  }
+
+  // Faint ruled lines: this was a page of a book before it was a logo.
+  for (let j = rag + 3; j < h - rag - 3; j += 4) {
+    for (let i = rag + 2; i < w - rag - 2; i += 2) out.set(i, j, rgba(120, 96, 60, 28));
+  }
+
+  // ---- rip every edge ---------------------------------------------------
+  const left = ragged(rng, h, rag);
+  const right = ragged(rng, h, rag);
+  const top = ragged(rng, w, rag);
+  const bottom = ragged(rng, w, rag);
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < left[j]; i++) out.set(i, j, 0, { mode: 'set' });
+    for (let i = 0; i < right[j]; i++) out.set(w - 1 - i, j, 0, { mode: 'set' });
+  }
   for (let i = 0; i < w; i++) {
-    depth = Math.max(0, Math.min(tearH, depth + rng.int(-1, 1)));
-    for (let j = 0; j < tearH; j++) {
-      const y = bannerH + j;
-      if (j < depth) {
-        out.set(i, y, j === depth - 1 ? hex(book.pageEdge) : parch.step(0.2));
+    for (let j = 0; j < top[i]; j++) out.set(i, j, 0, { mode: 'set' });
+    for (let j = 0; j < bottom[i]; j++) out.set(i, h - 1 - j, 0, { mode: 'set' });
+  }
+
+  // The torn lip catches light on the fibres — but only on the two edges facing
+  // the light. Tracing all four put a white keyline round the whole shape and
+  // flattened the page into a sticker.
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      if (!out.alpha(i, j)) continue;
+      if (!out.alpha(i - 1, j) || !out.alpha(i, j - 1)) {
+        out.set(i, j, hex(0xfff6e2), { mode: 'set' });
       }
     }
-    // A fibrous shadow line just above the rip.
-    out.set(i, bannerH - 1 + depth - (depth ? 1 : 0), hex(0xd8bf8e));
   }
-
-  // Faint ruled lines, so the parchment reads as a page rather than a slab.
-  for (let j = 6; j < bannerH - 6; j += 5) {
-    for (let i = 4; i < w - 4; i += 2) out.set(i, j, rgba(120, 96, 60, 26));
-  }
-  out.outline(hex(0x6b4a2c));
+  out.outline(hex(0x4a3320));
 
   // ---- the wordmark ----------------------------------------------------
-  out.blit(main, Math.round((w - main.w) / 2), 5);
-  out.blit(small, Math.round((w - small.w) / 2), 5 + main.h + gap);
+  out.blit(main, Math.round((w - main.w) / 2), rag + padY);
+  out.blit(small, Math.round((w - small.w) / 2), rag + padY + main.h + gap);
 
   return out.toCanvas();
 }
@@ -169,35 +234,37 @@ export function buildLogo(title: string, sub: string): HTMLCanvasElement {
  */
 export function buildPlate(w: number, h: number, base: number): HTMLCanvasElement {
   const p = new Pix(w, h);
-  // Already-packed Cols, hence `packed: true` — the default path would run
-  // hex() over values that have an alpha byte in them.
-  const face = new Ramp(
-    [shade(hex(base), 0.55), hex(base), hex(base), shade(hex(base), 1.45)],
-    true,
-  );
+  const c = hex(base);
 
-  for (let j = 0; j < h; j++) p.rect(0, j, w, 1, face.step(1 - j / h));
+  // HARD bands, not a gradient. At fifteen pixels tall a smooth ramp only ever
+  // resolves to bands anyway, and choosing them explicitly is what makes the
+  // plate read as struck metal instead of a CSS button that got pixelated.
+  const lip = shade(c, 1.55);
+  const faceHi = shade(c, 1.16);
+  const faceLo = shade(c, 0.86);
+  const foot = shade(c, 0.52);
 
-  // Chamfer: knock the corner texels out so the plate reads as cut metal
-  // rather than a rounded CSS box that happens to be pixelated.
-  for (const [cx, cy] of [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]] as const) {
-    p.set(cx, cy, 0, { mode: 'set' });
-  }
+  const mid = Math.max(2, Math.round(h * 0.45));
+  p.rect(0, 0, w, mid, faceHi);
+  p.rect(0, mid, w, h - mid, faceLo);
+  p.rect(1, 1, w - 2, 1, lip);
+  p.rect(1, h - 2, w - 2, 1, foot);
+  p.rect(1, 1, 1, h - 2, shade(c, 1.3));
+  p.rect(w - 2, 1, 1, h - 2, shade(c, 0.68));
 
-  p.rect(1, 1, w - 2, 1, shade(hex(base), 1.7));           // top highlight
-  p.rect(1, h - 2, w - 2, 1, shade(hex(base), 0.45));       // bottom shadow
-  p.rect(1, 1, 1, h - 2, shade(hex(base), 1.35));           // left light
-  p.rect(w - 2, 1, 1, h - 2, shade(hex(base), 0.6));        // right dark
   p.frame(0, 0, w, h, INK);
-  // re-cut the chamfer the frame just filled back in
+  // Chamfer: knock the corner texels out so the plate reads as cut metal
+  // rather than a rounded box. Done after the frame, which fills them back in.
   for (const [cx, cy] of [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]] as const) {
     p.set(cx, cy, 0, { mode: 'set' });
+    p.set(cx === 0 ? 1 : w - 2, cy === 0 ? 1 : h - 2, INK, { mode: 'set' });
   }
 
-  // Rivets, inset from each end.
-  for (const rx of [3, w - 4]) {
-    p.set(rx, 3, shade(hex(base), 1.8));
-    p.set(rx, 4, shade(hex(base), 0.5));
+  // Studs at each end, vertically centred: one lit texel over one shadowed one.
+  const sy = Math.floor(h / 2) - 1;
+  for (const sx of [3, w - 4]) {
+    p.set(sx, sy, lip, { mode: 'set' });
+    p.set(sx, sy + 1, foot, { mode: 'set' });
   }
 
   return p.toCanvas();

@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <meta name="theme-color" content="#0a0710" />
-<title>Stepper Mage</title>
+<title>Spelltorn Deep</title>
 
 <!-- The ONE external reference the readiness spec allows, and it must stay:
      ad containers inject mraid.js themselves, and it 404s harmlessly in a
@@ -57,22 +57,61 @@
     white-space: pre-wrap; overflow: auto;
   }
 
-  /* ---- ad chrome (playable only) ------------------------------------- */
+  /* ---- ad chrome (playable only) -------------------------------------
+     The CTA is an in-world interruption, never a screen change: it takes the
+     grimoire's half of the frame, the logo lights up in the world above it,
+     and the game keeps rendering behind both. */
 
-  /* Top-left, clear of the HUD above it and — more importantly — clear of the
-     grimoire, which owns the bottom of the screen and every gesture on it. */
-  #cta {
-    position: absolute; left: 10px; top: 104px; transform: translateX(-160%);
-    z-index: 30; padding: 8px 15px; border: 0; border-radius: 999px;
-    background: linear-gradient(180deg, #ffe08a, #f0a91e);
-    color: #2a1606; font: 700 10px/1 ui-monospace, Menlo, monospace;
-    letter-spacing: .14em; text-transform: uppercase; white-space: nowrap;
-    box-shadow: 0 3px 0 #8a5a06, 0 8px 20px rgba(0,0,0,.65);
-    transition: transform .5s cubic-bezier(.2,1.4,.4,1); cursor: pointer;
+  /* Every generated plate is drawn at art resolution and upscaled by an exact
+     integer factor, so it must never be resampled off-grid. */
+  #cta, #cta-dismiss, #logo {
+    background-repeat: no-repeat; background-size: 100% 100%;
+    image-rendering: pixelated; image-rendering: crisp-edges;
   }
-  #cta.in { transform: translateX(0); animation: ctaPulse 2.4s ease-in-out 1s infinite; }
-  #cta:active { transform: translateY(3px); box-shadow: 0 0 0 #8a5a06; }
-  @keyframes ctaPulse { 0%,88%,100% { filter: brightness(1); } 94% { filter: brightness(1.25); } }
+
+  /* No scrim: the plate carries its own contrast, and darkening the room behind
+     it was the thing that made an in-world offer start to feel like a screen. */
+  #cta-zone {
+    position: absolute; left: 0; right: 0; z-index: 30;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity .32s ease;
+  }
+  #cta-zone.show { opacity: 1; pointer-events: auto; }
+
+  #cta {
+    border: 0; background-color: transparent; padding: 0; cursor: pointer;
+    color: #2a1606; font: 700 13px/1 ui-monospace, Menlo, monospace;
+    letter-spacing: .18em; text-transform: uppercase; white-space: nowrap;
+    text-shadow: 0 1px 0 rgba(255,246,224,.55);
+    filter: drop-shadow(0 6px 14px rgba(0,0,0,.7));
+    transform: translateY(10px); transition: transform .32s cubic-bezier(.2,1.4,.4,1);
+  }
+  #cta-zone.show #cta { transform: translateY(0); animation: ctaPulse 2.4s ease-in-out .4s infinite; }
+  #cta:active { transform: translateY(3px); filter: none; }
+  @keyframes ctaPulse { 0%,88%,100% { filter: drop-shadow(0 6px 14px rgba(0,0,0,.7)); } 94% { filter: drop-shadow(0 6px 14px rgba(0,0,0,.7)) brightness(1.22); } }
+
+  /* Sits exactly on the grimoire tab, so dismissing and re-opening the book are
+     the same target in the same place. */
+  #cta-dismiss {
+    position: absolute; left: 50%; z-index: 31; bottom: 8px;
+    transform: translateX(-50%); border: 0; background-color: transparent;
+    padding: 0; cursor: pointer;
+    color: #f0d9b5; font: 700 9px/1 ui-monospace, Menlo, monospace;
+    letter-spacing: .2em; text-transform: uppercase; white-space: nowrap;
+    opacity: 0; pointer-events: none; transition: opacity .32s ease;
+  }
+  #cta-dismiss.show { opacity: 1; pointer-events: auto; }
+  #cta-dismiss:active { transform: translateX(-50%) translateY(2px); }
+
+  /* The wordmark lands in the world itself — the room stays visible behind it. */
+  #logo {
+    position: absolute; left: 50%; top: 17%; z-index: 29;
+    transform: translate(-50%, -14px) scale(.94); transform-origin: 50% 50%;
+    opacity: 0; pointer-events: none;
+    filter: drop-shadow(0 8px 18px rgba(0,0,0,.75));
+    transition: opacity .38s ease, transform .38s cubic-bezier(.2,1.3,.4,1);
+  }
+  #logo.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
 
   #endcard {
     position: absolute; inset: 0; z-index: 40; display: none;
@@ -111,10 +150,12 @@
     <canvas id="ui"></canvas>
     <div id="boot">lighting the torches</div>
     <pre id="err"></pre>
-    <button id="cta" type="button">Play Free</button>
+    <div id="logo"></div>
+    <div id="cta-zone"><button id="cta" type="button">Play Free</button></div>
+    <button id="cta-dismiss" type="button">Keep Playing</button>
     <div id="endcard">
       <div class="verdict" id="ec-verdict">The dungeon keeps its pages</div>
-      <h1>Stepper Mage</h1>
+      <h1>Spelltorn Deep</h1>
       <p>No weapons. No armour. Only the book — tear its pages, fuse them, and animate the room against itself.</p>
       <button class="big" id="ec-cta" type="button">Play Free</button>
       <button class="again" id="ec-again" type="button">Keep playing</button>

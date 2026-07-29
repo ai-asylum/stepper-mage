@@ -41,10 +41,26 @@ npx playable-smoke ads/playable/index.html   # headless behavioural check
 
 One self-contained HTML file running the **real game** — `playable.html` boots
 `src/playable/`, which imports `src/main.ts` unchanged and layers the ad chrome
-(store CTA, end card, `ALPlayableAnalytics`) on top. Sprites are embedded as data
-URIs by the manifest in `scripts/build-playable.mjs` and resolved through
-`playable-kit/runtime`, so the creative makes no network requests while the web
-build is byte-for-byte the same fetch path it always was.
+on top. Sprites are embedded as data URIs by the manifest in
+`scripts/build-playable.mjs` and resolved through `playable-kit/runtime`, so the
+creative makes no network requests while the web build is byte-for-byte the same
+fetch path it always was.
+
+The creative ships under the real name, **Spelltorn Deep** — the repo, the game
+and the HUD still say Stepper Mage, which is the working title.
+
+The CTA is an **in-world interruption, never a screen change**. On whichever of
+**15 seconds or 15 turns** comes first it takes the grimoire's half of the
+frame, raises the wordmark in the room above it, and offers a dismiss sitting
+exactly on the spellbook tab — so dismissing and re-opening the book are the
+same target in the same place. Shutting the spellbook frees that space and
+brings the offer straight back. Only a terminal state (death, or clearing the
+last floor) gets a full end card.
+
+Both the wordmark and the button plates are **procedural pixel art**
+(`src/playable/art.ts`), drawn with the game's own `Pix` toolkit at art
+resolution and upscaled by a whole-number factor — they cost bytes of code, not
+bytes of payload, which is the right trade inside a 5 MB creative.
 
 The build/embed/verify pipeline is [`ai-asylum/playable-kit`](https://github.com/ai-asylum/playable-kit),
 vendored as a tarball in `vendor/` (never a `github:` dep — npm resolves those

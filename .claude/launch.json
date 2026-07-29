@@ -12,6 +12,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "5200", "--directory", "ads/playable"],
       "port": 5200
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "5201", "--directory", "dist"],
+      "port": 5201
     }
   ]
 }

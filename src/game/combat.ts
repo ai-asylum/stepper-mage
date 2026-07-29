@@ -81,6 +81,12 @@ export class Combat {
   /** Rooms whose encounter has been triggered. */
   private engaged = new Set<number>();
   bossDead = false;
+  /**
+   * Rounds spent this run. Nothing in the game reads it — every price is paid
+   * through `takeTurn`, so this is simply the one honest count of "the player
+   * did something", which the playable ad paces its CTA against.
+   */
+  turns = 0;
   /** Fusion names already announced this run. */
   private discovered = new Set<string>();
 
@@ -364,6 +370,7 @@ export class Combat {
    * told apart from a tear once those exist, without changing every call site.
    */
   async takeTurn(_cause: TurnCause): Promise<void> {
+    this.turns++;
     await this.enemyRound();
   }
 

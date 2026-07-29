@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "build:playable": "node scripts/build-playable.mjs",
+    "build:site": "npm run build && npm run build:playable && node scripts/stage-playable.mjs",
     "shot": "node tools/shot.mjs"
   },
   "dependencies": {
