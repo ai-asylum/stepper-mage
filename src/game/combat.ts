@@ -77,6 +77,15 @@ export interface PlayerState {
    */
   ranks: Record<string, number>;
   stars: number;
+  /**
+   * Altar reroll charges in hand.
+   *
+   * On the RUN and not on `meta`, deliberately: a charge is spare agency over
+   * this run's rolls, and one that survived the run would be a second currency
+   * the star tree has to price against stars. Banked here, an unspent charge is
+   * simply lost with everything else the run found.
+   */
+  rerolls: number;
   depth: number;
 }
 

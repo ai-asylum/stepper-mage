@@ -36,13 +36,13 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 2 — Altar_Reward_Node
 
-- [ ] Extend `AltarOffer` with heal, stars, rank-up, sacrifice, reroll, golden kinds.
-- [ ] Guarantee at least one spell option in every roll.
-- [ ] Implement sacrifice: spend a rank-2 page to take another to rank 3.
-- [ ] Implement golden pages: claim into a `meta.loadout` slot, displace-choice when full.
-- [ ] Add reroll charges, banked on the player, spent to re-roll an altar.
-- [ ] Draw rank pips and the golden treatment on offer cards.
-- [ ] Commit changes.
+- [x] Extend `AltarOffer` with heal, stars, rank-up, sacrifice, reroll, golden kinds.
+- [x] Guarantee at least one spell option in every roll.
+- [x] Implement sacrifice: spend a rank-2 page to take another to rank 3.
+- [x] Implement golden pages: claim into a `meta.loadout` slot, displace-choice when full.
+- [x] Add reroll charges, banked on the player, spent to re-roll an altar.
+- [x] Draw rank pips and the golden treatment on offer cards.
+- [x] Commit changes.
 
 ## Phase 3 — Harvest_And_Room_Elements
 

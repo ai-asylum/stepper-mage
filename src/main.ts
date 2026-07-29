@@ -133,6 +133,7 @@ async function boot(): Promise<void> {
     pages: [...meta.loadout],
     ranks: Object.fromEntries(meta.loadout.map((id) => [id, 1])),
     stars: 0,
+    rerolls: 0,
     depth: 1,
   };
 
@@ -259,6 +260,27 @@ async function boot(): Promise<void> {
   let dead = false;
   /** Altars already claimed, so a floor grants exactly one page. */
   const claimedAltars = new Set<Entity>();
+  /**
+   * How many times each altar has been RE-rolled.
+   *
+   * The roll is deterministic per altar on purpose — walk away from three cards
+   * and come back, and they are the same three cards — so the only way a reroll
+   * charge can buy a different table is by advancing this.
+   */
+  const altarNonce = new Map<Entity, number>();
+  /**
+   * At most one golden page per run.
+   *
+   * Golden pages are the only thing in the game that writes to `meta.loadout`, so
+   * the rate they arrive at IS the rate the starting book changes at. A run that
+   * could gild three pages turns the loadout back into accumulation, which is the
+   * exact thing sealing found pages exists to prevent.
+   */
+  let goldenClaimed = false;
+  /** Skips the golden page's rarity roll, so a harness can drive it. Debug only. */
+  let goldenForced = false;
+  /** A claimed golden page waiting for the player to say what it displaces. */
+  let pendingGolden: string | null = null;
 
   /** Turns this hand has cost so far. Purely a readout; see the HUD. */
   let assemblyTurns = 0;
@@ -378,90 +400,480 @@ async function boot(): Promise<void> {
   };
 
   /**
+   * A dedicated star offer pays more than the 2 a maxed page pays.
+   *
+   * Different jobs: the maxed page's 2 stars is a consolation for a slot nothing
+   * else wanted, while this is competing for a slot against a rank, and it has to
+   * be worth turning one down. Depth-scaled for the reason chests are — late stars
+   * must be worth as much as the floor that yielded them.
+   */
+  const altarStars = (depth: number): number => 4 + depth * 2;
+
+  /**
+   * How often a golden page is on the table at all.
+   *
+   * Low, because permanence is the one thing a run is not supposed to hand out.
+   * Five altars in a full run puts a golden in roughly half of them, which makes
+   * it an event you remember rather than a fixture you budget around.
+   */
+  const GOLDEN_CHANCE = 0.16;
+
+  /**
+   * How much heavier the favoured half of the page pool draws — see the bias note
+   * in `rollAltarOffers`. Four puts ~1.7 of a two-page roll on the favoured side,
+   * which is the difference between "you can steer this" and "you cannot".
+   */
+  const PAGE_LEAD = 4;
+
+  /** Anything with a number in the headline says it the same way. */
+  const starsName = (n: number): string => `✦  +${n} Stars`;
+
+  /**
+   * What one page is worth at the rank it is currently at, or null when it has
+   * nothing left to give.
+   *
+   * The ladder is not uniform and that is the point: 1→2 is free, 2→3 is bought
+   * with another rank-2 page, and past that the page pays stars. A rank-2 page
+   * with no spare rank-2 page to feed it therefore returns NULL rather than
+   * degrading into a free upgrade — the price of rank 3 is the whole reason an
+   * eight-page book feels tight, so it cannot be waived just because the roll
+   * happened to land on that page.
+   */
+  const pageOffer = (id: string, spend: string | null): AltarOffer | null => {
+    const def = SPELL_BY_ID[id];
+    if (!def) return null;
+    const rank = state.ranks[id] ?? 0;
+    const base = { id, colour: def.colour, cost: null, amount: 0, maxRank: MAX_RANK, golden: false };
+    if (rank === 0) {
+      return {
+        ...base, kind: 'new', name: def.name, tag: 'NEW SPELL', detail: def.effect,
+        rank: 0, toRank: 1,
+      };
+    }
+    if (rank === 1) {
+      return {
+        ...base, kind: 'upgrade', name: def.name, tag: 'UPGRADE',
+        detail: 'Rank 1 → 2. Casts as two copies.', rank: 1, toRank: 2,
+      };
+    }
+    if (rank < MAX_RANK) {
+      if (!spend || spend === id) return null;
+      const sp = SPELL_BY_ID[spend];
+      return {
+        ...base, kind: 'sacrifice', name: def.name, tag: 'SACRIFICE',
+        detail: `Rank ${rank} → ${rank + 1}. Casts as ${rank + 1} copies.`,
+        cost: `Tears out your rank-2 ${sp?.name ?? spend} for good.`,
+        rank, toRank: rank + 1, spendId: spend,
+      };
+    }
+    return {
+      ...base, kind: 'star', name: starsName(2), tag: 'CELESTIAL STARS', colour: 0xffcf5c,
+      detail: `${def.name} is already mastered. Take a celestial star instead.`,
+      amount: 2, rank: MAX_RANK, toRank: 0,
+    };
+  };
+
+  /**
+   * A page you can keep. The gilding is the moment of claiming it, not something
+   * the page carries — it lands in the loadout as an ordinary page and starts
+   * every later run at rank 1 like any other.
+   */
+  const goldenOffer = (id: string): AltarOffer => {
+    const def = SPELL_BY_ID[id];
+    const held = (state.ranks[id] ?? 0) > 0;
+    return {
+      kind: 'golden', id, name: def?.name ?? id, tag: 'GOLDEN PAGE',
+      colour: def?.colour ?? 0xffcf5c,
+      detail: held
+        ? 'Gilded. It joins the book you begin every run holding.'
+        : 'Gilded. Yours now, and in the book you begin every run holding.',
+      cost: meta.loadout.length >= meta.slots
+        ? 'Your loadout is full — you choose what it replaces.'
+        : null,
+      amount: 0, rank: state.ranks[id] ?? 0, toRank: 0, maxRank: MAX_RANK, golden: true,
+    };
+  };
+
+  /**
+   * The offers that are not about a page, in the order a roll should take them.
+   *
+   * Ordered by weighted draw rather than filtered by one, so the weights decide
+   * what the FIRST extra slot gets and a roll with two extra slots still shows two
+   * different things. Healing is only here when there is damage to undo — an offer
+   * that would do nothing is a wasted third of the decision.
+   */
+  const rollExtras = (rng: Rng): AltarOffer[] => {
+    const pool: AltarOffer[] = [];
+    const weights: number[] = [];
+    if (state.hp < state.maxHp) {
+      // Sized off the descent heal rather than a new curve, so the altar stays
+      // inside the attrition budget `tuning.ts` is balanced against. Clamped here
+      // rather than on the way in, so the card promises what you will actually get.
+      const heal = healable(state.hp, state.maxHp, descendHeal(state.depth));
+      pool.push({
+        kind: 'heal', id: '', name: `Restore ${heal} Health`, tag: 'MENDING',
+        colour: 0x8ce06a,
+        detail: `You stand at ${state.hp} of ${state.maxHp}. The altar closes what it can.`,
+        cost: null, amount: heal, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
+      });
+      weights.push(4);
+    }
+    const stars = altarStars(state.depth);
+    pool.push({
+      kind: 'stars', id: '', name: starsName(stars), tag: 'CELESTIAL STARS',
+      colour: 0xffcf5c,
+      detail: 'Banked for the surface. Nothing in the dungeon takes them.',
+      cost: null, amount: stars, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
+    });
+    weights.push(3);
+    pool.push({
+      kind: 'reroll', id: '', name: 'Reroll Charge', tag: 'FORTUNE', colour: 0x8cc8ff,
+      detail: 'Keep it. It turns over any altar\'s three offers, this run only.',
+      cost: null, amount: 1, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
+    });
+    weights.push(3);
+
+    const out: AltarOffer[] = [];
+    // A golden page skips the weighting and goes first: when it is on the table it
+    // IS the table, and burying it behind a heal would be the wrong emphasis.
+    const gild = ELEMENT_SPELLS.filter((sp) => !meta.loadout.includes(sp.id)).map((sp) => sp.id);
+    if (!goldenClaimed && gild.length && (goldenForced || rng.chance(GOLDEN_CHANCE))) {
+      out.push(goldenOffer(rng.pick(gild)));
+    }
+    while (pool.length) {
+      const pick = rng.weighted(pool, weights);
+      const i = pool.indexOf(pick);
+      pool.splice(i, 1);
+      weights.splice(i, 1);
+      out.push(pick);
+    }
+    return out;
+  };
+
+  /**
    * An altar offers a CHOICE of three, on a tap.
    *
    * Three options beat one grant for the obvious reason — a decision is more
    * interesting than a gift — but also because it lets an offer be an UPGRADE to
-   * something you already hold. And when a rolled page is already maxed there is
-   * nothing left to give, so it pays out a celestial star instead: the run feeds
-   * the meta precisely when the run is out of things to teach you.
+   * something you already hold. Three and never four: with eight pages a wider
+   * roll only makes "every offer is stars" arrive sooner, so widening it is a
+   * currency generator in a costume (`docs/DESIGN.md`, Rejected).
    */
-  const rollAltarOffers = (e: Entity): AltarOffer[] => {
-    const rng = new Rng(`${runSeed}-altar-${state.depth}-${e.sprite.tx}-${e.sprite.ty}`);
-    // Elements only: an altar grants PAGES, and ingredients have none.
-    const owned = state.pages.filter(isElement);
-    const unowned = ELEMENT_SPELLS.filter((sp) => !owned.includes(sp.id));
-    const offers: AltarOffer[] = [];
-    const used = new Set<string>();
+  const rollAltarOffers = (e: Entity, nonce = 0): AltarOffer[] => {
+    const rng = new Rng(`${runSeed}-altar-${state.depth}-${e.sprite.tx}-${e.sprite.ty}-${nonce}`);
+    // Elements only: an altar grants PAGES, and ingredients have none. Deduped
+    // because a book may legitimately hold a page twice.
+    const owned = [...new Set(state.pages.filter(isElement))];
+    const unowned = ELEMENT_SPELLS.filter((sp) => !owned.includes(sp.id)).map((sp) => sp.id);
+    // A page cannot feed itself, so one rank-2 page buys nothing; it takes two.
+    const rank2 = rng.shuffle(owned.filter((id) => (state.ranks[id] ?? 0) === 2));
 
-    // Bias toward pages you do not have — new options open more fusions than a
-    // rank does, so they should be the headline.
-    const bag = [
-      ...rng.shuffle(unowned.map((sp) => sp.id)),
-      ...rng.shuffle(owned.slice()),
-    ];
-
-    for (const id of bag) {
-      if (offers.length >= 3 || used.has(id)) continue;
-      used.add(id);
-      const def = SPELL_BY_ID[id];
-      if (!def) continue;
-      const rank = state.ranks[id] ?? 0;
-      if (rank === 0) offers.push({ kind: 'new', id, name: def.name, colour: def.colour, detail: def.effect });
-      else if (rank < MAX_RANK) {
-        offers.push({
-          kind: 'upgrade', id, name: def.name, colour: def.colour,
-          detail: `Rank ${rank} → ${rank + 1}. Casts as ${rank + 1} copies.`,
-        });
-      } else {
-        offers.push({
-          kind: 'star', id, name: def.name, colour: 0xffcf5c,
-          detail: 'Already mastered. Take a celestial star instead.',
-        });
-      }
+    /**
+     * WHICH pages lead the roll depends on whether fusion is something the player
+     * can actually do.
+     *
+     * A page you do not own is only the better prize while it opens combinations,
+     * and at hand size 1 it opens NONE — one page is the whole cast, so a fifth
+     * element is a different status effect while a rank is a straight damage
+     * increase. Leading with unowned pages there meant a three-page loadout was
+     * offered exactly one of its OWN pages per floor, picked at random, so the
+     * player could not steer ranks at the one hand size where ranks are all there
+     * is. Fusion live at hand 2+ flips it back: then a page you lack is a whole set
+     * of casts you cannot make.
+     *
+     * A weight and not a wall. Grouping the two outright would mean a full
+     * three-page loadout is never offered a fourth element while the hand is one,
+     * and an element you do not own is still a status you do not have — the bias
+     * is about which is usually the headline, not about locking half the book away.
+     */
+    const fusing = handSize() >= 2;
+    const lead = fusing ? unowned : owned;
+    const bag = [...owned, ...unowned];
+    const weights = bag.map((id) => (lead.includes(id) ? PAGE_LEAD : 1));
+    const ordered: string[] = [];
+    while (bag.length) {
+      const pick = rng.weighted(bag, weights);
+      const i = bag.indexOf(pick);
+      bag.splice(i, 1);
+      weights.splice(i, 1);
+      ordered.push(pick);
     }
-    return offers;
+
+    /**
+     * At most ONE sacrifice and at most one star payout per roll.
+     *
+     * Both are single propositions, not a menu: "you may buy rank 3" and "there is
+     * nothing left to give you". Three sacrifice cards is three versions of the
+     * same transaction and it eats the choice width the altar exists for; three
+     * star cards IS the star faucet this phase was written to stop, and it is what
+     * a book of maxed pages produces if nothing caps it. Capped here rather than by
+     * making the offers rarer, because one of each is exactly right.
+     */
+    const once = new Set<string>();
+    const offerable = ordered
+      .map((id) => pageOffer(id, rank2.find((p) => p !== id) ?? null))
+      .filter((o): o is AltarOffer => o !== null)
+      .filter((o) => {
+        if (o.kind !== 'sacrifice' && o.kind !== 'star') return true;
+        if (once.has(o.kind)) return false;
+        once.add(o.kind);
+        return true;
+      });
+    // A maxed page pays stars, which is not a spell, so that sinks below every page
+    // that still has something to teach. Otherwise "at least one spell" could be
+    // satisfied by a card that grants no spell.
+    const pages = [
+      ...offerable.filter((o) => o.kind !== 'star'),
+      ...offerable.filter((o) => o.kind === 'star'),
+    ];
+    const extras = rollExtras(rng);
+
+    /**
+     * How many of the three slots are pages. One is the floor — no roll is ever
+     * spell-free — and two is the usual shape, so the altar still reads as the
+     * place spells come from while everything else it can hand out is genuinely on
+     * the table rather than decorating a page draw.
+     */
+    const pageSlots = Math.max(1, rng.weighted([1, 2, 3], [3, 5, 2]));
+
+    const chosen: AltarOffer[] = [];
+    let pi = 0, xi = 0;
+    const nextPage = (): AltarOffer | undefined => pages[pi++];
+    const nextExtra = (): AltarOffer | undefined => extras[xi++];
+    while (chosen.length < 3) {
+      // When one side runs dry — a book with nothing left to give, or a full bar
+      // with no heal to offer — the other fills, because three is not negotiable.
+      const o = chosen.length < pageSlots
+        ? nextPage() ?? nextExtra()
+        : nextExtra() ?? nextPage();
+      if (!o) break;
+      chosen.push(o);
+    }
+    // Shuffled for POSITION only: which offers made it in is already decided, so
+    // this just stops the guaranteed spell always being the top card.
+    return rng.shuffle(chosen);
   };
 
   const takeFromAltar = (e: Entity): void => {
     if (e.kind !== 'altar' || e.spent || claimedAltars.has(e)) return;
     const d = Math.abs(e.sprite.tx - stepper.x) + Math.abs(e.sprite.ty - stepper.y);
     if (d > 1) { hud.addLog('Step closer to the altar.'); return; }
-    hud.offers = rollAltarOffers(e);
+    hud.offers = rollAltarOffers(e, altarNonce.get(e) ?? 0);
     hud.offerAltar = e;
+  };
+
+  /** What the three cards on the table are, for "did the reroll change anything". */
+  const offerSignature = (list: AltarOffer[]): string =>
+    list.map((o) => `${o.kind}:${o.id}:${o.amount}`).join('|');
+
+  /**
+   * Spend a charge to turn the table over.
+   *
+   * `rollAltarOffers` is deterministic per altar by design, so a reroll has to
+   * advance the seed — and then keep advancing it until the table has actually
+   * changed, because a charge spent on the same three cards is a bug the player
+   * paid for.
+   */
+  const rerollOffers = (): void => {
+    const e = hud.offerAltar;
+    const open = hud.offers;
+    if (!e || !open || open.some((o) => o.kind === 'displace')) return;
+    if (state.rerolls <= 0) {
+      hud.addLog('You have no reroll charges.', 0xffcf5c);
+      return;
+    }
+    const before = offerSignature(open);
+    state.rerolls--;
+    for (let i = 0; i < 8; i++) {
+      const n = (altarNonce.get(e) ?? 0) + 1;
+      altarNonce.set(e, n);
+      hud.offers = rollAltarOffers(e, n);
+      if (offerSignature(hud.offers) !== before) break;
+    }
+    sfx.shimmer(640);
+    hud.addLog(
+      `The altar turns over. ${state.rerolls} charge${state.rerolls === 1 ? '' : 's'} left.`,
+      0x8cc8ff,
+    );
+  };
+
+  /**
+   * Spend a page for good.
+   *
+   * The only path in the game that makes the book SMALLER, so it has to undo
+   * everything learning a page did: out of `state.pages`, out of `state.ranks`,
+   * and back through `setBookPages` / `book.refresh` or the grimoire keeps showing
+   * a page whose rank no longer exists. A hand holding it is returned, because
+   * nothing else would drop it and casting a page that is no longer yours is worse
+   * than losing the turns it cost.
+   */
+  const burnPage = (id: string): void => {
+    state.pages = state.pages.filter((p) => p !== id);
+    delete state.ranks[id];
+    setBookPages(state.pages);
+    book.refresh();
+    if (fan.gameIds.includes(id)) fan.clear();
+  };
+
+  /**
+   * Write a golden page into the permanent loadout.
+   *
+   * Through the same guards `loadMeta` applies on the way in — element ids only,
+   * no duplicates, never more than `slots` — so what this writes is a save the
+   * loader would accept. The new page is appended LAST and the trim takes from the
+   * front of what was kept, so the thing the player just chose can never be the
+   * thing that gets dropped to make room for it.
+   */
+  const claimGolden = (id: string, drop: string | null): void => {
+    const cap = Math.max(1, meta.slots);
+    const kept = meta.loadout
+      .filter((p) => p !== drop && p !== id && isElement(p))
+      .slice(0, cap - 1);
+    meta.loadout = [...kept, id];
+    saveMeta(meta);
+    goldenClaimed = true;
+  };
+
+  /**
+   * The follow-up step a full loadout forces: which page the golden one replaces.
+   *
+   * A second choice rather than a silent overwrite, because the loadout is the
+   * book the player starts every future run with — quietly dropping one of its
+   * pages is the single most consequential thing an altar could do without asking.
+   */
+  const displaceOffers = (id: string): AltarOffer[] => {
+    const gold = SPELL_BY_ID[id];
+    return meta.loadout.map((drop) => {
+      const def = SPELL_BY_ID[drop];
+      return {
+        kind: 'displace' as const, id: drop, name: def?.name ?? drop, tag: 'REPLACE',
+        colour: def?.colour ?? 0xb98cff,
+        detail: `${gold?.name ?? id} takes this slot in your starting book.`,
+        cost: `You will no longer begin runs holding ${def?.name ?? drop}.`,
+        amount: 0, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
+      };
+    });
+  };
+
+  const takeDisplace = (o: AltarOffer): void => {
+    const id = pendingGolden;
+    hud.offers = null;
+    pendingGolden = null;
+    if (!id) return;
+    claimGolden(id, o.id);
+    const gold = SPELL_BY_ID[id];
+    hud.setShout(`${(gold?.name ?? id).toUpperCase()} GILDED`, 0xffcf5c);
+    hud.addLog(
+      `${gold?.name ?? id} takes ${o.name}'s place in your starting book, from the next run on.`,
+      0xffcf5c,
+    );
+    refreshTargets();
   };
 
   /** Apply the offer the player picked, and empty the altar. */
   const chooseOffer = (o: AltarOffer): void => {
+    // Not a roll: the consequence of one already taken, and the altar is spent.
+    if (o.kind === 'displace') { takeDisplace(o); return; }
+
     const e = hud.offerAltar;
     hud.offers = null;
     hud.offerAltar = null;
     if (!e) return;
     claimedAltars.add(e);
     void floor.spendAltar(e);
+    const pageName = SPELL_BY_ID[o.id]?.name ?? o.id;
 
-    if (o.kind === 'new') {
-      state.ranks[o.id] = 1;
-      learnPage(o.id);
-      hud.setShout(`${o.name.toUpperCase()} LEARNED`, o.colour);
-      hud.addLog(`The altar yields ${o.name}. ${o.detail}`, o.colour);
-      // Deliberately NOT persisted. A page found in the dungeon belongs to this
-      // run only; next run you are back to your loadout. Golden pages are the
-      // one exception and they go through their own claim path.
-    } else if (o.kind === 'upgrade') {
-      state.ranks[o.id] = Math.min(MAX_RANK, (state.ranks[o.id] ?? 1) + 1);
-      hud.setShout(`${o.name.toUpperCase()} RANK ${state.ranks[o.id]}`, o.colour);
-      hud.addLog(`${o.name} deepens. ${o.detail}`, o.colour);
-    } else {
-      state.stars += 2;
-      hud.setShout('✦ 2 CELESTIAL STARS', 0xffcf5c);
-      hud.addLog(`${o.name} is already mastered — the altar pays in stars.`, 0xffcf5c);
+    switch (o.kind) {
+      case 'new':
+        state.ranks[o.id] = 1;
+        learnPage(o.id);
+        hud.setShout(`${o.name.toUpperCase()} LEARNED`, o.colour);
+        hud.addLog(`The altar yields ${o.name}. ${o.detail}`, o.colour);
+        // Deliberately NOT persisted. A page found in the dungeon belongs to this
+        // run only; next run you are back to your loadout. Golden pages are the
+        // one exception and they go through their own claim path.
+        break;
+      case 'upgrade':
+        state.ranks[o.id] = Math.min(MAX_RANK, (state.ranks[o.id] ?? 1) + 1);
+        hud.setShout(`${o.name.toUpperCase()} RANK ${state.ranks[o.id]}`, o.colour);
+        hud.addLog(`${o.name} deepens. ${o.detail}`, o.colour);
+        break;
+      case 'sacrifice': {
+        const spend = o.spendId;
+        // The modal owns every tap while it is open, so the book cannot have moved
+        // under this offer. Guarded anyway: silently ranking up for free would
+        // waive the one price the design is explicit about.
+        if (!spend || spend === o.id || (state.ranks[spend] ?? 0) < 2) {
+          hud.addLog('The sacrifice finds nothing to take. The altar closes.', 0xff9a6a);
+          break;
+        }
+        state.ranks[o.id] = Math.min(MAX_RANK, (state.ranks[o.id] ?? 1) + 1);
+        burnPage(spend);
+        hud.setShout(`${o.name.toUpperCase()} RANK ${state.ranks[o.id]}`, o.colour);
+        hud.addLog(
+          `${o.name} reaches rank ${state.ranks[o.id]} — ${SPELL_BY_ID[spend]?.name ?? spend} burns for it.`,
+          o.colour,
+        );
+        break;
+      }
+      case 'golden':
+        // Learned this run too. A permanent page you cannot use until the next run
+        // is a reward taken on faith, and the altar has to pay out where it stands.
+        if ((state.ranks[o.id] ?? 0) === 0) {
+          state.ranks[o.id] = 1;
+          learnPage(o.id);
+        }
+        if (meta.loadout.length < meta.slots) {
+          claimGolden(o.id, null);
+          hud.setShout(`${o.name.toUpperCase()} GILDED`, 0xffcf5c);
+          hud.addLog(`${o.name} is yours for good — it is in your book from the next run on.`, 0xffcf5c);
+        } else {
+          pendingGolden = o.id;
+        }
+        break;
+      case 'heal': {
+        // Recomputed rather than trusted: the offer's number was clamped when the
+        // card was built, and the bar has not moved since, but the bar is the
+        // authority on what it can take.
+        const got = healable(state.hp, state.maxHp, o.amount);
+        state.hp += got;
+        hud.setShout(`+${got} HEALTH`, 0x8ce06a);
+        hud.addLog(`The altar's light closes your wounds. +${got} health.`, 0x8ce06a);
+        break;
+      }
+      case 'stars':
+        state.stars += o.amount;
+        hud.setShout(`✦ ${o.amount} CELESTIAL STARS`, 0xffcf5c);
+        hud.addLog(`The altar pays ${o.amount} stars into the bank.`, 0xffcf5c);
+        break;
+      case 'reroll':
+        state.rerolls += o.amount;
+        hud.setShout('REROLL CHARGE', 0x8cc8ff);
+        hud.addLog(
+          `You pocket a charge. ${state.rerolls} in hand — spend one at any altar.`,
+          0x8cc8ff,
+        );
+        break;
+      case 'star':
+        // Still the settled rule: a rolled page with no rank left to give pays 2
+        // stars, so the run funds the meta exactly when it has nothing left to
+        // teach you. The page it was rolled for is named, or the payout reads as
+        // arriving from nowhere.
+        state.stars += o.amount;
+        hud.setShout(`✦ ${o.amount} CELESTIAL STARS`, 0xffcf5c);
+        hud.addLog(`${pageName} is already mastered — the altar pays in stars.`, 0xffcf5c);
+        break;
+      default:
+        break;
     }
 
     entityPos(e, tmp);
     fx.rise(tmp, o.colour);
-    sfx.shimmer(o.kind === 'star' ? 720 : 880);
+    sfx.shimmer(o.golden ? 990 : o.kind === 'star' || o.kind === 'stars' ? 720 : 880);
     refreshTargets();
+    // The displace choice opens while the altar's light is still up, so claiming
+    // and paying for it read as one moment rather than two unrelated modals.
+    if (pendingGolden) hud.offers = displaceOffers(pendingGolden);
   };
 
   /**
@@ -753,6 +1165,7 @@ async function boot(): Promise<void> {
       case 'cycle': cycleTarget(); break;
       case 'altar': takeFromAltar(a.entity); break;
       case 'offer': chooseOffer(a.offer); break;
+      case 'reroll': rerollOffers(); break;
       case 'chest': openChest(a.entity); break;
       case 'bookToggle':
         book.closed = !book.closed;
@@ -1001,7 +1414,42 @@ async function boot(): Promise<void> {
     chests: () => floor.entities.filter((e) => e.kind === 'chest' && e.alive && !e.spent),
     /** Same reach rule as the tap, so `place` next to it first. Returns the offers. */
     openAltar: (e: Entity) => { takeFromAltar(e); return hud.offers; },
-    /** Take an offer by index, or the object `openAltar` handed back. */
+    /**
+     * What an altar WOULD offer on a given roll. No reach rule, no state touched,
+     * nothing opened.
+     *
+     * Here because the roll's bias is a claim about a distribution — which pages
+     * lead at which hand size — and a distribution cannot be checked one altar at
+     * a time. Sample it across nonces instead.
+     */
+    peekOffers: (e: Entity, nonce = 0) => rollAltarOffers(e, nonce),
+    /**
+     * Open an altar on a roll that CONTAINS `kind`, without spending charges — it
+     * advances the roll's nonce, which is the same thing a reroll does.
+     *
+     * Every offer kind is gated on something: golden on a rarity roll, heal on
+     * being hurt, sacrifice on holding a spare rank-2 page. A reward kind a harness
+     * cannot reach is a reward kind nothing in this project verifies, so reaching
+     * each one has to be one call. Returns null if `tries` rolls never produced it.
+     */
+    openAltarKind: (e: Entity, kind: AltarOffer['kind'], tries = 80) => {
+      takeFromAltar(e);
+      for (let i = 0; i < tries; i++) {
+        if (hud.offers?.some((o) => o.kind === kind)) return hud.offers;
+        if (!hud.offers) return null;
+        const n = (altarNonce.get(e) ?? 0) + 1;
+        altarNonce.set(e, n);
+        hud.offers = rollAltarOffers(e, n);
+      }
+      return hud.offers?.some((o) => o.kind === kind) ? hud.offers : null;
+    },
+    /**
+     * Take an offer by index, or the object `openAltar` handed back.
+     *
+     * Also drives the golden page's follow-up step: claiming one with a full
+     * loadout replaces `hud.offers` with the displace choice, and picking from that
+     * list is the same call again.
+     */
     pickOffer: (o: number | AltarOffer) => {
       const list = hud.offers;
       if (!list) return null;
@@ -1010,16 +1458,51 @@ async function boot(): Promise<void> {
       chooseOffer(pick);
       return pick;
     },
+    /** Spend a banked charge on the open altar. Returns the new offers. */
+    rerollAltar: () => { rerollOffers(); return hud.offers; },
+    /** Bank reroll charges outright, so the spend path is drivable on its own. */
+    grantRerolls: (n: number) => { state.rerolls = Math.max(0, n); return state.rerolls; },
     /**
-     * Open and claim in one call: the rank-up if it is on the table, else the first
-     * offer. The primitives above are there for a harness that wants a different
-     * line; this is here so that taking the free upgrade is shorter than skipping it.
+     * Put a page in the book at a given rank. The sacrifice only appears when the
+     * player holds a spare rank-2 page, which no default loadout ever does.
+     */
+    setRank: (id: string, rank: number) => {
+      if (!isElement(id)) return null;
+      const r = Math.max(0, Math.min(MAX_RANK, Math.floor(rank)));
+      if (r === 0) { burnPage(id); return 0; }
+      state.ranks[id] = r;
+      learnPage(id);
+      return r;
+    },
+    /** Skip the golden page's rarity roll, so its claim path is reachable at will. */
+    forceGolden: (on: boolean) => { goldenForced = !!on; return goldenForced; },
+    /**
+     * Open and claim in one call, taking the run's INCOME.
+     *
+     * The order is a claim about what a competent player takes at hand size 1, and
+     * every step of it is load-bearing:
+     *  - the free rank-up first, because `docs/DESIGN.md` prices 1→2 at nothing;
+     *  - a HEAL above a new page, because at hand size 1 a fourth element fuses
+     *    with nothing while a floor's worth of health is the binding constraint on
+     *    the whole run (see `tuning.ts` on the attrition budget);
+     *  - the sacrifice LAST, because it burns a page, and a harness that silently
+     *    lost the page its line casts would change what every later floor measures.
+     *    Unreachable in practice — a roll holds at most one sacrifice and always
+     *    holds something else — but the order is what makes that true by rule
+     *    rather than by luck;
+     *  - golden never, because it writes the persisted loadout and opens a second
+     *    modal. Driving it is `openAltarKind` plus `pickOffer`, deliberately.
      */
     takeAltar: (e: Entity) => {
       takeFromAltar(e);
       const list = hud.offers;
       if (!list?.length) return null;
-      const pick = list.find((o) => o.kind === 'upgrade') ?? list[0];
+      const order = ['upgrade', 'heal', 'new', 'stars', 'reroll', 'star', 'sacrifice'];
+      let pick = list.find((o) => o.kind !== 'golden') ?? list[0];
+      for (const kind of order) {
+        const found = list.find((o) => o.kind === kind);
+        if (found) { pick = found; break; }
+      }
       chooseOffer(pick);
       return pick;
     },

@@ -1,8 +1,8 @@
 # Altar Reward Node
 
 **Player-facing:** yes
-**Started:** —
-**Status:** planned
+**Started:** 2026-07-29 11:05
+**Status:** shipped
 
 Turns the altar from a spell dispenser into the run's general reward node: three choices, always including at least one spell.
 

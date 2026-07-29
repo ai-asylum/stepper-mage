@@ -21,13 +21,68 @@ import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
 import { spriteTexture } from '../dungeon/sprites';
 import type { Floor } from '../game/floor';
 
-/** One of the three things an altar is offering. */
+/**
+ * What an altar can put on a card.
+ *
+ * `new`/`upgrade`/`sacrifice`/`star`/`golden` are all offers ABOUT A PAGE — the
+ * altar's one hard rule is that no roll is spell-free, and that rule is stated as
+ * "at least one offer of these kinds". The rest are the reasons an altar stays
+ * interesting once the book is full.
+ *
+ * `displace` is not rolled: it is the follow-up step a golden page opens when the
+ * permanent loadout has no free slot, so the player says what it replaces instead
+ * of finding out afterwards.
+ */
+export type AltarOfferKind =
+  | 'new' | 'upgrade' | 'sacrifice' | 'star' | 'golden'
+  | 'heal' | 'stars' | 'reroll'
+  | 'displace';
+
+/**
+ * One of the three things an altar is offering.
+ *
+ * Everything a card has to draw is ON the offer. The altar is the one moment in a
+ * run where the player is reading rather than reacting, so a card assembled by
+ * reaching back into the run — current rank, current HP, what the loadout holds —
+ * is a card that can quietly disagree with what taking it actually does. The
+ * offer is built once, at roll time, and it is the whole truth about itself.
+ */
 export interface AltarOffer {
-  kind: 'new' | 'upgrade' | 'star';
+  kind: AltarOfferKind;
+  /**
+   * The page this offer is about, or `''` when it is about nothing in the book
+   * (heal, stars, reroll). A `displace` offer carries the page being DROPPED.
+   */
   id: string;
+  /** The headline. Already carries its own number where it has one. */
   name: string;
+  /** The small line above the headline. Copy lives on the offer, not on the card. */
+  tag: string;
   colour: number;
+  /** The body line. */
   detail: string;
+  /**
+   * What taking this costs, spelled out, or null when it is free. Only the two
+   * offers that take something away for good have one — the rank-3 sacrifice and
+   * a displaced loadout slot — and a price the player meets only in the log
+   * afterwards is a trap, so a card must draw this.
+   */
+  cost: string | null;
+  /** Health restored, stars paid, charges banked — 0 when the offer has no number. */
+  amount: number;
+  /** The page's rank now, or 0 when the offer is not about a page. */
+  rank: number;
+  /** The rank it becomes; 0 when the offer does not move a rank. Draw pips iff > 0. */
+  toRank: number;
+  /** How long a full rank ladder is, so a card need not import the rule. */
+  maxRank: number;
+  /** Draw the golden treatment: this one outlives the run. */
+  golden: boolean;
+  /**
+   * The rank-2 page a sacrifice spends. Logic only — what the player must SEE is
+   * `cost`, which names it in words.
+   */
+  spendId?: string;
 }
 
 export type UiAction =
@@ -37,6 +92,8 @@ export type UiAction =
   | { kind: 'cycle' }
   | { kind: 'bookToggle' }
   | { kind: 'offer'; offer: AltarOffer }
+  /** Spend a banked charge to re-roll the open altar's three offers. */
+  | { kind: 'reroll' }
   | { kind: 'altar'; entity: Entity }
   | { kind: 'chest'; entity: Entity }
   | { kind: 'move'; m: 'forward' | 'back' }
@@ -651,20 +708,38 @@ export class Hud {
     // the two rather than rendering a fraction that reads as a bug.
     const cap = Math.max(this.handSize, this.handHeld);
     const full = this.handHeld >= cap;
-    const label = `HAND ${this.handHeld}/${cap}`;
+    const y = 50;
+    const w = this.pill(ctx, 12, y, `HAND ${this.handHeld}/${cap}`,
+      full ? GOLD : PARCH, full ? 'rgba(255,207,92,0.75)' : 'rgba(232,217,176,0.28)');
+    /**
+     * Banked reroll charges, next to hand size and in the altar modal's blue, so
+     * the thing you hold and the button that spends it are visibly the same
+     * currency. Only while you hold one — an always-on "×0" is noise — and with no
+     * hit region, because an altar is the only place a charge can be spent.
+     */
+    if (this.state.rerolls > 0) {
+      this.pill(ctx, 12 + w + 6, y, `↻ REROLL ×${this.state.rerolls}`,
+        '#cfe6ff', 'rgba(140,200,255,0.6)');
+    }
+  }
+
+  /** One small readout pill, in the HUD's one shape. Returns its width. */
+  private pill(
+    ctx: CanvasRenderingContext2D, x: number, y: number, label: string, fg: string, edge: string,
+  ): number {
     ctx.font = '8px ui-monospace, monospace';
-    const w = ctx.measureText(label).width + 14;
-    const x = 12, y = 50, h = 14;
+    const w = ctx.measureText(label).width + 14, h = 14;
     rr(ctx, x, y, w, h, 7);
     ctx.fillStyle = 'rgba(14,9,16,0.7)';
     ctx.fill();
-    ctx.strokeStyle = full ? 'rgba(255,207,92,0.75)' : 'rgba(232,217,176,0.28)';
+    ctx.strokeStyle = edge;
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = full ? GOLD : PARCH;
+    ctx.fillStyle = fg;
     ctx.fillText(label, x + 7, y + h / 2 + 0.5);
     ctx.textBaseline = 'top';
+    return w;
   }
 
   private drawLog(ctx: CanvasRenderingContext2D, W: number): void {
@@ -859,54 +934,253 @@ export class Hud {
    */
   private drawOffers(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     const offers = this.offers!;
+    /**
+     * The displace step reuses this modal from the other side: the reward is
+     * already claimed and what is on the table is its price. "THE ALTAR OFFERS /
+     * choose one" would frame throwing a page out of the starting book as a third
+     * gift, which is the one reading that makes it feel like a trick.
+     */
+    const displace = offers.some((o) => o.kind === 'displace');
     ctx.fillStyle = 'rgba(8,5,12,0.86)';
     ctx.fillRect(0, 0, W, H);
 
     ctx.textAlign = 'center';
     ctx.font = 'bold 12px ui-monospace, monospace';
-    ctx.fillStyle = '#b98cff';
-    ctx.fillText('THE ALTAR OFFERS', W / 2, H * 0.16);
+    ctx.fillStyle = displace ? GOLD : '#b98cff';
+    ctx.fillText(displace ? 'YOUR LOADOUT IS FULL' : 'THE ALTAR OFFERS', W / 2, H * 0.16);
     ctx.font = '9px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(232,217,176,0.55)';
-    ctx.fillText('choose one', W / 2, H * 0.16 + 16);
+    ctx.fillText(
+      displace ? 'choose the page the golden one replaces' : 'choose one',
+      W / 2, H * 0.16 + 16,
+    );
 
-    const cw = W - 48, ch = 78, gap = 12;
-    const total = offers.length * ch + (offers.length - 1) * gap;
-    let y = H / 2 - total / 2;
+    const cw = W - 48, x = 24, gap = 12;
+    /**
+     * Cards are MEASURED, not fixed. A card with a two-line body and a price has
+     * half again the content of a bare one, and one shared height either clips the
+     * long card or hollows out the short ones — on the only screen in the game
+     * that is meant to be read.
+     */
+    ctx.font = '9px ui-monospace, monospace';
+    const bodies = offers.map((o) => wrapLines(ctx, o.detail, cw - 40));
+    ctx.font = 'bold 8.5px ui-monospace, monospace';
+    const prices = offers.map((o) => (o.cost ? wrapLines(ctx, o.cost, cw - 52) : []));
+    const heights = offers.map((_, i) =>
+      50 + bodies[i].length * 12 + (prices[i].length ? 17 + prices[i].length * 11 : 8));
 
-    for (const o of offers) {
-      const x = 24;
+    let y = H / 2 - (heights.reduce((a, b) => a + b, 0) + (offers.length - 1) * gap) / 2;
+
+    offers.forEach((o, i) => {
+      const ch = heights[i];
+      /** Top of the price band, or 0 when this offer is free. */
+      const py = prices[i].length ? y + 54 + bodies[i].length * 12 : 0;
+      /**
+       * The sacrifice is the only offer that destroys a page you own, and it wears
+       * that page's colour — which on Frostbolt is the same cold blue as a reroll
+       * charge, the most harmless card in the roll. So the frame stops being the
+       * page's colour and becomes an alarm; the leading edge keeps the colour,
+       * because WHICH page is still what the offer is about.
+       */
+      const danger = o.kind === 'sacrifice';
+
+      if (o.golden) {
+        // The only card in the game that glows. A golden page is the sole route
+        // by which anything survives the run, and it shows up in maybe half of a
+        // full run's altars — it cannot be a card you skim.
+        const pulse = 0.6 + Math.sin(this.engine.time * 2.4) * 0.4;
+        ctx.save();
+        ctx.shadowColor = `rgba(255,207,92,${0.35 + pulse * 0.35})`;
+        ctx.shadowBlur = 9 + pulse * 11;
+      }
       rr(ctx, x, y, cw, ch, 8);
-      ctx.fillStyle = 'rgba(26,18,32,0.96)';
+      if (o.golden) {
+        const g = ctx.createLinearGradient(x, y, x, y + ch);
+        g.addColorStop(0, 'rgba(78,56,20,0.97)');
+        g.addColorStop(1, 'rgba(30,22,13,0.97)');
+        ctx.fillStyle = g;
+      } else ctx.fillStyle = danger ? 'rgba(40,16,13,0.96)' : 'rgba(26,18,32,0.96)';
       ctx.fill();
-      ctx.strokeStyle = hexCss(o.colour, 0.9);
-      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = o.golden ? GOLD : danger ? '#ff6a3c' : hexCss(o.colour, 0.9);
+      ctx.lineWidth = o.golden ? 2.2 : danger ? 1.8 : 1.6;
+      // Perforated, and nothing else on the modal is: an alarm colour alone cannot
+      // carry "this destroys a page" when a fire page's own colour is that orange.
+      // A tear-here line is what the offer literally does.
+      if (danger) ctx.setLineDash([7, 4]);
       ctx.stroke();
+      ctx.setLineDash([]);
+      if (o.golden) ctx.restore();
 
-      // a colour flash down the leading edge, so the three read as distinct
+      if (o.golden) {
+        // A gilded edge: double rule and picked-out corners, the two marks a
+        // hand-illuminated page has and a printed one does not.
+        rr(ctx, x + 4.5, y + 4.5, cw - 9, ch - 9, 5);
+        ctx.strokeStyle = 'rgba(255,207,92,0.38)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.strokeStyle = GOLD;
+        ctx.beginPath();
+        for (const [cx, cy, sx, sy] of [
+          [x + 4.5, y + 4.5, 1, 1], [x + cw - 4.5, y + 4.5, -1, 1],
+          [x + 4.5, y + ch - 4.5, 1, -1], [x + cw - 4.5, y + ch - 4.5, -1, -1],
+        ] as const) {
+          ctx.moveTo(cx + sx * 7, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + sy * 7);
+        }
+        ctx.stroke();
+      }
+
+      // A colour flash down the leading edge, so the three read as distinct. Held
+      // clear of the frame on the two cards whose frame is not a plain line — the
+      // gilded rule and the tear line both chop a strip drawn under them into
+      // something that looks like a rendering fault. Stopped above the price band
+      // for the same reason: run behind it, it reads as a bar half full of mud.
+      const inset = o.golden || danger;
+      const flashTop = y + (inset ? 14 : 10);
+      const flashEnd = py ? py - 4 : y + ch - (inset ? 14 : 10);
       ctx.fillStyle = hexCss(o.colour, 0.85);
-      ctx.fillRect(x + 1, y + 10, 4, ch - 20);
+      ctx.fillRect(x + (inset ? 8 : 1), flashTop, inset ? 3 : 4, flashEnd - flashTop);
 
-      const tag = o.kind === 'new' ? 'NEW SPELL'
-        : o.kind === 'upgrade' ? 'UPGRADE'
-        : 'CELESTIAL STARS';
       ctx.textAlign = 'left';
       ctx.font = '8px ui-monospace, monospace';
-      ctx.fillStyle = hexCss(o.colour, 0.85);
-      ctx.fillText(tag, x + 18, y + 14);
+      ctx.fillStyle = danger ? 'rgba(255,150,110,0.95)'
+        : o.golden ? 'rgba(255,207,92,0.9)'
+        : hexCss(o.colour, 0.8);
+      ctx.fillText(o.tag, x + 18, y + 12);
 
-      ctx.font = 'bold 15px ui-serif, Georgia, serif';
-      ctx.fillStyle = '#fff4dc';
-      ctx.fillText(o.kind === 'star' ? '✦  +2 Stars' : o.name, x + 18, y + 30);
+      // The headline carries the whole card: serif, big, and the only bright thing
+      // on it, so the eye lands on WHAT this is before the small print.
+      ctx.font = 'bold 16px ui-serif, Georgia, serif';
+      ctx.fillStyle = o.golden ? GOLD : '#fff4dc';
+      ctx.fillText(o.name, x + 18, y + 26);
+
+      if (o.golden) this.drawSeal(ctx, x + cw - 14, y + 10, 'PERMANENT');
+      else if (o.toRank > 0) this.drawRankPips(ctx, x + cw - 14, y + 13, o);
 
       ctx.font = '9px ui-monospace, monospace';
-      ctx.fillStyle = 'rgba(226,216,200,0.75)';
-      wrapLeft(ctx, o.detail, x + 18, y + 52, cw - 40, 12);
+      // Warmer and brighter on the gilded card: the same grey on its lit ground is
+      // the one place the body copy loses its contrast.
+      ctx.fillStyle = o.golden ? 'rgba(255,240,206,0.88)' : 'rgba(226,216,200,0.72)';
+      bodies[i].forEach((ln, k) => ctx.fillText(ln, x + 18, y + 50 + k * 12));
+
+      // The price, on the card, BEFORE it is taken — only the rank-3 sacrifice and
+      // a displaced loadout slot have one, and both take something away for good.
+      // A banded row with a warning disc rather than one more line of body text:
+      // a player who meets this price in the log afterwards was tricked by the UI.
+      if (py) {
+        ctx.save();
+        rr(ctx, x, y, cw, ch, 8);
+        ctx.clip();
+        ctx.fillStyle = 'rgba(96,30,16,0.58)';
+        ctx.fillRect(x, py, cw, ch - (py - y));
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(255,120,70,0.5)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + 1, py + 0.5); ctx.lineTo(x + cw - 1, py + 0.5);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x + 24, py + 12, 5.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff6a3c';
+        ctx.fill();
+        ctx.font = 'bold 9px ui-monospace, monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#1c0b06';
+        ctx.fillText('!', x + 24, py + 12.5);
+        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        ctx.font = 'bold 8.5px ui-monospace, monospace';
+        ctx.fillStyle = '#ffc0a4';
+        prices[i].forEach((ln, k) => ctx.fillText(ln, x + 34, py + 7 + k * 11));
+      }
 
       this.hits.push({ rect: [x, y, cw, ch], action: { kind: 'offer', offer: o } });
       y += ch + gap;
+    });
+
+    // A reroll charge is spendable HERE and nowhere else, so the modal is the only
+    // place it can be reached. Not offered over the displace step: that choice is
+    // the consequence of one already taken and there is nothing left to re-roll.
+    if (this.state.rerolls > 0 && !displace) {
+      const label = `↻  REROLL  ×${this.state.rerolls}`;
+      ctx.font = 'bold 10px ui-monospace, monospace';
+      const tw = ctx.measureText(label).width + 36;
+      const bx = (W - tw) / 2, by = y + 8, bh = 28;
+      rr(ctx, bx, by, tw, bh, 14);
+      ctx.fillStyle = 'rgba(18,30,50,0.94)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(140,200,255,0.85)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#d6ecff';
+      ctx.fillText(label, W / 2, by + bh / 2 + 0.5);
+      ctx.font = '8px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(140,200,255,0.55)';
+      ctx.textBaseline = 'top';
+      ctx.fillText('spends a charge · turns all three over', W / 2, by + bh + 6);
+      // Padded, because it is the one small control on a screen of large ones.
+      this.hits.push({ rect: [bx - 8, by - 8, tw + 16, bh + 16], action: { kind: 'reroll' } });
     }
     ctx.textAlign = 'left';
+  }
+
+  /**
+   * Rank as a MOVE, not a destination.
+   *
+   * The pips you hold are the page's own dimmed colour, then a caret, then the
+   * ones this offer adds in bright gold — so the card says "you have one, this
+   * makes two" at a glance, which a bare "Rank 2" never does. The caret carries
+   * that on its own: Spark's colour IS gold, so hue alone cannot be the
+   * difference between owned and gained. Anchored to the card's right edge.
+   */
+  private drawRankPips(ctx: CanvasRenderingContext2D, right: number, top: number, o: AltarOffer): void {
+    const S = 8, G = 4, CARET = 8;
+    // No caret on a page you do not hold yet: there is nothing to its left for the
+    // move to come FROM, and it reads as a stray glyph.
+    const caret = o.rank > 0 && o.toRank > o.rank;
+    let px = right - (o.maxRank * S + (o.maxRank - 1) * G + (caret ? CARET : 0));
+    ctx.font = '7px ui-monospace, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(232,217,176,0.42)';
+    ctx.fillText('RANK', px - 7, top + 1);
+    ctx.textAlign = 'left';
+    for (let i = 0; i < o.maxRank; i++) {
+      if (caret && i === o.rank) {
+        ctx.font = 'bold 9px ui-monospace, monospace';
+        ctx.fillStyle = GOLD;
+        ctx.fillText('›', px + 1, top);
+        px += CARET;
+      }
+      if (i >= o.rank && i < o.toRank) {
+        ctx.save();
+        ctx.shadowColor = 'rgba(255,207,92,0.9)';
+        ctx.shadowBlur = 7;
+        ctx.fillStyle = GOLD;
+        ctx.fillRect(px, top, S, S);
+        ctx.restore();
+      } else if (i < o.rank) {
+        ctx.fillStyle = hexCss(o.colour, 0.5);
+        ctx.fillRect(px, top, S, S);
+      } else {
+        ctx.strokeStyle = 'rgba(232,217,176,0.26)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(px + 0.5, top + 0.5, S - 1, S - 1);
+      }
+      px += S + G;
+    }
+  }
+
+  /** The golden card's stamp: what makes it different is that it outlives the run. */
+  private drawSeal(ctx: CanvasRenderingContext2D, right: number, top: number, label: string): void {
+    ctx.font = 'bold 7.5px ui-monospace, monospace';
+    const w = ctx.measureText(label).width + 14, h = 14;
+    const bx = right - w;
+    rr(ctx, bx, top, w, h, 7);
+    ctx.fillStyle = 'rgba(255,207,92,0.9)';
+    ctx.fill();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#2a1c06';
+    ctx.fillText(label, bx + w / 2, top + h / 2 + 0.5);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   }
 
   private drawDeath(ctx: CanvasRenderingContext2D, W: number, H: number): void {
@@ -956,17 +1230,21 @@ export class Hud {
   }
 }
 
-/** Left-aligned word wrap for the offer cards. */
-function wrapLeft(
-  ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number, lh: number,
-): void {
-  let line = '', yy = y;
+/**
+ * Word wrap for the offer cards, split rather than drawn: the cards size
+ * themselves to their copy, so the line count has to be known before anything is
+ * laid out. Measured in the caller's current font.
+ */
+function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
+  const out: string[] = [];
+  let line = '';
   for (const w of text.split(' ')) {
     const test = line ? `${line} ${w}` : w;
     if (ctx.measureText(test).width > maxW && line) {
-      ctx.fillText(line, x, yy);
-      line = w; yy += lh;
+      out.push(line);
+      line = w;
     } else line = test;
   }
-  if (line) ctx.fillText(line, x, yy);
+  if (line) out.push(line);
+  return out;
 }
