@@ -48,7 +48,15 @@ export interface Theme {
 
   detail: FloorDetail;
 
-  /** Prop + enemy + boss sprite ids for this floor (see art/manifest.json). */
+  /**
+   * Prop + enemy + boss sprite ids for this floor (see art/manifest.json).
+   *
+   * `props` and `golems` are INDEX-PAIRED — `populate.ts` rolls one index and reads
+   * both — so they must stay the same length and the same order. Which element a
+   * prop can be harvested for is deliberately not a third array here: it is keyed
+   * by sprite id in `PROP_ELEMENT` (`spells/spells.ts`, beside `BODY_NAME`), so
+   * there is nothing extra to keep aligned.
+   */
   props: string[];
   golems: string[];
   enemies: string[];

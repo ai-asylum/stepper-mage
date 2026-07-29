@@ -11,7 +11,7 @@
  * `gameId` points back at this game's own spell. Order matters: chapters are
  * contiguous runs of pages, because they are physical sections with ribbon tabs.
  */
-import { ELEMENT_SPELLS, SPELL_BY_ID } from './spells';
+import { ELEMENT_SPELLS, FIXTURE_SPELLS, SPELL_BY_ID } from './spells';
 
 /**
  * `transmutation` currently has no pages — Growth and Multishot were its two,
@@ -79,6 +79,20 @@ function darken(n: number, k: number): number {
   return (f(r) << 16) | (f(g) << 8) | f(b);
 }
 
+/**
+ * The book's three-tone triad from one game colour. Exported because a harvested
+ * element gets a page-shaped card too (`harvestCards.ts`) and it has to be mixed
+ * the same way, or a borrowed element would read as a different KIND of card
+ * rather than as the same card borrowed.
+ */
+export function colorsOf(colour: number): SpellColors {
+  return {
+    main: hex(colour),
+    glow: hex(lighten(colour, 0.35)),
+    deep: hex(darken(colour, 0.45)),
+  };
+}
+
 function roleOf(gameId: string): SpellRole {
   const r = SPELL_BY_ID[gameId]?.role;
   return r === 'animate' ? 'summon' : r === 'modifier' ? 'modifier' : 'bolt';
@@ -95,11 +109,7 @@ export const ALL_PAGES: SpellDef[] = ORDER.map((gameId) => {
     school: m.school,
     role: roleOf(gameId),
     cost: g.cost,
-    colors: {
-      main: hex(g.colour),
-      glow: hex(lighten(g.colour, 0.35)),
-      deep: hex(darken(g.colour, 0.45)),
-    },
+    colors: colorsOf(g.colour),
     effect: g.effect,
     flavor: g.flavor,
   };
@@ -143,13 +153,23 @@ export const CHAPTERS: Chapter[] = ALL_PAGES.reduce<Chapter[]>((list, s, i) => {
 }, []);
 
 /**
- * Sanity: every ELEMENT must have a page, or the player can never cast it.
- * Ingredients are deliberately absent, so comparing against every game spell
- * would only ever warn about them.
+ * Sanity, in both directions, because the book is now defined as much by what it
+ * must NOT contain as by what it must.
+ *
+ * `ELEMENT_SPELLS` is page elements only (`spells.ts`), so the first check still
+ * says what it always said: an element with a page and no `ORDER` entry is an
+ * element the player can never cast. The second is the new half — Stone, Water,
+ * Oil and Starlight are harvested from fixtures and have no page anywhere, ever
+ * (`docs/DESIGN.md`, "**No Stone page exists.**"), so a fixture element appearing
+ * here would be the rule quietly breaking rather than failing.
  */
 {
   const missing = ELEMENT_SPELLS.map((s) => s.id).filter((id) => !ORDER.includes(id));
   if (missing.length) {
     console.warn(`[pages] elements missing from ORDER: ${missing.join(', ')}`);
+  }
+  const forbidden = FIXTURE_SPELLS.map((s) => s.id).filter((id) => ORDER.includes(id));
+  if (forbidden.length) {
+    console.warn(`[pages] harvested elements must have NO page: ${forbidden.join(', ')}`);
   }
 }

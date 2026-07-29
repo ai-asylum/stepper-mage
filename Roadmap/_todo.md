@@ -46,15 +46,15 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 3 — Harvest_And_Room_Elements
 
-- [ ] Add object reactions: oil and fire, water and spark, statue and gust, and the rest of the table.
+- [x] Add object reactions: oil and fire, water and spark, statue and gust, and the rest of the table.
 
-- [ ] Add Stone, Water, Oil, Starlight elements with no book page.
-- [ ] Tag props with a harvest element; leave bookshelf, lectern, telescope, meat rack, bone pile, fungus animate-only.
-- [ ] Add a HARVEST pill on the selected fixture, gated on line of sight.
-- [ ] Add harvested elements to the fan as rank-1 cards that never scale with rank.
-- [ ] Author Meteor, Glacier, Lodestone, and the Oil and Water interactions.
-- [ ] Keep fixtures non-depleting; animating one removes it as a tap.
-- [ ] Commit changes.
+- [x] Add Stone, Water, Oil, Starlight elements with no book page.
+- [x] Tag props with a harvest element; leave bookshelf, lectern, telescope, meat rack, bone pile, fungus animate-only.
+- [x] Add a HARVEST pill on the selected fixture, gated on line of sight.
+- [x] Add harvested elements to the fan as rank-1 cards that never scale with rank.
+- [x] Author Meteor, Glacier, Lodestone, and the Oil and Water interactions.
+- [x] Keep fixtures non-depleting; animating one removes it as a tap.
+- [x] Commit changes.
 
 ## Phase 4 — Star_Tree
 
@@ -112,4 +112,5 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Fix golems stalling instead of following.
 - [ ] Break the monochrome orange cast; make each floor read as its own palette.
 - [ ] Add a chest golem sprite and let Animate target chests.
+- [ ] Untangle the HUD text layer: log lines, captions and name plates overdraw each other.
 - [ ] Commit changes.

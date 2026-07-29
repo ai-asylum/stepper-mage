@@ -1,8 +1,8 @@
 # Harvest And Room Elements
 
 **Player-facing:** yes
-**Started:** —
-**Status:** planned
+**Started:** 2026-07-29 12:10
+**Status:** shipped
 
 Room fixtures become element taps, and objects react to being hit. Line of sight, non-depleting, one hand slot and one turn, always rank 1.
 

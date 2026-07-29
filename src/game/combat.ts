@@ -24,14 +24,14 @@ import { Rng } from '../core/rng';
 import { DIR_VEC, type Grid } from '../dungeon/grid';
 import type { Entity, Floor } from './floor';
 import {
-  STATUS_META, displayName, resolveCast,
-  type CastTarget, type ResolvedCast, type StatusId,
+  STATUS_META, displayName, harvestOf, isFixtureElement, resolveCast,
+  type CastTarget, type Element, type ResolvedCast, type StatusId,
 } from '../spells/spells';
 import {
   ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CONDUCTION_ARC_RANGE,
   CONDUCTION_ARC_SHARE, CONDUCTION_MULT, DAMAGE_JITTER, DECAY_DOT, DEEP_FREEZE_MULT,
-  DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, ROUND_PACE_MS, SHATTER_DAMAGE,
-  SHATTER_MULT, bossDamage, enemyDamage,
+  DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS,
+  SHATTER_DAMAGE, SHATTER_MULT, bossDamage, enemyDamage,
 } from './tuning';
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -109,6 +109,105 @@ export interface GameEvent {
   amount?: number;
 }
 
+// -------------------------------------------------------------- object reactions
+
+/**
+ * What an object does when it is hit with the element it answers to.
+ *
+ * The third of `docs/DESIGN.md`'s three uses per object, and the one that is NOT a
+ * fusion: aiming a spell at a candelabra to borrow its fire was rejected, because
+ * then the element and the target are the same slot. Here the object IS the target,
+ * on purpose, and the payoff is spatial — everything beside it pays.
+ */
+export interface ReactionDef {
+  /**
+   * The reticle's promise, before the cast. A reaction the player only ever
+   * discovers afterwards reads as the spell having misfired.
+   */
+  verb: string;
+  colour: number;
+  /** Dealt to every hostile the reaction reaches, in full — this is not a volley. */
+  damage: number;
+  status?: StatusId;
+  /**
+   * Which tiles pay. `around` is all eight neighbours; `ahead` is the one tile on
+   * the far side of the object from the player, and `cone` is that tile plus its two
+   * shoulders — the object is between you and the payoff, which is the whole reason
+   * to shoot the furniture instead of the enemy.
+   */
+  shape: 'around' | 'ahead' | 'cone';
+}
+
+/**
+ * Keyed on `<what the object is>+<element that arrives>`, and the left half is a
+ * FIXTURE ELEMENT ID (`harvestOf`) rather than a sprite id wherever the doc's row
+ * is about the object's nature — an oil drum and an ale barrel are both a barrel of
+ * something that burns, and a table listing sprites would need a new row for every
+ * theme's version of the same object. Sprite ids are used only where the row is
+ * about that one object: a cauldron of water boils where a barrel of it does not,
+ * and a bone pile is not a tap for anything at all.
+ *
+ * The damage numbers are sized against `enemyHp` (10 at depth 1, 22 at depth 5): the
+ * cast that sets a reaction off spends its own hit on the furniture, so a reaction
+ * has to be worth a whole cast against a GROUP and worth nothing against a lone
+ * body. An explosion kills a mook outright at any depth and that is the point;
+ * standing three enemies around a drum is the best turn in the game, and there is
+ * exactly one drum.
+ */
+const REACTIONS: Record<string, ReactionDef> = {
+  'oil+fire': { verb: 'EXPLODES', colour: 0xff8a1a, damage: 22, status: 'burning', shape: 'around' },
+  'water+spark': { verb: 'CONDUCTS', colour: 0xffe14a, damage: 14, status: 'shocked', shape: 'around' },
+  // Denial rather than damage: the spill freezes and whatever is standing in it is
+  // held. Under SHATTER_DAMAGE deliberately, so the ice it makes can still be broken.
+  'water+frost': { verb: 'FREEZES THE FLOOR', colour: 0x7ad4ff, damage: 4, status: 'frozen', shape: 'around' },
+  'flame+gust': { verb: 'WASHES FLAME', colour: 0xff7a2b, damage: 12, status: 'burning', shape: 'ahead' },
+  'stone+gust': { verb: 'TOPPLES', colour: 0xa89880, damage: 16, status: 'stagger', shape: 'around' },
+  'f2_prop_cauldron+fire': {
+    verb: 'BOILS OVER', colour: 0xd8eaf0, damage: 10, status: 'burning', shape: 'around',
+  },
+  'f2_prop_bonepile+gust': {
+    verb: 'THROWS SHRAPNEL', colour: 0xe8e0c8, damage: 12, shape: 'cone',
+  },
+};
+
+/**
+ * What this object would do if this set of elements arrived, or null.
+ *
+ * Exported because the HUD has to say it on the reticle before the cast is released
+ * — the same table answering both questions is what stops the promise and the payoff
+ * from drifting apart.
+ */
+export function reactionFor(spriteId: string, elements: Element[]): ReactionDef | null {
+  const nature = harvestOf(spriteId);
+  for (const el of elements) {
+    // The object's own row first, so a cauldron is a cauldron before it is water.
+    const r = REACTIONS[`${spriteId}+${el}`] ?? (nature ? REACTIONS[`${nature}+${el}`] : undefined);
+    if (r) return r;
+  }
+  return null;
+}
+
+/**
+ * Whether setting an object off uses it up.
+ *
+ * `docs/DESIGN.md` leaves this explicitly undecided (`## Open — not decided`), so
+ * this is the minimum that ships and it is one constant. TRUE, for two reasons that
+ * are not the design's to make: an object that survives being detonated is an
+ * unlimited room-wide damage engine, which is the same exploit that got depleting
+ * harvests rejected; and "three uses per object, mutually exclusive" is only true if
+ * setting it off spends it the way animating it does. Harvesting stays
+ * non-depleting — you take nothing FROM the object, which is the rule that pairs
+ * with non-storable.
+ */
+const REACTION_SPENDS_THE_OBJECT = true;
+
+/** Where a reaction went off and what it reached, so the renderer can show it. */
+export interface ReactionFx {
+  colour: number;
+  at: { x: number; y: number };
+  tiles: { x: number; y: number }[];
+}
+
 export class Combat {
   readonly state: PlayerState;
   private combatants = new Map<Entity, Combatant>();
@@ -128,6 +227,12 @@ export class Combat {
   onEvent: (e: GameEvent) => void = () => {};
   /** Fired so the renderer can throw a projectile / burst. */
   onCastFx: (cast: ResolvedCast, from: Entity | null, targets: Entity[]) => void = () => {};
+  /**
+   * Fired when an object goes off. Separate from `onCastFx` because the blast comes
+   * from the OBJECT and not from the player's hands — which is the whole thing the
+   * player has to read off it.
+   */
+  onReactionFx: (fx: ReactionFx) => void = () => {};
   onPlayerHurt: (amount: number) => void = () => {};
 
   constructor(private floor: Floor, state: PlayerState, seed: string) {
@@ -169,11 +274,21 @@ export class Combat {
   /**
    * Expand torn pages by their rank, so an upgraded page empowers the cast
    * without the player having to tear the same spell twice.
+   *
+   * A HARVESTED element is always exactly one copy, whatever else is in the hand.
+   * Three things enforce that and it is worth all three, because it is the only
+   * thing making the page strictly better than the furniture:
+   *  1. A fixture element has its own id (harvested fire is `flame`, not `fire`),
+   *     and ids are the `SPELL_BY_ID` key, so it cannot collide with a page.
+   *  2. `ELEMENT_SPELLS` — the pool the book, the altar and the loadout draw from —
+   *     holds page elements only, so nothing ever writes a rank for a fixture id.
+   *  3. This clause, which forces 1 even if the other two were wrong. A rule, not
+   *     a lookup that happens to miss.
    */
   private byRank(pages: string[]): string[] {
     const out: string[] = [];
     for (const id of pages) {
-      const n = Math.max(1, this.state.ranks[id] ?? 1);
+      const n = isFixtureElement(id) ? 1 : Math.max(1, this.state.ranks[id] ?? 1);
       for (let i = 0; i < n; i++) out.push(id);
     }
     return out;
@@ -295,6 +410,25 @@ export class Combat {
         this.onEvent({ kind: 'status', text: 'STEAM!', colour: 0xbfe8ff });
       }
       /**
+       * IGNITE: fire and oil meet on a body, and it does not matter which arrived
+       * first — one clause for both orders, because a player who lights something
+       * and then oils it has made the same play backwards and should get the same
+       * answer. The oil is spent either way, so this is one flare and not a
+       * standing multiplier.
+       *
+       * Ahead of the shatter check on purpose: a doubled hit that clears
+       * SHATTER_DAMAGE should break the ice, and oil into fire is the cheapest way
+       * a hand of one ever gets to that threshold.
+       */
+      const ignited = (brings('burning') && this.has(t, 'oiled'))
+        || (brings('oiled') && this.has(t, 'burning'));
+      if (ignited) {
+        damage = Math.round(damage * OIL_FIRE_MULT);
+        this.removeStatus(t, 'oiled');
+        glow = 0xffb04a;
+        this.onEvent({ kind: 'status', text: 'IGNITE!', colour: 0xffb04a });
+      }
+      /**
        * SHATTER: a heavy hit on a frozen body breaks it open — and the shell does
        * NOT re-form from the same cast.
        *
@@ -303,8 +437,12 @@ export class Combat {
        * one freezing tool cannot reach is not a valve. And suppressing the
        * incoming freeze is what makes frost-on-frost a CHOICE rather than a lock:
        * the second bolt either burst-damages a frozen body or holds it, never both.
+       *
+       * `cast.pierce` is the threshold's one exemption, and the only thing
+       * Starlight does that no page can: a piercing hit opens the shell however
+       * light it is. It is still an either/or — piercing a freeze spends it.
        */
-      const shattered = this.has(t, 'frozen') && damage >= SHATTER_DAMAGE;
+      const shattered = this.has(t, 'frozen') && (cast.pierce || damage >= SHATTER_DAMAGE);
       if (shattered) {
         damage = Math.round(damage * SHATTER_MULT);
         this.removeStatus(t, 'frozen');
@@ -318,6 +456,8 @@ export class Combat {
 
       for (const s of cast.statuses) {
         if (s.id === 'frozen' && shattered) continue;
+        // The oil just went up, so it is not also left sitting on the body.
+        if (s.id === 'oiled' && ignited) continue;
         const mult = s.id === 'frozen' && deepFreeze ? DEEP_FREEZE_MULT : 1;
         this.addStatus(t, s.id, Math.max(1, Math.round(STATUS_META[s.id].turns * s.power * mult)));
       }
@@ -326,6 +466,80 @@ export class Combat {
     this.damage(t, damage, glow);
 
     if (cast.shove) this.shove(t, cast.shove);
+
+    // Last, so the object has already taken the hit it was aimed at: the primary
+    // damage is the player's, and what follows is the room's.
+    this.react(cast, t);
+  }
+
+  /**
+   * The object goes off.
+   *
+   * Announced as `<OBJECT> · <VERB>` through the `status` channel that carries
+   * SHATTER and CONDUCTION, because the one thing that has to survive the noise of a
+   * cast resolving is that the BARREL did this and not the spell. The damage lands
+   * as ordinary floaters over the bodies beside it, which is the same sentence said
+   * spatially.
+   */
+  private react(cast: ResolvedCast, t: Entity): void {
+    if (t.kind !== 'prop' || t.animated || !t.alive) return;
+    const r = reactionFor(t.spriteId, cast.elements);
+    if (!r) return;
+
+    const tiles = this.reactionTiles(t, r.shape);
+    this.onEvent({
+      kind: 'status',
+      text: `${displayName(t.spriteId).toUpperCase()} · ${r.verb}!`,
+      colour: r.colour,
+    });
+    this.onReactionFx({
+      colour: r.colour,
+      at: { x: t.sprite.tx, y: t.sprite.ty },
+      tiles,
+    });
+
+    for (const tile of tiles) {
+      const v = this.floor.entityAt(tile.x, tile.y);
+      // Hostiles only. `docs/DESIGN.md` is specific that this is a play against a
+      // group — "the enemies around it pay" — and nothing else in this game has
+      // friendly fire to be consistent with.
+      if (!v || !v.alive || !v.hostile) continue;
+      if (r.status) this.addStatus(v, r.status, STATUS_META[r.status].turns);
+      this.damage(v, r.damage, r.colour);
+    }
+
+    // `damage` may already have killed it on the way in; killing twice would log
+    // the same death twice.
+    if (REACTION_SPENDS_THE_OBJECT && t.hp > 0) this.kill(t);
+  }
+
+  /**
+   * Which tiles a reaction reaches.
+   *
+   * `ahead` and `cone` are measured from the PLAYER through the object, so the blast
+   * carries on away from you. Diagonals resolve to the dominant axis rather than to
+   * a diagonal, because the room is a grid and a cone off a diagonal covers tiles
+   * that do not read as being in front of anything.
+   */
+  private reactionTiles(t: Entity, shape: ReactionDef['shape']): { x: number; y: number }[] {
+    const ox = t.sprite.tx, oy = t.sprite.ty;
+    if (shape === 'around') {
+      const out: { x: number; y: number }[] = [];
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx || dy) out.push({ x: ox + dx, y: oy + dy });
+        }
+      }
+      return out;
+    }
+    const ax = ox - this.playerTile.x, ay = oy - this.playerTile.y;
+    const [dx, dy] = Math.abs(ax) >= Math.abs(ay)
+      ? [Math.sign(ax) || 1, 0]
+      : [0, Math.sign(ay) || 1];
+    const front = { x: ox + dx, y: oy + dy };
+    if (shape === 'ahead') return [front];
+    // the two shoulders of the front tile, which is as wide as a cone gets on a grid
+    return [front, { x: front.x + dy, y: front.y + dx }, { x: front.x - dy, y: front.y - dx }];
   }
 
   private shove(t: Entity, tiles: number): void {

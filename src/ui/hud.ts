@@ -14,8 +14,11 @@
  */
 import type { Engine } from '../core/engine';
 import type { Entity } from '../game/floor';
-import { DENIAL_STATUSES, type Combat, type PlayerState } from '../game/combat';
-import { STATUS_META, displayName, isElement, type ResolvedCast } from '../spells/spells';
+import { DENIAL_STATUSES, reactionFor, type Combat, type PlayerState } from '../game/combat';
+import {
+  SPELL_BY_ID, STATUS_META, displayName, harvestOf, isElement,
+  type Element, type ResolvedCast,
+} from '../spells/spells';
 import * as THREE from 'three';
 import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
 import { spriteTexture } from '../dungeon/sprites';
@@ -96,6 +99,11 @@ export type UiAction =
   | { kind: 'reroll' }
   | { kind: 'altar'; entity: Entity }
   | { kind: 'chest'; entity: Entity }
+  /**
+   * Take the room's own element off the selected fixture. A control and not a page
+   * gesture, so it costs a hand slot and a turn exactly like tearing one.
+   */
+  | { kind: 'harvest'; entity: Entity }
   | { kind: 'move'; m: 'forward' | 'back' }
   | { kind: 'turn'; d: -1 | 1 }
   | { kind: 'descend' }
@@ -157,6 +165,17 @@ export class Hud {
 
   /** An unused altar or chest within reach, set by the game each turn. */
   altarInReach: Entity | null = null;
+
+  /**
+   * Whether the selected thing is actually on screen this frame.
+   *
+   * A target survives being turned away from — everything in your room is a
+   * candidate at any distance, which is what lets you keep a reticle on a body while
+   * you back down a corridor. So a prompt ABOUT the target has to ask this as well,
+   * or the game offers to harvest a candelabra that is behind you. Set by
+   * `drawWorldOverlay`, which is the only thing that knows where a sprite landed.
+   */
+  private targetOnScreen = false;
 
   /**
    * Turns the hand currently held has cost. A readout, not a control: the price
@@ -298,6 +317,7 @@ export class Hud {
     this.drawHand(ctx);
     this.drawParty(ctx, W);
     this.drawSealedNote(ctx, W);
+    this.drawHarvest(ctx, W);
     this.drawAltarPrompt(ctx, W);
     this.drawBookToggle(ctx, W, H);
     if (this.candidates.length > 1) this.drawCycle(ctx, W);
@@ -321,24 +341,34 @@ export class Hud {
     const v = new THREE.Vector3();
     const p = { x: 0, y: 0, behind: false };
     const wantsObject = this.tornIds.includes('animate');
-    const hasTorn = this.tornIds.length > 0;
+    /** Hoisted: the hand is the same for every candidate in the room. */
+    const held = this.handElements();
     const t = this.engine.time;
     const project = (pt: THREE.Vector3, out: { x: number; y: number; behind: boolean }) =>
       this.engine.worldToUi(pt, out);
 
+    this.targetOnScreen = false;
     for (const e of this.candidates) {
       if (!e.alive || !e.sprite.group.visible) { e.sprite.setOutline(0xffffff, false); continue; }
 
       const animatable = e.kind === 'prop' && !e.animated;
       const interactive = (e.kind === 'altar' || e.kind === 'chest') && !e.spent;
+      /**
+       * The same rule as `isLegal` in `main.ts`, which is the one that actually
+       * governs the cast. It used to disagree while a page was torn — furniture was
+       * crossed out here and cast at happily there — and object reactions make that
+       * gap load-bearing: the barrel IS the intended target.
+       */
       const legal = interactive ? true
         : wantsObject ? animatable
-        : hasTorn ? e.hostile
         : (e.hostile || animatable);
       const isTarget = e === this.target;
+      /** What this object would do if the current hand landed on it. */
+      const react = animatable && !wantsObject ? reactionFor(e.spriteId, held) : null;
 
       const box = e.sprite.screenBox(project);
       if (!box) { e.sprite.setOutline(0xffffff, false); continue; }
+      if (e === this.target) this.targetOnScreen = true;
 
       // The whole silhouette is the touch target, with a small margin.
       this.hits.push({
@@ -366,7 +396,13 @@ export class Hud {
         continue;
       }
 
-      const col = interactive ? '#ffcf5c' : animatable ? '#b98cff' : '#ff7a5c';
+      // A reactive object wears the reaction's colour, selected or not: hold a Spark
+      // in a room with a water barrel and the barrel goes yellow, which is the
+      // cheapest way this game will ever teach the table.
+      const col = react ? hexCss(react.colour)
+        : interactive ? '#ffcf5c'
+        : animatable ? '#b98cff'
+        : '#ff7a5c';
 
       // the down triangle
       const bob = isTarget ? Math.sin(t * 5) * 2.2 : 0;
@@ -377,7 +413,9 @@ export class Hud {
       ctx.lineTo(mx - size * 0.85, ty - size * 0.7);
       ctx.lineTo(mx + size * 0.85, ty - size * 0.7);
       ctx.closePath();
-      ctx.globalAlpha = isTarget ? 1 : (wantsObject && animatable) || interactive ? 0.8 : 0.45;
+      ctx.globalAlpha = isTarget ? 1
+        : (wantsObject && animatable) || interactive || react ? 0.8
+        : 0.45;
       ctx.fillStyle = isTarget ? GOLD : col;
       ctx.fill();
       ctx.strokeStyle = 'rgba(12,8,14,0.9)';
@@ -386,20 +424,24 @@ export class Hud {
       ctx.globalAlpha = 1;
 
       if (isTarget) {
+        // An object about to go off says so ON ITSELF, before the cast — "the barrel
+        // did that" is not something a caption after the fact can teach.
         const label = e.kind === 'chest' && !e.spent ? 'OPEN'
           : interactive ? 'TAKE A SPELL'
           : animatable && wantsObject ? `ANIMATE ${displayName(e.spriteId).toUpperCase()}`
+          : react ? `${displayName(e.spriteId).toUpperCase()} · ${react.verb}`
           : displayName(e.spriteId).toUpperCase();
+        const plate = react ? hexCss(react.colour) : col;
         ctx.font = 'bold 9px ui-monospace, monospace';
         ctx.textAlign = 'center';
         const w = ctx.measureText(label).width + 14;
         ctx.fillStyle = 'rgba(14,9,16,0.86)';
         rr(ctx, mx - w / 2, ty - 30, w, 15, 7);
         ctx.fill();
-        ctx.strokeStyle = col;
+        ctx.strokeStyle = plate;
         ctx.lineWidth = 1;
         ctx.stroke();
-        ctx.fillStyle = col;
+        ctx.fillStyle = plate;
         ctx.fillText(label, mx, ty - 23);
         ctx.textAlign = 'left';
 
@@ -839,6 +881,80 @@ export class Hud {
     const tex = spriteTexture(id);
     const img = tex?.image as HTMLImageElement | undefined;
     return img && img.width ? img : null;
+  }
+
+  /**
+   * The elements currently in the hand, for the two questions that are about the
+   * ELEMENT rather than the resolved cast: what an object would answer to, and
+   * whether there is anything castable at all.
+   */
+  private handElements(): Element[] {
+    const out: Element[] = [];
+    for (const id of this.tornIds) {
+      const el = SPELL_BY_ID[id]?.element;
+      if (el && el !== 'none' && !out.includes(el)) out.push(el);
+    }
+    return out;
+  }
+
+  /** The fixture element the selected object would give up, or null. */
+  private harvestTarget(): { entity: Entity; id: string } | null {
+    const e = this.target;
+    if (!e || !e.alive || !this.targetOnScreen) return null;
+    // `hp <= 0` is a body playing its death animation — it is still `alive` until the
+    // sprite is gone, and offering to harvest a barrel that is in pieces was the one
+    // way this pill could contradict the room.
+    if (e.kind !== 'prop' || e.animated || e.hp <= 0) return null;
+    const id = harvestOf(e.spriteId);
+    return id ? { entity: e, id } : null;
+  }
+
+  /**
+   * HARVEST: the room's own element, offered on the thing that supplies it.
+   *
+   * Only ever drawn for the SELECTED object, which is what makes line of sight the
+   * rule without a second visibility system — the reticle can only be on something
+   * `targetsInView` handed over. Adjacency is deliberately not required. It is magic.
+   *
+   * A full hand DIMS it rather than hiding it or shouting: at a hand of one a full
+   * hand is the steady state, so an alarm here would be permanent, and a control that
+   * disappears exactly when you start using the system teaches that it was never
+   * there. It keeps its hit region, exactly like a tear does — the gesture stays
+   * available and `harvestFrom` says why it will not happen.
+   */
+  private drawHarvest(ctx: CanvasRenderingContext2D, W: number): void {
+    const h = this.harvestTarget();
+    if (!h) return;
+    const def = SPELL_BY_ID[h.id];
+    const full = this.handHeld >= Math.max(this.handSize, 1);
+    const label = `HARVEST  ·  ${(def?.name ?? h.id).toUpperCase()}`;
+    ctx.font = 'bold 12px ui-monospace, monospace';
+    const tw = Math.min(W - 32, ctx.measureText(label).width + 40);
+    /**
+     * The prompt band, above the hand: a card in the fan reaches to about
+     * `bookTop - 200` and its glow above that, so anything lower is drawn across the
+     * component you just took. Shares the altar prompt's row — both say "there is
+     * something here to take" — and steps up when the altar has that row, which is
+     * the one moment both can be true at once.
+     */
+    const bx = (W - tw) / 2, by = this.bookTop - (this.altarInReach ? 334 : 300);
+    const col = def?.colour ?? 0xffcf5c;
+    ctx.globalAlpha = full ? 0.42 : 1;
+    rr(ctx, bx, by, tw, 28, 14);
+    ctx.fillStyle = 'rgba(22,16,28,0.9)';
+    ctx.fill();
+    // Pulsed like the altar prompt: both are "there is something here to take".
+    if (!full) ctx.globalAlpha = 0.7 + Math.sin(this.engine.time * 3.4) * 0.24;
+    ctx.strokeStyle = hexCss(col, 0.95);
+    ctx.lineWidth = 1.7;
+    ctx.stroke();
+    ctx.globalAlpha = full ? 0.42 : 1;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = hexCss(col);
+    ctx.fillText(label, W / 2, by + 14.5);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.globalAlpha = 1;
+    this.hits.push({ rect: [bx, by, tw, 28], action: { kind: 'harvest', entity: h.entity } });
   }
 
   /**

@@ -160,6 +160,17 @@ export const SHATTER_MULT = 1.5;
 /** Frost bites deeper through water. */
 export const DEEP_FREEZE_MULT = 1.6;
 
+/**
+ * IGNITE: fire meeting harvested oil on a body.
+ *
+ * Two exactly, because `docs/DESIGN.md` gives Oil the job "doubles fire damage"
+ * and this is that sentence. It is the largest interaction multiplier in the file
+ * and it is allowed to be, because unlike the others it is not free: soaked and
+ * frozen ride along on casts that were worth making anyway, while oil is a whole
+ * turn and a whole hand slot spent on 3 damage and a promise.
+ */
+export const OIL_FIRE_MULT = 2;
+
 // ------------------------------------------------------------------- pacing
 
 /**

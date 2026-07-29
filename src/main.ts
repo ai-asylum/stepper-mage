@@ -14,8 +14,10 @@ import {
 } from './book/bridge';
 import { SPELLS as BOOK_PAGES, setBookPages, type SpellDef } from './spells/pages';
 import {
-  ELEMENT_SPELLS, SPELL_BY_ID, isElement, type ResolvedCast,
+  ELEMENT_SPELLS, SPELL_BY_ID, displayName, harvestOf, isPageElement,
+  type ResolvedCast,
 } from './spells/spells';
+import { harvestCard, harvestColour } from './spells/harvestCards';
 import { Rng } from './core/rng';
 import type { Dir } from './dungeon/grid';
 import { THEMES } from './art/theme';
@@ -89,7 +91,7 @@ function loadMeta(): Meta {
       const legacy = Array.isArray(m.unlocked) ? m.unlocked : [];
       const slots = savedCount(m.slots, 3, 1);
       const loadout = (Array.isArray(m.loadout) && m.loadout.length ? m.loadout : legacy)
-        .filter(isElement);
+        .filter(isPageElement);
       return {
         // Counts, not ceilings, but through the same coercion: a NaN here renders
         // as "✦ NaN" and poisons every total it is added to.
@@ -207,15 +209,18 @@ async function boot(): Promise<void> {
    */
   let spokenRefusal = '';
   let spokenAt = 0;
-  const explainRefusal = (spell: SpellDef): void => {
-    const why = ripRefusal(spell);
-    if (!why) return;
+  /** Say it once. Shared with the harvest pill, which is refused for the same reason. */
+  const speakRefusal = (why: string): void => {
     const now = performance.now();
     // 5s is how long `Hud.addLog` keeps a line, so this re-speaks once it has faded.
     if (why === spokenRefusal && now - spokenAt < 5000) return;
     spokenRefusal = why;
     spokenAt = now;
     hud.addLog(why, 0xffcf5c);
+  };
+  const explainRefusal = (spell: SpellDef): void => {
+    const why = ripRefusal(spell);
+    if (why) speakRefusal(why);
   };
 
   /** Learn a page mid-run: rebuild the book and re-sync it. */
@@ -238,6 +243,70 @@ async function boot(): Promise<void> {
     const spell = BOOK_PAGES[index];
     if (spell) explainRefusal(spell);
     return false;
+  };
+
+  /**
+   * Take the room's element off a fixture.
+   *
+   * Priced exactly like a tear, through the same two gates, because it IS a tear as
+   * far as the economy is concerned: one hand slot and one turn (`spendComponentTurn`
+   * charges the turn on the way out). What it is not is a withdrawal — nothing is
+   * taken from the object, which is why the candelabra is still lit afterwards and
+   * why this can be done twice. `docs/DESIGN.md` rejects depleting fixtures outright,
+   * and that rule is only safe because harvests are also non-storable.
+   *
+   * Line of sight and nothing else: `hud.candidates` is `targetsInView`, so being
+   * able to put a reticle on the thing is the whole requirement. It is magic.
+   */
+  const harvestFrom = (e: Entity): boolean => {
+    if (!canTakeComponent()) return false;
+    // `hp <= 0` is a body already playing its death animation.
+    if (!e.alive || e.hp <= 0 || e.kind !== 'prop' || e.animated) return false;
+    const id = harvestOf(e.spriteId);
+    if (!id) return false;
+    if (!hud.candidates.includes(e)) {
+      hud.addLog('That is not in sight.', 0xffcf5c);
+      return false;
+    }
+    if (fan.count >= handSize()) {
+      // Its own line rather than the tear's, because "put the page back" is the wrong
+      // instruction for a card that is not one — through the same say-it-once guard,
+      // because at a hand of one this is refused constantly.
+      speakRefusal('Your hand is full. Cast it, or put it back.');
+      sfx.deny();
+      return false;
+    }
+    addHarvestCard(id);
+    hud.addLog(
+      `You draw ${SPELL_BY_ID[id]?.name ?? id} out of the ${displayName(e.spriteId).toLowerCase()}.`,
+      SPELL_BY_ID[id]?.colour,
+    );
+    // What is in the hand decides what is targetable, exactly as after a tear.
+    refreshTargets();
+    spendComponentTurn('harvest');
+    return true;
+  };
+
+  /**
+   * Put a harvested element in the hand as a card.
+   *
+   * The `Fan` holds pages torn out of the book and a harvest has no page, so it is
+   * handed a page-SHAPED card instead (`spells/harvestCards.ts`) — the cheapest route
+   * that leaves `src/book/` verbatim. The two uniforms are what make it read as
+   * borrowed rather than owned: gold is the book's colour, on every page edge and in
+   * every merge glow, so a card from the room wears the element's instead.
+   */
+  const addHarvestCard = (id: string): void => {
+    const card = harvestCard(id);
+    if (!card) return;
+    // A torn page flies from wherever the page was. This rises into the hand from
+    // below the fan, which from inside the book's camera is where the room is.
+    fan.add(card, new THREE.Vector3(0, -0.16, -0.34), new THREE.Quaternion());
+    const p = fan.pages[fan.pages.length - 1];
+    if (!p) return;
+    const col = harvestColour(id);
+    p.mat.uniforms.uGold.value.setHex(col);
+    (p.glow.material as THREE.ShaderMaterial).uniforms.uColor.value.setHex(col);
   };
 
   // The ported book throws its own sparkles and shakes; route them at the game.
@@ -563,7 +632,7 @@ async function boot(): Promise<void> {
     const rng = new Rng(`${runSeed}-altar-${state.depth}-${e.sprite.tx}-${e.sprite.ty}-${nonce}`);
     // Elements only: an altar grants PAGES, and ingredients have none. Deduped
     // because a book may legitimately hold a page twice.
-    const owned = [...new Set(state.pages.filter(isElement))];
+    const owned = [...new Set(state.pages.filter(isPageElement))];
     const unowned = ELEMENT_SPELLS.filter((sp) => !owned.includes(sp.id)).map((sp) => sp.id);
     // A page cannot feed itself, so one rank-2 page buys nothing; it takes two.
     const rank2 = rng.shuffle(owned.filter((id) => (state.ranks[id] ?? 0) === 2));
@@ -727,7 +796,7 @@ async function boot(): Promise<void> {
   const claimGolden = (id: string, drop: string | null): void => {
     const cap = Math.max(1, meta.slots);
     const kept = meta.loadout
-      .filter((p) => p !== drop && p !== id && isElement(p))
+      .filter((p) => p !== drop && p !== id && isPageElement(p))
       .slice(0, cap - 1);
     meta.loadout = [...kept, id];
     saveMeta(meta);
@@ -936,6 +1005,21 @@ async function boot(): Promise<void> {
     combat.onPlayerHurt = () => {
       hud.playerHurt();
       fx.shake = Math.min(1.3, fx.shake + 0.5);
+    };
+
+    /**
+     * An object going off. Deliberately NOT shaped like a cast: no bolt leaves the
+     * player's hands, the burst is centred on the OBJECT and then answers on every
+     * tile it reached. That silhouette — one big flash out there, small ones around
+     * it — is what says the barrel did this rather than the spell.
+     */
+    combat.onReactionFx = (r) => {
+      tmp.set(r.at.x, 0.55, r.at.y);
+      fx.burst(tmp, r.colour, 2.1);
+      for (const tile of r.tiles) {
+        fx.burst(new THREE.Vector3(tile.x, 0.5, tile.y), r.colour, 0.7);
+      }
+      engine.setFlash(0.24, r.colour);
     };
 
     combat.onCastFx = (cast, _from, targets) => {
@@ -1164,6 +1248,7 @@ async function boot(): Promise<void> {
         break;
       case 'cycle': cycleTarget(); break;
       case 'altar': takeFromAltar(a.entity); break;
+      case 'harvest': harvestFrom(a.entity); break;
       case 'offer': chooseOffer(a.offer); break;
       case 'reroll': rerollOffers(); break;
       case 'chest': openChest(a.entity); break;
@@ -1203,7 +1288,7 @@ async function boot(): Promise<void> {
 
   /** UI actions that are explicit controls — these always beat a page gesture. */
   const UI_CONTROLS: ReadonlySet<string> =
-    new Set(['cast', 'clear', 'descend', 'bookToggle', 'cycle', 'altar', 'chest']);
+    new Set(['cast', 'clear', 'descend', 'bookToggle', 'cycle', 'altar', 'chest', 'harvest']);
 
   /**
    * Is this pointer position a book gesture rather than a dungeon gesture?
@@ -1306,6 +1391,8 @@ async function boot(): Promise<void> {
   // targetable, so the reticle and `hud.tornIds` have to be rebuilt with it.
   keys.KeyR = () => { fan.clear(); refreshTargets(); };
   keys.KeyB = () => { book.closed = !book.closed; hud.bookClosed = book.closed; };
+  // Harvest the selected fixture — the keyboard mirror of the HARVEST pill.
+  keys.KeyH = () => { if (hud.target) harvestFrom(hud.target); };
   for (let i = 1; i <= 9; i++) {
     keys[`Digit${i}`] = () => tearPage(i - 1);
   }
@@ -1384,6 +1471,53 @@ async function boot(): Promise<void> {
         handSizeBonus = 0;
       }
     },
+    /**
+     * The fixtures in sight that would give up an element, with what each yields.
+     *
+     * The list IS the acceptance criterion "animating a fixture removes it from the
+     * harvest list", so it has to be one call and it has to be derived from the same
+     * two things the pill is: what `targetsInView` can see, and `harvestOf`.
+     */
+    harvestable: () => hud.candidates
+      .filter((e) => e.alive && e.kind === 'prop' && !e.animated && !!harvestOf(e.spriteId))
+      .map((e) => ({ e, spriteId: e.spriteId, yields: harvestOf(e.spriteId) })),
+    /**
+     * Harvest the reticle's fixture, or a given one. Same path as the pill, so it
+     * pays the same slot and the same turn; await `componentTurn` for the round.
+     */
+    harvest: async (e?: Entity) => {
+      const t = e ?? hud.target;
+      if (!t || !harvestFrom(t)) return false;
+      await componentTurn;
+      return true;
+    },
+    /**
+     * What the HUD would do with a tap here, without doing it — the HUD's controls
+     * are laid out from measured text and a measured book edge, so where one IS is
+     * only answerable by asking.
+     */
+    hudAt: (x: number, y: number) => hud.hit(x, y).kind,
+    /** Resolve a tap against the HUD, so a drawn control can be proven tappable. */
+    tapHud: (x: number, y: number) => {
+      const a = hud.hit(x, y);
+      act(a);
+      return a.kind;
+    },
+    /**
+     * Stand a body on a tile.
+     *
+     * An object reaction is SPATIAL — its whole claim is about who is standing beside
+     * the thing — and a procedural room will not put three enemies around a barrel on
+     * request. Debug only, and it moves the sprite the same way `shove` does.
+     */
+    putEntity: (e: Entity, x: number, y: number) => {
+      e.sprite.tx = x; e.sprite.ty = y;
+      e.sprite.setTileLight(floor.grid.lightAt(x, y));
+      refreshTargets();
+      return { x: e.sprite.tx, y: e.sprite.ty };
+    },
+    /** Rebuild at a given depth. Floor 4 is the only place an oil drum exists. */
+    goToDepth: (depth: number) => enterFloor(Math.max(1, Math.min(THEMES.length, depth))),
     targetKind: (kind: string) => {
       const e = floor.entities.find((x) => x.alive && x.kind === kind);
       if (e) hud.target = e;
@@ -1467,7 +1601,10 @@ async function boot(): Promise<void> {
      * player holds a spare rank-2 page, which no default loadout ever does.
      */
     setRank: (id: string, rank: number) => {
-      if (!isElement(id)) return null;
+      // PAGE elements only. A fixture element is an element and would pass an
+      // `isElement` guard, and writing a rank for one would put a harvest tap in the
+      // book's owned-page list — where the altar would then offer it.
+      if (!isPageElement(id)) return null;
       const r = Math.max(0, Math.min(MAX_RANK, Math.floor(rank)));
       if (r === 0) { burnPage(id); return 0; }
       state.ranks[id] = r;
