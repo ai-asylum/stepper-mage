@@ -12,13 +12,15 @@ import { Fan } from './book/fan';
 import {
   bookScene, camera as bookCam, tickBook, resizeBook, sinks, sfx,
 } from './book/bridge';
-import { SPELLS as BOOK_PAGES, setBookPages } from './spells/pages';
-import { ELEMENT_SPELLS, SPELL_BY_ID, isElement } from './spells/spells';
+import { SPELLS as BOOK_PAGES, setBookPages, type SpellDef } from './spells/pages';
+import {
+  ELEMENT_SPELLS, SPELL_BY_ID, isElement, type ResolvedCast,
+} from './spells/spells';
 import { Rng } from './core/rng';
 import type { Dir } from './dungeon/grid';
 import { THEMES } from './art/theme';
 import {
-  CHEST_HEAL_BASE, CHEST_HEAL_SPREAD, DESCEND_HEAL, PLAYER_MAX_HP,
+  CHEST_HEAL_SPREAD, PLAYER_MAX_HP, chestHealBase, descendHeal, healable,
 } from './game/tuning';
 
 /**
@@ -63,6 +65,19 @@ const META_KEY = 'stepper-mage.meta.v1';
  */
 const DEFAULT_LOADOUT = ['fire', 'frost', 'spark'];
 
+/**
+ * A saved number is whatever was in localStorage — hand-edited, half-written by a
+ * crash, or from a build that stored something else entirely. Both fields this
+ * guards are ceilings, and a broken ceiling is not a cosmetic bug: a non-numeric
+ * `handSize` made every `fan.count >= handSize()` comparison false (an unbounded
+ * hand), and a `slots` of zero emptied the starting loadout, which left the book
+ * falling back to a page the player has not learned and can never tear.
+ */
+function savedCount(v: unknown, fallback: number, min: number): number {
+  const n = Math.floor(Number(v));
+  return Math.max(min, Number.isFinite(n) ? n : fallback);
+}
+
 function loadMeta(): Meta {
   try {
     const raw = localStorage.getItem(META_KEY);
@@ -72,18 +87,22 @@ function loadMeta(): Meta {
       // count so an old save that had accumulated every page does not carry that
       // advantage into the corrected rules.
       const legacy = Array.isArray(m.unlocked) ? m.unlocked : [];
-      const slots = m.slots ?? 3;
+      const slots = savedCount(m.slots, 3, 1);
       const loadout = (Array.isArray(m.loadout) && m.loadout.length ? m.loadout : legacy)
         .filter(isElement);
       return {
-        stars: m.stars ?? 0,
-        loadout: loadout.length ? loadout.slice(0, slots) : [...DEFAULT_LOADOUT],
+        // Counts, not ceilings, but through the same coercion: a NaN here renders
+        // as "✦ NaN" and poisons every total it is added to.
+        stars: savedCount(m.stars, 0, 0),
+        // Sliced AFTER the fallback, so a save whose loadout filtered down to
+        // nothing still starts with a book rather than with one sealed page.
+        loadout: (loadout.length ? loadout : DEFAULT_LOADOUT).slice(0, slots),
         slots,
         // A save from before the turn economy has no hand size, and it must
         // migrate to ONE rather than to the old hardcoded three — the pre-reset
         // saves paid nothing for those slots.
-        handSize: Math.max(1, m.handSize ?? 1),
-        best: m.best ?? 0,
+        handSize: savedCount(m.handSize, 1, 1),
+        best: savedCount(m.best, 0, 0),
       };
     }
   } catch { /* corrupt or unavailable storage: fall through to defaults */ }
@@ -97,7 +116,17 @@ function saveMeta(m: Meta): void {
 async function boot(): Promise<void> {
   const engine = new Engine({ internalHeight: 400, levels: 36 });
   const meta = loadMeta();
-  const runSeed = `run-${Date.now() % 100000}`;
+  /**
+   * Everything procedural on this run derives from here: the floor layout, the
+   * altar roll and the chest roll.
+   *
+   * `let`, not `const`, so the debug surface can pin it. A `Date.now()` seed means
+   * a harness asking "is a run winnable at hand size 1" samples a different
+   * dungeon every time, which is a distribution and never a regression gate. Every
+   * read is at CALL time (`enterFloor`, `rollAltarOffers`, `openChest`), so
+   * replacing it genuinely changes the next floor built rather than being captured.
+   */
+  let runSeed = `run-${Date.now() % 100000}`;
 
   const state: PlayerState = {
     hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP,
@@ -141,15 +170,51 @@ async function boot(): Promise<void> {
   const handSize = (): number => meta.handSize + handSizeBonus;
 
   /**
-   * Tearing a page out. The only refusals here are "you have not learned this
-   * spell" and "your hand is full": the tear's real price is a TURN, and that is
-   * charged on the way out (see `spendComponentTurn`) rather than gating the
-   * gesture — you can always afford a turn, you just may not like what it buys
-   * the room.
+   * Why the open page will not tear, or null when it will.
+   *
+   * The two refusals are NOT the same event to the player and collapsing them into
+   * one silent snap-back was why the commonest gesture in the game had no
+   * explanation: at hand size 1 a full hand is the STEADY state, so a second
+   * upward swipe is something you do constantly and it needs saying out loud. An
+   * unlearned page is a property of the page instead, so it is shown on the page
+   * (`book.isSealed`, and the HUD's sealed note) rather than said again per swipe.
+   *
+   * Note what is NOT here: the tear's real price is a TURN, and that is charged on
+   * the way out (see `spendComponentTurn`) rather than gating the gesture — you can
+   * always afford a turn, you just may not like what it buys the room.
    */
-  book.canRip = (spell) => {
-    if (fan.count >= handSize()) return false;
-    return state.pages.includes(spell.gameId);
+  const ripRefusal = (spell: SpellDef): string | null => {
+    if (!state.pages.includes(spell.gameId)) return `${spell.name} is not yours yet.`;
+    const n = handSize();
+    if (fan.count >= n) {
+      return n === 1
+        ? 'Your hand holds one page. Cast it, or put it back.'
+        : `Your hands are full at ${n} pages. Cast them, or put one back.`;
+    }
+    return null;
+  };
+
+  book.canRip = (spell) => ripRefusal(spell) === null;
+  // Seal the page itself when it is a spell you do not have, so the reason is on
+  // the thing being refused and not only in the log.
+  book.isSealed = (spell) => !state.pages.includes(spell.gameId);
+
+  /**
+   * Say why a tear was refused — once per refused gesture, and not again while the
+   * same line is still on screen. A full hand is the steady state at hand size 1,
+   * so an unguarded message would fill all four log slots with copies of itself.
+   */
+  let spokenRefusal = '';
+  let spokenAt = 0;
+  const explainRefusal = (spell: SpellDef): void => {
+    const why = ripRefusal(spell);
+    if (!why) return;
+    const now = performance.now();
+    // 5s is how long `Hud.addLog` keeps a line, so this re-speaks once it has faded.
+    if (why === spokenRefusal && now - spokenAt < 5000) return;
+    spokenRefusal = why;
+    spokenAt = now;
+    hud.addLog(why, 0xffcf5c);
   };
 
   /** Learn a page mid-run: rebuild the book and re-sync it. */
@@ -166,8 +231,13 @@ async function boot(): Promise<void> {
     spendComponentTurn('tear');
   };
 
-  const tearPage = (index: number): boolean =>
-    canTakeComponent() ? book.tearAt(index) : false;
+  const tearPage = (index: number): boolean => {
+    if (!canTakeComponent()) return false;
+    if (book.tearAt(index)) return true;
+    const spell = BOOK_PAGES[index];
+    if (spell) explainRefusal(spell);
+    return false;
+  };
 
   // The ported book throws its own sparkles and shakes; route them at the game.
   // The book works in hand-scale units (~0.4m from the eye); CastFx works in
@@ -217,17 +287,26 @@ async function boot(): Promise<void> {
    * see.
    */
   const spendComponentTurn = (cause: TurnCause): void => {
-    assemblyTurns++;
     busy = true;
     componentTurn = (async () => {
       try {
-        await combat.takeTurn(cause);
+        // Bill the hand only for a round something ACTED in. Counting every
+        // component taken advertised a price in an empty room, which is the exact
+        // inverse of the rule — so the readout can legitimately show fewer turns
+        // than pages held, and that gap IS the reward for assembling out of combat.
+        if (await combat.takeTurn(cause)) assemblyTurns++;
       } finally {
+        // In `finally` because a throw in the round must not leave input locked:
+        // `busy` never clearing soft-locks every gesture in the game, and skipping
+        // the follow-ups leaves the reticle and the death check stale.
         busy = false;
+        refreshTargets();
+        checkDeath();
       }
-      refreshTargets();
-      checkDeath();
     })();
+    // Nothing on the input path awaits this, so without a handler a throw inside
+    // the round is an unhandled rejection that the player never hears about.
+    componentTurn.catch((err) => hud.addLog(`The round falters: ${String(err)}`, 0xff6a6a));
   };
 
   /** World position of an entity's centre of mass, for aiming VFX at it. */
@@ -396,9 +475,12 @@ async function boot(): Promise<void> {
     void floor.openChest(e);
     const rng = new Rng(`${runSeed}-chest-${state.depth}-${e.sprite.tx}-${e.sprite.ty}`);
     const stars = 3 + rng.int(0, 2) + state.depth;
-    const heal = CHEST_HEAL_BASE + rng.int(0, CHEST_HEAL_SPREAD);
+    // Healed by what the bar can actually take, so the log reports what you got
+    // rather than what was offered.
+    const heal = healable(state.hp, state.maxHp,
+      chestHealBase(state.depth) + rng.int(0, CHEST_HEAL_SPREAD));
     state.stars += stars;
-    state.hp = Math.min(state.maxHp, state.hp + heal);
+    state.hp += heal;
     hud.setShout(`✦ ${stars} CELESTIAL STARS`, 0xffcf5c);
     hud.addLog(`The chest yields ${stars} stars and ${heal} health.`, 0xffcf5c);
     entityPos(e, tmp);
@@ -428,6 +510,14 @@ async function boot(): Promise<void> {
         return;
       }
       if (ev.kind === 'status') { hud.setDiscovery(ev.text, ev.colour ?? 0xffffff); return; }
+      // A body that lost its round floats over that body; a refused cast (no `at`)
+      // still logs, because it answers something the player just pressed. Denial is
+      // per-body and can happen three times in one round, so it must never take the
+      // screen-centre caption `status` uses for once-per-cast interactions.
+      if (ev.kind === 'deny' && ev.at) {
+        hud.addFloat(ev.text, ev.colour ?? 0xffffff, ev.at.x, ev.at.y);
+        return;
+      }
       hud.addLog(ev.text, ev.colour ?? 0xd8c9a0);
     };
 
@@ -538,8 +628,9 @@ async function boot(): Promise<void> {
       engine.setDesat(0.5);
       return;
     }
-    // Heal a little on descent, so a good floor is rewarded but attrition is real.
-    state.hp = Math.min(state.maxHp, state.hp + DESCEND_HEAL);
+    // Heal on descent, sized off the depth being LEFT, so a good floor is rewarded
+    // but attrition is real.
+    state.hp += healable(state.hp, state.maxHp, descendHeal(state.depth));
     await enterFloor(state.depth + 1);
   };
 
@@ -578,6 +669,15 @@ async function boot(): Promise<void> {
     // count is the only place that catches a cast and a return with one rule.
     if (fan.count === 0) assemblyTurns = 0;
     hud.assemblyTurns = assemblyTurns;
+    // The fusion ceiling, on screen. Nothing else in the game states it, and at a
+    // hand of one the player would otherwise only ever meet it as a refusal.
+    hud.handSize = handSize();
+    hud.handHeld = fan.count;
+    // Named on the page it belongs to, so "not learned" never has to share a
+    // channel with "hand full".
+    hud.sealedPage = !book.closed && !state.pages.includes(book.currentSpell.gameId)
+      ? book.currentSpell.name
+      : null;
     hud.update(dt);
   };
 
@@ -585,30 +685,55 @@ async function boot(): Promise<void> {
 
   // ---------------------------------------------------------------------- input
 
+  /**
+   * The one legality question `Combat.preview` cannot answer: animating depends on
+   * the tapped body being something `Floor` will actually raise, and that is the
+   * only way `combat.cast` can still refuse a cast the preview passed.
+   */
+  const wakeRefusal = (dry: ResolvedCast | null): string | null => {
+    if (dry?.output !== 'golem') return null;
+    const t = hud.target;
+    if (t && t.alive && t.kind === 'prop' && !t.animated && t.golemId) return null;
+    return 'Nothing there will wake. Aim it at furniture.';
+  };
+
   const doCast = async (): Promise<void> => {
     if (busy || dead || fan.busy) return;
     // Capture the ids first: the merge animation clears the fan on completion.
     const ids = fan.gameIds;
     if (!ids.length) return;
 
-    // Refuse before the animation if the cast is illegal, so the pages stay in
-    // hand rather than being spent on a deny.
+    // EVERY reason this cast could fail has to be found here, before the merge.
+    // The merge animation empties the fan from inside itself and the fan cannot
+    // un-merge, so a refusal discovered afterwards is a component lost to nothing —
+    // and losing a component to anything but a cast or a return is the one thing
+    // this phase forbids outright.
     const dry = hud.currentCast();
-    if (dry?.refusal) {
-      combat.onEvent({ kind: 'deny', text: dry.refusal });
+    const refusal = dry?.refusal ?? wakeRefusal(dry);
+    if (refusal) {
+      combat.onEvent({ kind: 'deny', text: refusal });
       sfx.deny();
       return;
     }
 
     busy = true;
-    // The torn pages converge and merge in a burst of gold, THEN the spell fires.
-    await new Promise<void>((resolve) => fan.mergeAndCast(resolve));
-    sfx.cast(dry ? 200 + (dry.colour & 255) : 300);
-    // Free: assembling the hand already paid, one turn per component.
-    await combat.cast(ids, hud.target);
-    busy = false;
-    refreshTargets();
-    checkDeath();
+    try {
+      // The torn pages converge and merge in a burst of gold, THEN the spell fires.
+      await new Promise<void>((resolve) => fan.mergeAndCast(resolve));
+      sfx.cast(dry ? 200 + (dry.colour & 255) : 300);
+      // Free: assembling the hand already paid, one turn per component. A false
+      // here means the check above missed something and the hand is already gone —
+      // it must not be swallowed, or the two ends of the contract drift apart again.
+      if (!await combat.cast(ids, hud.target)) {
+        hud.addLog('The cast comes apart in your hands.', 0xff9a6a);
+      }
+    } finally {
+      // A throw anywhere above used to leave `busy` true forever, which locks every
+      // gesture in the game — including the ones that would let you walk away.
+      busy = false;
+      refreshTargets();
+      checkDeath();
+    }
   };
 
   const act = (a: ReturnType<Hud['hit']>): void => {
@@ -710,6 +835,7 @@ async function boot(): Promise<void> {
       if (r === 'refused' && !deniedThisDrag) {
         deniedThisDrag = true;
         sfx.deny();
+        explainRefusal(book.currentSpell);
       }
     }
   });
@@ -763,7 +889,9 @@ async function boot(): Promise<void> {
   // Keyboard mirrors the gestures: brackets leaf through, digits tear a page out.
   keys.BracketLeft = () => book.swipe(-1);
   keys.BracketRight = () => book.swipe(1);
-  keys.KeyR = () => fan.clear();
+  // Same path the HUD's own clear takes: returning the hand changes what is
+  // targetable, so the reticle and `hud.tornIds` have to be rebuilt with it.
+  keys.KeyR = () => { fan.clear(); refreshTargets(); };
   keys.KeyB = () => { book.closed = !book.closed; hud.bookClosed = book.closed; };
   for (let i = 1; i <= 9; i++) {
     keys[`Digit${i}`] = () => tearPage(i - 1);
@@ -826,15 +954,21 @@ async function boot(): Promise<void> {
     /**
      * Assemble a hand outright. Async now: each tear buys the room a round, and
      * the next tear is blocked until that round has finished animating. The hand
-     * size is lifted for the duration so a scripted three-page fusion still
-     * works at the real starting hand size of one.
+     * size is lifted FOR THE DURATION so a scripted three-page fusion still works
+     * at the real starting hand size of one — and dropped again in `finally`,
+     * because leaving it lifted raised the real tear ceiling for the rest of the
+     * session and quietly ran every later check at hand size 3.
      */
     selectPages: async (ids: string[]) => {
       fan.clear();
-      handSizeBonus = Math.max(handSizeBonus, ids.length - meta.handSize);
-      for (const id of ids) {
-        const i = BOOK_PAGES.findIndex((pg) => pg.gameId === id);
-        if (i >= 0 && tearPage(i)) await componentTurn;
+      handSizeBonus = Math.max(0, ids.length - meta.handSize);
+      try {
+        for (const id of ids) {
+          const i = BOOK_PAGES.findIndex((pg) => pg.gameId === id);
+          if (i >= 0 && tearPage(i)) await componentTurn;
+        }
+      } finally {
+        handSizeBonus = 0;
       }
     },
     targetKind: (kind: string) => {
@@ -843,6 +977,54 @@ async function boot(): Promise<void> {
       return !!e;
     },
     castNow: () => doCast(),
+    /**
+     * The run's seed, readable and settable.
+     *
+     * Setting it rebuilds the CURRENT depth, because floor 1 is already standing by
+     * the time this object exists — a setter that only assigned the string would
+     * look like it worked and change nothing until the first descent.
+     */
+    get seed() { return runSeed; },
+    setSeed: async (seed: string) => {
+      runSeed = seed;
+      await enterFloor(state.depth);
+    },
+    /**
+     * The run's INCOME, which a harness has to be able to drive or it is not
+     * measuring this game. Rank 1→2 is a free altar upgrade (see `docs/DESIGN.md`)
+     * so a real player always has it, and chest heals are part of the attrition
+     * budget `tuning.ts` is sized against — a run that takes neither is a lower
+     * bound, not a verdict.
+     */
+    altars: () => floor.entities.filter(
+      (e) => e.kind === 'altar' && e.alive && !e.spent && !claimedAltars.has(e)),
+    chests: () => floor.entities.filter((e) => e.kind === 'chest' && e.alive && !e.spent),
+    /** Same reach rule as the tap, so `place` next to it first. Returns the offers. */
+    openAltar: (e: Entity) => { takeFromAltar(e); return hud.offers; },
+    /** Take an offer by index, or the object `openAltar` handed back. */
+    pickOffer: (o: number | AltarOffer) => {
+      const list = hud.offers;
+      if (!list) return null;
+      const pick = typeof o === 'number' ? list[o] : o;
+      if (!pick) return null;
+      chooseOffer(pick);
+      return pick;
+    },
+    /**
+     * Open and claim in one call: the rank-up if it is on the table, else the first
+     * offer. The primitives above are there for a harness that wants a different
+     * line; this is here so that taking the free upgrade is shorter than skipping it.
+     */
+    takeAltar: (e: Entity) => {
+      takeFromAltar(e);
+      const list = hud.offers;
+      if (!list?.length) return null;
+      const pick = list.find((o) => o.kind === 'upgrade') ?? list[0];
+      chooseOffer(pick);
+      return pick;
+    },
+    /** Same reach rule. Heals by `chestHealBase(depth)` and pays stars. */
+    openChest: (e: Entity) => { openChest(e); },
     grantAll: () => {
       state.pages = ELEMENT_SPELLS.map((s) => s.id);
       state.ranks = Object.fromEntries(state.pages.map((id) => [id, 1]));

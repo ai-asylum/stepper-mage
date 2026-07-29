@@ -13,9 +13,12 @@
  * investment of rounds you spent standing there, so it can be strictly stronger
  * than a single page without being strictly better.
  *
- * Every stat this file reads is in `tuning.ts`, sized for that loop at a hand of
- * one. Nothing here is a magic number; if a fight feels wrong, it is a tuning
- * number that is wrong.
+ * Every number that governs the TEMPO is in `tuning.ts`, sized for that loop at a
+ * hand of one — the engage radius, the interaction multipliers, the SHATTER
+ * threshold, the denial cap and the round pacing all live there. If a fight feels
+ * wrong it is a tuning number that is wrong. (The BFS expansion cap in
+ * `stepToward` is the one bare number left, and it bounds an algorithm rather
+ * than a fight.)
  */
 import { Rng } from '../core/rng';
 import { DIR_VEC, type Grid } from '../dungeon/grid';
@@ -24,10 +27,14 @@ import {
   STATUS_META, displayName, resolveCast,
   type CastTarget, type ResolvedCast, type StatusId,
 } from '../spells/spells';
-import { BURNING_DOT, DECAY_DOT, bossDamage, enemyDamage } from './tuning';
+import {
+  ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CONDUCTION_ARC_RANGE,
+  CONDUCTION_ARC_SHARE, CONDUCTION_MULT, DAMAGE_JITTER, DECAY_DOT, DEEP_FREEZE_MULT,
+  DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, ROUND_PACE_MS, SHATTER_DAMAGE,
+  SHATTER_MULT, bossDamage, enemyDamage,
+} from './tuning';
 
-/** How far a golem will break off from following you to engage something. */
-const GOLEM_AGGRO = 6;
+const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 export interface ActiveStatus { id: StatusId; turns: number; power: number; }
 
@@ -37,10 +44,23 @@ export interface Combatant {
   /** Melee statuses this body applies (golem infusions). */
   infuse: StatusId[];
   damage: number;
+  /**
+   * Rounds left during which round-denial cannot make this body skip. See
+   * `DENIAL_BRACE` — it is what stops a 2-turn freeze from being permanent
+   * against a player who only gets one action per round.
+   */
+  braced: number;
 }
 
 /** A page can be upgraded twice; past that a duplicate draw pays out a star. */
 export const MAX_RANK = 3;
+
+/**
+ * The statuses that cost a body its whole action — the list `denied` skips on,
+ * shared rather than restated because the HUD has to draw the same rule the round
+ * enforces. A pip the fight ignores must not look like a pip the fight obeys.
+ */
+export const DENIAL_STATUSES: readonly StatusId[] = ['frozen', 'shocked', 'stagger'];
 
 export interface PlayerState {
   hp: number;
@@ -60,6 +80,12 @@ export interface PlayerState {
   depth: number;
 }
 
+/**
+ * `deny` is any action that did not happen: a cast the rules refused, or a body
+ * that lost its round to a status. The two are told apart by `at` — a refusal
+ * answers something the player just did and belongs in the log, a lost round
+ * belongs over the body that lost it.
+ */
 export type LogKind = 'cast' | 'hit' | 'status' | 'death' | 'info' | 'deny' | 'discover';
 
 /** What a component-turn was spent on. Harvest and belt land in later phases. */
@@ -69,7 +95,7 @@ export interface GameEvent {
   kind: LogKind;
   text: string;
   colour?: number;
-  /** World position for a floating number, if any. */
+  /** World tile to anchor a floater over, if any. */
   at?: { x: number; y: number };
   amount?: number;
 }
@@ -104,7 +130,7 @@ export class Combat {
   private register(e: Entity): void {
     if (!['enemy', 'boss'].includes(e.kind) && !e.animated) return;
     this.combatants.set(e, {
-      e, statuses: [], infuse: [],
+      e, statuses: [], infuse: [], braced: 0,
       damage: e.kind === 'boss' ? bossDamage(this.state.depth) : enemyDamage(this.state.depth),
     });
   }
@@ -115,6 +141,18 @@ export class Combat {
 
   has(e: Entity, id: StatusId): boolean {
     return this.statusesOf(e).some((s) => s.id === id && s.turns > 0);
+  }
+
+  /**
+   * Rounds during which round-denial cannot touch this body — see `denied`.
+   *
+   * Exposed for the HUD. The brace is half of the rhythm a hand-size-1 run is won
+   * on (a freeze spent inside it is wasted), and it was the half with no
+   * representation anywhere on screen, so the player could see the freeze land and
+   * never see why it sometimes bought nothing.
+   */
+  bracedFor(e: Entity): number {
+    return this.combatants.get(e)?.braced ?? 0;
   }
 
   // ------------------------------------------------------------------ casting
@@ -144,8 +182,13 @@ export class Combat {
    * one per component, when the hand was assembled.
    *
    * `targetEntity` is the tapped thing. A volley (`count > 1`) spreads across
-   * distinct hostiles before wrapping back onto the primary, so Multishot is
-   * room-clear rather than overkill on one body.
+   * DISTINCT bodies and stops when it runs out of them — extra projectiles are
+   * lost rather than wrapping back onto the primary. That single rule is what
+   * keeps the rank ladder honest: rank counts a page as several copies, so a
+   * rank-3 page used to put three projectiles on one body for one turn, which
+   * matched a three-turn fusion at a third of the price. Now rank makes a cast
+   * WIDER and fusions are what make it deeper, so "better against a group, worse
+   * against one thing" is true of every volley in the game — Multishot's included.
    */
   async cast(pages: string[], targetEntity: Entity | null): Promise<boolean> {
     const target: CastTarget = targetEntity
@@ -193,16 +236,12 @@ export class Combat {
       return true;
     }
 
-    // spread a volley across distinct hostiles
+    // spread a volley across distinct hostiles, primary first
     const hostiles = this.floor.entities.filter((e) => e.alive && e.hostile);
     const order: Entity[] = [];
     if (targetEntity) order.push(targetEntity);
     for (const h of hostiles) if (h !== targetEntity) order.push(h);
-    const targets: Entity[] = [];
-    for (let i = 0; i < cast.count; i++) {
-      const t = order.length ? order[i % order.length] : null;
-      if (t) targets.push(t);
-    }
+    const targets = order.slice(0, cast.count);
 
     this.onCastFx(cast, null, targets);
 
@@ -227,15 +266,16 @@ export class Combat {
     if (c) {
       // CONDUCTION: shock on a soaked body hits harder and arcs onward.
       if (brings('shocked') && this.has(t, 'soaked')) {
-        damage = Math.round(damage * 1.5);
+        damage = Math.round(damage * CONDUCTION_MULT);
         glow = 0xffe14a;
         this.onEvent({ kind: 'status', text: 'CONDUCTION!', colour: 0xffe14a });
         const other = this.floor.entities.find(
           (o) => o !== t && o.alive && o.hostile &&
-            Math.abs(o.sprite.tx - t.sprite.tx) + Math.abs(o.sprite.ty - t.sprite.ty) <= 3,
+            Math.abs(o.sprite.tx - t.sprite.tx) + Math.abs(o.sprite.ty - t.sprite.ty)
+              <= CONDUCTION_ARC_RANGE,
         );
         if (other) {
-          this.damage(other, Math.round(damage * 0.5), 0xffe14a);
+          this.damage(other, Math.round(damage * CONDUCTION_ARC_SHARE), 0xffe14a);
           this.addStatus(other, 'shocked', 1);
         }
       }
@@ -245,9 +285,19 @@ export class Combat {
         this.addStatus(t, 'stagger', 1);
         this.onEvent({ kind: 'status', text: 'STEAM!', colour: 0xbfe8ff });
       }
-      // SHATTER: a heavy hit on a frozen body breaks it open.
-      if (this.has(t, 'frozen') && damage >= 10) {
-        damage = Math.round(damage * 1.5);
+      /**
+       * SHATTER: a heavy hit on a frozen body breaks it open — and the shell does
+       * NOT re-form from the same cast.
+       *
+       * Both halves matter. The threshold is a rank-1 Frostbolt exactly, because
+       * at hand size 1 Frostbolt is the only thing that freezes and a valve the
+       * one freezing tool cannot reach is not a valve. And suppressing the
+       * incoming freeze is what makes frost-on-frost a CHOICE rather than a lock:
+       * the second bolt either burst-damages a frozen body or holds it, never both.
+       */
+      const shattered = this.has(t, 'frozen') && damage >= SHATTER_DAMAGE;
+      if (shattered) {
+        damage = Math.round(damage * SHATTER_MULT);
         this.removeStatus(t, 'frozen');
         glow = 0x7ad4ff;
         this.onEvent({ kind: 'status', text: 'SHATTER!', colour: 0x7ad4ff });
@@ -258,7 +308,8 @@ export class Combat {
       const deepFreeze = brings('frozen') && this.has(t, 'soaked');
 
       for (const s of cast.statuses) {
-        const mult = s.id === 'frozen' && deepFreeze ? 1.6 : 1;
+        if (s.id === 'frozen' && shattered) continue;
+        const mult = s.id === 'frozen' && deepFreeze ? DEEP_FREEZE_MULT : 1;
         this.addStatus(t, s.id, Math.max(1, Math.round(STATUS_META[s.id].turns * s.power * mult)));
       }
     }
@@ -366,42 +417,61 @@ export class Combat {
    * same sentence, so this is deliberately a thin wrapper: there is exactly one
    * round in the game and every price is paid through it.
    *
+   * Returns whether the round actually cost anything — true when a hostile was
+   * engaged (whether or not it managed to act) or a golem fought. Out of combat
+   * it is false, and the HUD needs that: a readout that bills you for every page
+   * you leaf through in an empty room advertises the exact opposite of the rule
+   * this phase exists to establish.
+   *
    * `_cause` is unused today; it is here so a harvest and a belt draw can be
    * told apart from a tear once those exist, without changing every call site.
    */
-  async takeTurn(_cause: TurnCause): Promise<void> {
+  async takeTurn(_cause: TurnCause): Promise<boolean> {
     this.turns++;
-    await this.enemyRound();
+    return this.enemyRound();
   }
 
-  /** Every hostile and every allied golem takes its turn, then statuses tick. */
-  private async enemyRound(): Promise<void> {
+  /**
+   * Every hostile and every allied golem takes its turn, then statuses tick.
+   *
+   * Paced with a real delay per acting body, because a round that resolves inside
+   * one microtask is a round nobody can see — and "a three-page fusion visibly
+   * costs three enemy rounds" is an acceptance criterion, not a figure of speech.
+   * Nothing acting means nothing to pace, so an empty room stays instant.
+   *
+   * Returns true if anything was engaged.
+   */
+  private async enemyRound(): Promise<boolean> {
     const g = this.floor.grid;
     const px = this.playerTile.x, py = this.playerTile.y;
+    let engaged = false;
 
     for (const [e, c] of [...this.combatants]) {
       if (!e.alive) continue;
 
-      // frozen or shocked bodies lose their turn — that is what those do
-      if (this.has(e, 'frozen') || this.has(e, 'shocked') || this.has(e, 'stagger')) continue;
-
       if (e.hostile) {
         const d = Math.abs(e.sprite.tx - px) + Math.abs(e.sprite.ty - py);
-        // only act if the player is in the same room or adjacent to it
+        // Act from anywhere the player could target from — see ENGAGE_RADIUS.
         const sameRoom = g.roomAt(px, py)?.id === e.roomId;
-        if (!sameRoom && d > 4) continue;
+        if (!sameRoom && d > ENGAGE_RADIUS) continue;
+
+        // The round counts against the player from here: this body is in the
+        // fight even if a status is about to take its action away.
+        engaged = true;
+        if (this.denied(c)) { this.announceDenial(c); continue; }
 
         if (d <= 1) {
           e.sprite.play('attack');
-          const dmg = c.damage + this.rng.int(-1, 2);
-          this.state.hp -= Math.max(1, dmg);
-          this.onPlayerHurt(Math.max(1, dmg));
+          const dmg = Math.max(1, c.damage + this.rng.int(DAMAGE_JITTER[0], DAMAGE_JITTER[1]));
+          this.state.hp -= dmg;
+          this.onPlayerHurt(dmg);
           this.onEvent({
             kind: 'hit', text: `${label(e)} hits you for ${dmg}.`, colour: 0xff6a6a,
           });
         } else {
           this.stepToward(e, px, py);
         }
+        await delay(ACT_PACE_MS);
       } else if (e.animated) {
         /**
          * An allied golem. It engages anything within reach, and otherwise
@@ -413,12 +483,23 @@ export class Combat {
           ? Math.abs(e.sprite.tx - foe.sprite.tx) + Math.abs(e.sprite.ty - foe.sprite.ty)
           : Infinity;
 
+        // Heeling is not fighting, so a golem trotting after you must not make an
+        // empty room bill the player for a round.
+        if (foe && foeDist <= GOLEM_AGGRO) engaged = true;
+        if (this.denied(c)) { this.announceDenial(c); continue; }
+
         if (foe && foeDist <= 1) {
           e.sprite.play('attack');
-          this.damage(foe, c.damage + this.rng.int(-1, 2), 0xb98cff);
+          this.damage(
+            foe,
+            Math.max(1, c.damage + this.rng.int(DAMAGE_JITTER[0], DAMAGE_JITTER[1])),
+            0xb98cff,
+          );
           for (const inf of c.infuse) this.addStatus(foe, inf, STATUS_META[inf].turns);
+          await delay(ACT_PACE_MS);
         } else if (foe && foeDist <= GOLEM_AGGRO) {
           this.stepToward(e, foe.sprite.tx, foe.sprite.ty);
+          await delay(ACT_PACE_MS);
         } else {
           // heel: close to the player but never onto their tile
           const d = Math.abs(e.sprite.tx - px) + Math.abs(e.sprite.ty - py);
@@ -428,6 +509,46 @@ export class Combat {
     }
 
     this.tickStatuses();
+    if (engaged) await delay(ROUND_PACE_MS);
+    return engaged;
+  }
+
+  /**
+   * Does this body lose its action this round?
+   *
+   * Frozen, shocked and staggered all cost a body its turn — but the player only
+   * gets ONE action per round, so an unlimited 2-turn freeze refreshes before it
+   * expires and the fight simply never resumes. Two bodies could be held forever,
+   * and a rank-2 volley held every hostile in the room. So a body that loses a
+   * round braces against the next one (`DENIAL_BRACE`, doubled for a boss): the
+   * statuses keep their durations and every other effect, and only the SKIP is
+   * capped. Denial is tempo you rent, never a lock you close.
+   */
+  private denied(c: Combatant): boolean {
+    if (c.braced > 0) { c.braced--; return false; }
+    if (!DENIAL_STATUSES.some((s) => this.has(c.e, s))) return false;
+    c.braced = c.e.kind === 'boss' ? BOSS_DENIAL_BRACE : DENIAL_BRACE;
+    return true;
+  }
+
+  /**
+   * Say that a body just lost its round, and to what.
+   *
+   * World-anchored rather than logged: a room of three frozen bodies is three
+   * floaters over three heads, where three log lines a round would bury everything
+   * else the log has to say. Called at the `denied` sites instead of from inside
+   * it, so the rule and its announcement stay separable.
+   */
+  private announceDenial(c: Combatant): void {
+    const id = DENIAL_STATUSES.find((s) => this.has(c.e, s));
+    if (!id) return;
+    this.onEvent({
+      kind: 'deny',
+      // Separator matches the CAST pill's, so the world captions read as one voice.
+      text: `${STATUS_META[id].name.toUpperCase()} · SKIPS`,
+      colour: STATUS_META[id].colour,
+      at: { x: c.e.sprite.tx, y: c.e.sprite.ty },
+    });
   }
 
   private nearestHostile(from: Entity): Entity | null {
@@ -530,29 +651,44 @@ function label(e: Entity): string {
   return displayName(e.spriteId);
 }
 
-/** Tiles in front of the player, nearest first — the tap-target candidates. */
+/**
+ * Tiles in front of the player, nearest first — the tap-target candidates.
+ *
+ * `reach` defaults to `ENGAGE_RADIUS` and everything outside the player's own room
+ * is held to it, because the two rules have to agree: a body you can put a reticle
+ * on has to be a body that is allowed to answer. Corridor tiles belong to no room,
+ * so a player standing in one is never "in the same room" as anything — while the
+ * reticle reached 7 and hostiles engaged at 4, a corridor was a firing position
+ * from which a whole room, boss included, could be emptied for free.
+ */
 export function targetsInView(
-  grid: Grid, floor: Floor, x: number, y: number, dir: 0 | 1 | 2 | 3, reach = 7,
+  grid: Grid, floor: Floor, x: number, y: number, dir: 0 | 1 | 2 | 3,
+  reach = ENGAGE_RADIUS,
 ): Entity[] {
   const out: Entity[] = [];
-  const push = (e: Entity | null) => {
+  const add = (e: Entity | null) => {
     if (e && e.alive && e.kind !== 'stairs' && !out.includes(e)) out.push(e);
   };
+  /** Only within reach — for anything the player does not share a room with. */
+  const addNear = (e: Entity | null) => {
+    if (e && Math.abs(e.sprite.tx - x) + Math.abs(e.sprite.ty - y) <= reach) add(e);
+  };
 
-  // Everything in the room you are standing in is targetable. Restricting to the
-  // forward ray meant a bookshelf two steps to your left could not be animated,
-  // which quietly broke the core verb depending on where you happened to face.
+  // Everything in the room you are standing in is targetable, at any distance —
+  // you share a room with it, so `enemyRound` lets it act whatever the reach says.
+  // Restricting to the forward ray meant a bookshelf two steps to your left could
+  // not be animated, which quietly broke the core verb depending on your facing.
   const room = grid.roomAt(x, y);
-  if (room) for (const [rx, ry] of room.tiles) push(floor.entityAt(rx, ry));
+  if (room) for (const [rx, ry] of room.tiles) add(floor.entityAt(rx, ry));
 
   // Plus a forward cone down a corridor, with a one-tile lateral spread.
   const [dx, dy] = DIR_VEC[dir];
   for (let i = 1; i <= reach; i++) {
     const tx = x + dx * i, ty = y + dy * i;
     if (!grid.walkable(tx, ty)) break;
-    for (const [ox, oy] of [[0, 0], [dy, dx], [-dy, -dx]] as const) push(floor.entityAt(tx + ox, ty + oy));
+    for (const [ox, oy] of [[0, 0], [dy, dx], [-dy, -dx]] as const) addNear(floor.entityAt(tx + ox, ty + oy));
     const far = grid.roomAt(tx, ty);
-    if (far && far !== room) for (const [rx, ry] of far.tiles) push(floor.entityAt(rx, ry));
+    if (far && far !== room) for (const [rx, ry] of far.tiles) addNear(floor.entityAt(rx, ry));
   }
 
   // nearest first, so auto-target picks the immediate threat

@@ -1,117 +1,205 @@
 /**
  * Scripted playtest. Drives the real game through its own public surface and
  * screenshots each beat, so the core loop is verified rather than assumed.
+ *
+ * Every beat here is ELEMENTS ONLY, because that is the whole game right now:
+ * Animate, Growth and Multishot are belt ingredients with no page, so nothing
+ * can tear them and no golem is reachable. What used to be the animate beat is
+ * now the two checks that ARE true today — an ingredient has no page, and a hand
+ * of ingredients is refused. The golem path comes back with the belt
+ * (Roadmap/Ingredient_Belt.md).
  */
-import { chromium } from 'playwright-core';
-import { mkdirSync } from 'node:fs';
-import path from 'node:path';
+import { serve, launch, openGame, check, note, finish } from './harness.mjs';
 
-const OUT = path.resolve('_shots');
-mkdirSync(OUT, { recursive: true });
+const stopServer = await serve();
+const browser = await launch();
+const { page, errors, shot, ev } = await openGame(browser, { prefix: 'pt', wait: 2600 });
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
-const page = await browser.newPage({
-  viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
-});
-const errors = [];
-page.on('pageerror', (e) => errors.push(String(e)));
-page.on('console', (m) => { if (m.type() === 'error' && !/404|favicon/.test(m.text())) errors.push(m.text()); });
-
-await page.goto('http://localhost:5199/', { waitUntil: 'networkidle' });
-await page.waitForFunction(() => !!window.__game, null, { timeout: 40000 });
-await page.waitForTimeout(2600);
-
-const shot = async (n) => { await page.screenshot({ path: path.join(OUT, `pt-${n}.png`) }); console.log('  shot pt-' + n); };
-const ev  = (fn, ...a) => page.evaluate(fn, ...a);
+/** Ids that exist for `resolveCast` but have no page — nothing can tear these. */
+const INGREDIENTS = ['animate', 'grow', 'split'];
 
 console.log('\n=== 1. state at spawn ===');
-console.log(await ev(() => {
+const spawn = await ev(() => {
   const g = window.__game;
   return {
-    depth: g.state.depth, hp: g.state.hp, mana: g.state.mana, pages: g.state.pages,
+    depth: g.state.depth, hp: g.state.hp, maxHp: g.state.maxHp,
+    handSize: g.meta.handSize, pages: g.state.pages, ranks: g.state.ranks,
+    book: g.bookPages(),
     entities: g.floor.entities.length,
-    props: g.floor.entities.filter(e => e.kind === 'prop').length,
-    enemies: g.floor.entities.filter(e => e.kind === 'enemy').length,
+    props: g.floor.entities.filter((e) => e.kind === 'prop').length,
+    enemies: g.floor.entities.filter((e) => e.kind === 'enemy').length,
     candidates: g.hud.candidates.length,
   };
-}));
+});
+console.log(spawn);
+check('hand size starts at 1', spawn.handSize === 1, `got ${spawn.handSize}`);
+check('the starting book holds only elements',
+  spawn.book.every((id) => !INGREDIENTS.includes(id)), spawn.book.join(','));
+check('the player spawns alive', spawn.hp > 0 && spawn.hp === spawn.maxHp, `${spawn.hp}/${spawn.maxHp}`);
 
-console.log('\n=== 2. walk to a prop and target it ===');
-// give every page + mana so the fusion paths can be exercised
-await ev(() => window.__game.grantAll());
+console.log('\n=== 2. the ingredient rule ===');
+const ingredients = await ev(async () => {
+  const g = window.__game;
+  g.grantAll();
+  const out = { book: g.bookPages(), refusals: {}, torn: {} };
+  for (const id of ['animate', 'grow', 'split']) {
+    out.refusals[id] = g.combat.preview([id], { kind: 'enemy' }).refusal ?? null;
+    g.fan.clear();
+    await g.selectPages([id]);
+    out.torn[id] = g.fan.count;
+  }
+  out.refusals['grow+split'] = g.combat.preview(['grow', 'split'], { kind: 'enemy' }).refusal ?? null;
+  g.fan.clear();
+  return out;
+});
+console.log(ingredients);
+check('a full book is five element pages', ingredients.book.length === 5, ingredients.book.join(','));
+check('no ingredient has a page to tear',
+  INGREDIENTS.every((id) => ingredients.torn[id] === 0), JSON.stringify(ingredients.torn));
+check('a hand of ingredients alone is refused',
+  [...INGREDIENTS, 'grow+split'].every((k) => !!ingredients.refusals[k]),
+  JSON.stringify(ingredients.refusals));
+note('golems are unreachable in this build', 'no page supplies animate until Roadmap/Ingredient_Belt.md');
+
+console.log('\n=== 3. walk to a prop and target it ===');
 const propInfo = await ev(() => {
   const g = window.__game;
-  const prop = g.floor.entities.find(e => e.kind === 'prop' && !e.animated);
+  const prop = g.floor.entities.find((e) => e.kind === 'prop' && !e.animated);
   if (!prop) return null;
   // stand next to it, facing it
   const grid = g.floor.grid;
-  for (const [d, dx, dy] of [[0,0,1],[1,-1,0],[2,0,-1],[3,1,0]]) {
-    const px = prop.sprite.tx + dx*2, py = prop.sprite.ty + dy*2;
+  for (const [d, dx, dy] of [[0, 0, 1], [1, -1, 0], [2, 0, -1], [3, 1, 0]]) {
+    const px = prop.sprite.tx + dx * 2, py = prop.sprite.ty + dy * 2;
     if (grid.walkable(px, py)) { g.place(px, py, d); break; }
   }
   g.hud.target = prop;
-  return { sprite: prop.spriteId, golem: prop.golemId, tx: prop.sprite.tx, ty: prop.sprite.ty };
+  return { sprite: prop.spriteId, hp: prop.hp, tx: prop.sprite.tx, ty: prop.sprite.ty };
 });
 console.log(propInfo);
+check('there is furniture to aim at', !!propInfo, propInfo ? propInfo.sprite : 'no prop on floor 1');
 await page.waitForTimeout(700);
 await shot('01-targeting-prop');
 
-console.log('\n=== 3. preview ANIMATE + FIRE on that prop ===');
-await ev(() => window.__game.selectPages(['animate', 'fire']));
-await page.waitForTimeout(300);
-console.log(await ev(() => {
-  const c = window.__game.hud.currentCast();
-  return { name: c.name, cost: c.cost, output: c.output, damage: c.damage, hp: c.count, infuse: c.infuse, refusal: c.refusal };
-}));
-await shot('02-cast-preview');
-
-console.log('\n=== 4. cast it ===');
-await ev(() => window.__game.castNow());
-await page.waitForTimeout(500);
-await shot('03-rising');
-await page.waitForTimeout(900);
-await shot('04-golem');
-console.log(await ev(() => {
+console.log('\n=== 4. one page, one turn: Fireball on the furniture ===');
+const solo = await ev(async () => {
   const g = window.__game;
-  const gol = g.floor.entities.find(e => e.animated);
-  return gol ? { spriteId: gol.spriteId, hp: gol.hp, hostile: gol.hostile, state: gol.sprite.state } : 'NO GOLEM';
-}));
+  const prop = g.floor.entities.find((e) => e.kind === 'prop' && !e.animated);
+  // `combat.turns` is the honest round counter — every price is paid through it.
+  const t0 = g.combat.turns;
+  await g.selectPages(['fire']);
+  const tornTurns = g.combat.turns - t0;
+  // After the tear: tearing runs `refreshTargets`, which may move the reticle.
+  g.hud.target = prop;
+  const c = g.hud.currentCast();
+  const preview = {
+    name: c.name, output: c.output, damage: c.damage, count: c.count,
+    refusal: c.refusal ?? null,
+  };
+  const before = prop.hp;
+  const t1 = g.combat.turns;
+  await g.castNow();
+  await new Promise((r) => setTimeout(r, 200));
+  return {
+    preview, before, after: prop.hp, alive: prop.alive, fanAfter: g.fan.count,
+    tornTurns, castTurns: g.combat.turns - t1,
+  };
+});
+console.log(solo);
+await shot('02-cast-preview');
+check('a single element page previews as a projectile',
+  solo.preview.output === 'projectile' && !solo.preview.refusal, JSON.stringify(solo.preview));
+check('furniture takes the hit', solo.after < solo.before || !solo.alive,
+  `${solo.before} -> ${solo.after}`);
+check('the cast spends the hand', solo.fanAfter === 0, `fan ${solo.fanAfter}`);
+check('one page costs one turn', solo.tornTurns === 1, `${solo.tornTurns} turns`);
+check('releasing the cast is free', solo.castTurns === 0, `${solo.castTurns} turns`);
+await page.waitForTimeout(600);
+await shot('03-after-bolt');
+const golem = await ev(() => {
+  const g = window.__game;
+  const gol = g.floor.entities.find((e) => e.animated);
+  return gol ? gol.spriteId : null;
+});
+check('nothing animated — no page can supply animate', golem === null, String(golem));
 
 console.log('\n=== 5. fusion resolution table ===');
-console.log(await ev(() => {
-  const sets = [['fire'],['fire','frost'],['fire','spark'],['frost','spark'],['gust','spark'],
-                ['fire','frost','spark'],['fire','fire'],['fire','grow'],['fire','split'],
-                ['fire','grow','grow'],['animate','frost'],['grow']];
-  return sets.map(s => {
-    const c = window.__game.combat.preview(s, { kind: 'enemy' });
-    return `${s.join('+').padEnd(22)} -> ${(c.refusal ? 'DENY: ' + c.refusal : c.name + ' | dmg ' + c.damage + ' x' + c.count + ' | ' + c.cost + ' mana' + (c.authored ? ' [NEW]' : ''))}`;
-  });
-}));
+const ELEMENT_SETS = [
+  ['fire'], ['frost'], ['spark'], ['gust'], ['rot'],
+  ['fire', 'frost'], ['fire', 'spark'], ['frost', 'spark'], ['gust', 'spark'], ['fire', 'rot'],
+  ['fire', 'frost', 'spark'], ['fire', 'gust', 'spark'], ['fire', 'frost', 'gust'],
+  ['fire', 'fire'], ['fire', 'fire', 'fire'],
+];
+const INGREDIENT_SETS = [['animate'], ['grow'], ['split'], ['grow', 'grow']];
+const table = await ev(([elems, ingrs]) => {
+  const g = window.__game;
+  const row = (s) => {
+    const c = g.combat.preview(s, { kind: 'enemy' });
+    return {
+      set: s.join('+'),
+      // The price is TURNS — one per component taken. There is no mana.
+      turns: s.length,
+      refusal: c.refusal ?? null,
+      name: c.name, damage: c.damage, count: c.count, authored: c.authored,
+    };
+  };
+  return { elems: elems.map(row), ingrs: ingrs.map(row) };
+}, [ELEMENT_SETS, INGREDIENT_SETS]);
+for (const r of [...table.elems, ...table.ingrs]) {
+  console.log(`  ${r.set.padEnd(20)} ${String(r.turns) + 't'} -> ${
+    r.refusal ? 'DENY: ' + r.refusal
+      : `${r.name} | dmg ${r.damage} x${r.count}${r.authored ? ' [NEW]' : ''}`}`);
+}
+check('every element set resolves into a cast',
+  table.elems.every((r) => !r.refusal && r.damage > 0),
+  table.elems.filter((r) => r.refusal || !r.damage).map((r) => r.set).join(','));
+check('every ingredient-only set is refused',
+  table.ingrs.every((r) => !!r.refusal),
+  table.ingrs.filter((r) => !r.refusal).map((r) => r.set).join(','));
 
-console.log('\n=== 6. attack an enemy, check statuses ===');
+console.log('\n=== 6. elemental interaction: soak, then conduct ===');
 const fight = await ev(async () => {
   const g = window.__game;
-  const foe = g.floor.entities.find(e => e.alive && e.kind === 'enemy');
-  if (!foe) return 'no enemy on this floor';
+  // The boss, because it is the only body that survives a Steam Burst — a mook
+  // dies to it outright and the second half of the interaction never runs.
+  const foe = g.floor.entities.find((e) => e.alive && e.kind === 'boss')
+    ?? g.floor.entities.find((e) => e.alive && e.kind === 'enemy');
+  if (!foe) return null;
   const grid = g.floor.grid;
-  for (const [d, dx, dy] of [[0,0,1],[1,-1,0],[2,0,-1],[3,1,0]]) {
-    const px = foe.sprite.tx + dx*3, py = foe.sprite.ty + dy*3;
+  for (const [d, dx, dy] of [[0, 0, 1], [1, -1, 0], [2, 0, -1], [3, 1, 0]]) {
+    const px = foe.sprite.tx + dx * 3, py = foe.sprite.ty + dy * 3;
     if (grid.walkable(px, py)) { g.place(px, py, d); break; }
   }
-  g.hud.target = foe;
   const before = foe.hp;
-  await g.selectPages(['fire','frost']);        // Steam Burst -> soaked
+  const t0 = g.combat.turns;
+  await g.selectPages(['fire', 'frost']);        // Steam Burst -> soaked
+  const fusionTurns = g.combat.turns - t0;
+  g.hud.target = foe;
   await g.castNow();
-  const afterSoak = { hp: foe.hp, statuses: g.combat.statusesOf(foe).map(s=>s.id) };
-  g.state.mana = 20;
-  await g.selectPages(['spark']);               // shock on soaked -> CONDUCTION
+  const afterSoak = { hp: foe.hp, statuses: g.combat.statusesOf(foe).map((s) => s.id) };
+  await g.selectPages(['spark']);                // shock on soaked -> CONDUCTION
+  g.hud.target = foe;
   await g.castNow();
-  return { before, afterSoak, afterShock: { hp: foe.hp, statuses: g.combat.statusesOf(foe).map(s=>s.id) } };
+  return {
+    kind: foe.kind, before, afterSoak, fusionTurns,
+    afterShock: { hp: foe.hp, statuses: g.combat.statusesOf(foe).map((s) => s.id) },
+    playerHp: g.state.hp,
+  };
 });
 console.log(fight);
+check('a fusion lands on the target', !!fight && fight.afterSoak.hp < fight.before,
+  fight ? `${fight.before} -> ${fight.afterSoak.hp}` : 'no body to fight');
+check('a two-page fusion costs two turns', !!fight && fight.fusionTurns === 2,
+  fight ? `${fight.fusionTurns} turns` : '');
+check('Steam Burst soaks', !!fight && fight.afterSoak.statuses.includes('soaked'),
+  fight ? fight.afterSoak.statuses.join(',') : '');
+// Spark is 9 at rank 1; conduction is x1.5, so a conducted hit cannot be under 12.
+check('shock on a soaked body conducts',
+  !!fight && fight.afterSoak.hp - fight.afterShock.hp >= 12,
+  fight ? `spark dealt ${fight.afterSoak.hp - fight.afterShock.hp}` : '');
 await page.waitForTimeout(600);
-await shot('05-combat');
+await shot('04-combat');
 
-console.log('\n=== 7. errors ===');
-console.log(errors.length ? errors.slice(0,8) : 'none');
+console.log('\n=== 7. result ===');
+finish(errors);
 await browser.close();
+stopServer();

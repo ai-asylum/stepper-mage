@@ -79,8 +79,29 @@ Useful harnesses:
 ```bash
 node tools/shot.mjs --tour      # screenshots from vantage points worth judging
 node tools/playtest.mjs         # scripted run through the core loop
-node tools/fullrun.mjs          # clears all five floors' bosses
+node tools/fullrun.mjs --tour   # god mode: every floor builds and its boss dies
+node tools/fullrun.mjs --hand1  # the acceptance run: four lines, five fixed seeds
+node tools/fullrun.mjs --hand1 --policy=burn  # one line only, measured, never gated
 ```
+
+`--hand1` is the one that can legitimately fail. It plays the designed run —
+default loadout, hand size 1, the altar's free rank-up and the chest on every
+floor, no HP resets — across fixed seeds and reports a clear rate. A death is a
+measurement, and it exits non-zero so the number cannot be ignored.
+
+A clear rate is a property of the balance **and** of the line being played, so
+`--policy=burn|lock|alt|mixed|all` picks which lines get played: `burn` casts
+Fireball every turn, `lock` casts Frostbolt and leans on round denial, `alt`
+freezes and then Fireballs into the freeze for a SHATTER, and `mixed` does the
+same but on the beat the boss's denial brace runs out. With no flag, all four run.
+
+**`mixed` is the gated line, and the only one.** The criterion is that a run is
+*completable* at hand size 1, not that it is completable by spamming one page —
+`mixed` clears 5/5, `alt` 4/5, and `burn` and `lock` 1/5 each. Those three are
+measured every run and reported as notes, because the spread between them is the
+evidence that knowing the interactions is what clears the run; a change that
+flattens it is a design event worth seeing even though it does not fail the gate.
+A `--policy` flag chooses what gets played, never what gets asserted.
 
 ## Art
 

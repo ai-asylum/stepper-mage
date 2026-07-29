@@ -69,7 +69,7 @@ export const SPELLS: SpellDef[] = [
   },
   {
     id: 'gust', name: 'Gust', glyph: '💨', role: 'bolt', kind: 'element', element: 'gust', cost: 2,
-    colour: 0xa8f0d0, effect: 'Shoves the target back a tile. Fans flame.',
+    colour: 0xa8f0d0, effect: 'Staggers the target and shoves it back a tile.',
     flavor: '"Every locked door is only as good as its hinges."',
   },
   {
@@ -118,6 +118,11 @@ interface ComboDef {
   colour: number;
   /** Damage per projectile. */
   damage: number;
+  /**
+   * Projectiles, which are a SPREAD across distinct bodies and never a focus on
+   * one — see `Combat.cast`. So this is "how many bodies does it reach", and a
+   * high count against a lone boss is worth exactly one projectile.
+   */
   count?: number;
   statuses?: CastStatus[];
   /** Knockback in tiles. */
@@ -133,68 +138,87 @@ export function setKey(ids: string[]): string {
 /**
  * Authored fusion identities. Only sets that deserve a NAME live here; every
  * other combination is composed by `resolveCast`. Keys are sorted set keys.
+ *
+ * **These are priced in TURNS.** A set of N elements costs N turns to assemble,
+ * so it has to beat N turns of the best single page — otherwise the fusion is a
+ * worse Fireball that also costs hand size. The yardstick is a rank-1 Fireball:
+ * 10 up front plus three ticks of 3, so ~19 on one body per turn spent.
+ *
+ * The shape every row is tuned to, and the reason the table has two kinds of row:
+ *  - `count > 1` is a SPREAD. Projectiles never double up on one body, so a
+ *    3-count pair is worth three bodies' damage against a room and one body's
+ *    against a boss. These win on groups and lose badly on one thing.
+ *  - `count: 1` is a FOCUS, and has to out-damage N Fireballs on a single body or
+ *    it has no niche at all — which is exactly what the old table got wrong.
+ *    Steam Burst at 13 lost to two Fireballs' ~29, so nobody would ever hold two
+ *    pages. It is now the single-target nuke, and overkills a mook on purpose.
  */
 export const COMBOS: Record<string, ComboDef> = {
   // solo identities
   fire: { name: 'Fireball', colour: 0xff7a2b, damage: 10, statuses: [{ id: 'burning', power: 1 }] },
   frost: { name: 'Frostbolt', colour: 0x7ad4ff, damage: 8, statuses: [{ id: 'frozen', power: 1 }] },
   spark: { name: 'Spark', colour: 0xffe14a, damage: 9, statuses: [{ id: 'shocked', power: 1 }] },
-  gust: { name: 'Gust', colour: 0xa8f0d0, damage: 4, shove: 1, statuses: [] },
-  rot: { name: 'Decay', colour: 0x9de06a, damage: 4, statuses: [{ id: 'decay', power: 1 }] },
+  // Gust trades damage for a stagger and a shove — the page that moves a body
+  // rather than the page that kills it. It is deliberately under the SHATTER
+  // threshold, so gusting a frozen thing leaves it frozen.
+  gust: { name: 'Gust', colour: 0xa8f0d0, damage: 5, shove: 1, statuses: [{ id: 'stagger', power: 1 }] },
+  // Decay out-totals a Fireball (5 + five ticks of 3 = 20 against 19) and takes
+  // five rounds to do it. Slowest payout, largest total: a trade, not a downgrade.
+  rot: { name: 'Decay', colour: 0x9de06a, damage: 5, statuses: [{ id: 'decay', power: 1 }] },
 
   // element pairs — the discoveries
   'fire+frost': {
-    name: 'Steam Burst', colour: 0xbfe8ff, damage: 13,
+    name: 'Steam Burst', colour: 0xbfe8ff, damage: 30,
     statuses: [{ id: 'soaked', power: 1 }, { id: 'stagger', power: 1 }],
   },
   'fire+spark': {
-    name: 'Firestorm', colour: 0xffa63a, damage: 8, count: 3,
+    name: 'Firestorm', colour: 0xffa63a, damage: 13, count: 3,
     statuses: [{ id: 'burning', power: 1 }, { id: 'shocked', power: 0.5 }],
   },
   'fire+gust': {
-    name: 'Wildfire', colour: 0xff9440, damage: 9, count: 2,
+    name: 'Wildfire', colour: 0xff9440, damage: 19, count: 2,
     statuses: [{ id: 'burning', power: 1.6 }],
   },
   'frost+spark': {
-    name: 'Aurora', colour: 0x9ee8ff, damage: 14,
+    name: 'Aurora', colour: 0x9ee8ff, damage: 26,
     statuses: [{ id: 'frozen', power: 1 }, { id: 'shocked', power: 1 }],
   },
   'frost+gust': {
-    name: 'Blizzard', colour: 0xd6f4ff, damage: 7, count: 3,
+    name: 'Blizzard', colour: 0xd6f4ff, damage: 13, count: 3,
     statuses: [{ id: 'frozen', power: 0.8 }],
   },
   'gust+spark': {
-    name: 'Tempest', colour: 0xfff0a0, damage: 8, count: 3,
+    name: 'Tempest', colour: 0xfff0a0, damage: 13, count: 3,
     statuses: [{ id: 'shocked', power: 1 }], shove: 1,
   },
   'fire+rot': {
-    name: 'Soulfire', colour: 0xc8ff8a, damage: 12,
-    statuses: [{ id: 'burning', power: 1.4 }, { id: 'decay', power: 1.2 }],
+    name: 'Soulfire', colour: 0xc8ff8a, damage: 22,
+    statuses: [{ id: 'burning', power: 1.4 }, { id: 'decay', power: 0.8 }],
   },
   'frost+rot': {
-    name: 'Grave Chill', colour: 0xa8e0c0, damage: 10,
-    statuses: [{ id: 'frozen', power: 1.2 }, { id: 'decay', power: 1 }],
+    name: 'Grave Chill', colour: 0xa8e0c0, damage: 22,
+    statuses: [{ id: 'frozen', power: 1.2 }, { id: 'decay', power: 0.8 }],
   },
   'rot+spark': {
-    name: 'Necrotic Arc', colour: 0xd4ff6a, damage: 11,
-    statuses: [{ id: 'decay', power: 1 }, { id: 'shocked', power: 1 }],
+    name: 'Necrotic Arc', colour: 0xd4ff6a, damage: 22,
+    statuses: [{ id: 'decay', power: 0.8 }, { id: 'shocked', power: 1 }],
   },
   'gust+rot': {
-    name: 'Spore Wind', colour: 0xb8f090, damage: 6, count: 3,
-    statuses: [{ id: 'decay', power: 1 }],
+    name: 'Spore Wind', colour: 0xb8f090, damage: 13, count: 3,
+    statuses: [{ id: 'decay', power: 0.6 }],
   },
 
   // triples
   'fire+frost+spark': {
-    name: 'Thunderhead', colour: 0xcfe8ff, damage: 12, count: 3,
+    name: 'Thunderhead', colour: 0xcfe8ff, damage: 24, count: 3,
     statuses: [{ id: 'soaked', power: 1 }, { id: 'shocked', power: 1.4 }],
   },
   'fire+gust+spark': {
-    name: 'Cinder Cyclone', colour: 0xffb84a, damage: 11, count: 3,
+    name: 'Cinder Cyclone', colour: 0xffb84a, damage: 18, count: 3,
     statuses: [{ id: 'burning', power: 1.5 }, { id: 'shocked', power: 1 }], shove: 1,
   },
   'fire+frost+gust': {
-    name: 'Hailfire', colour: 0xdff0ff, damage: 13, count: 2,
+    name: 'Hailfire', colour: 0xdff0ff, damage: 30, count: 2,
     statuses: [{ id: 'soaked', power: 1 }, { id: 'frozen', power: 1 }], shove: 1,
   },
 };
@@ -396,8 +420,22 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
   }
   if (extraSplit) count += 2 * extraSplit;
   if (extraBolt) {
+    /**
+     * Empowerment from duplicate element pages — which is how RANK is expressed,
+     * a rank-3 page resolving as three copies of itself.
+     *
+     * The split between the two lines is the whole reason the rank ladder is not
+     * strictly better than fusing. The extra projectiles are a spread and never
+     * double up (`Combat.cast`), so a rank-3 page widens a cast to three bodies;
+     * the multiplier is what it buys against a single body. It used to be +8% and
+     * three wrapped projectiles, which meant one turn of rank-3 Fireball put 36 on
+     * one target — matching a three-turn Thunderhead at a third of the price and
+     * inverting the trade the turn economy exists to create. +15% per extra copy
+     * is what leaves a three-turn fusion strictly ahead of a one-turn rank-3 page
+     * on every count of bodies, measured.
+     */
     count += extraBolt;
-    damage = Math.round(damage * (1 + 0.08 * extraBolt));
+    damage = Math.round(damage * (1 + 0.15 * extraBolt));
   }
 
   const tier = extraGrow + extraSplit + extraBolt;
@@ -411,13 +449,22 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
   };
 }
 
-/** Status display metadata, shared by the HUD and the sprite tinting. */
+/**
+ * Status display metadata, shared by the HUD and the sprite tinting.
+ *
+ * `turns` is the base duration a `power: 1` cast applies. Burning and decay share
+ * a per-tick rate (`tuning.ts`) and differ only here, which is what makes fire the
+ * tempo element and rot the total-damage one. The three denial statuses are short
+ * because the player only gets one action per round — their uptime is capped again
+ * in `Combat.enemyRound`, so duration is about pinning and shattering rather than
+ * about how long a body stands still.
+ */
 export const STATUS_META: Record<StatusId, { name: string; colour: number; turns: number }> = {
   burning: { name: 'Burning', colour: 0xff7a2b, turns: 3 },
   frozen: { name: 'Frozen', colour: 0x7ad4ff, turns: 2 },
   soaked: { name: 'Soaked', colour: 0x4e9fbf, turns: 4 },
   shocked: { name: 'Shocked', colour: 0xffe14a, turns: 1 },
-  decay: { name: 'Decaying', colour: 0x9de06a, turns: 4 },
+  decay: { name: 'Decaying', colour: 0x9de06a, turns: 5 },
   stagger: { name: 'Staggered', colour: 0xd8c9a0, turns: 1 },
 };
 

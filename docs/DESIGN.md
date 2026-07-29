@@ -59,8 +59,9 @@ the load-bearing rule of the whole game:
 - **Hand size 1 is a complete game**, not a punishment — one page, one turn, free
   cast is the same tempo as any other action.
 - **Fusions are investments, not free power.** Three Fireballs over three turns is
-  ~30 on one target; a three-turn Thunderhead is ~36 across three with statuses.
-  Better against a group, worse against one thing.
+  ~45 on one target once the burn finishes ticking; a three-turn Thunderhead is 24
+  on one body, 48 across two, 72 across three, plus soaked and shocked. Better
+  against a group, worse against one thing.
 - **Preparation is the reward.** Turns only cost you when something is acting, so
   assembling out of combat is free. Walk in with a triple loaded and release it for
   nothing. Assemble mid-fight and you eat three rounds standing there tearing paper.

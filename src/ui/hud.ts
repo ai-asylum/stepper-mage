@@ -14,7 +14,7 @@
  */
 import type { Engine } from '../core/engine';
 import type { Entity } from '../game/floor';
-import type { Combat, PlayerState } from '../game/combat';
+import { DENIAL_STATUSES, type Combat, type PlayerState } from '../game/combat';
 import { STATUS_META, displayName, isElement, type ResolvedCast } from '../spells/spells';
 import * as THREE from 'three';
 import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
@@ -44,7 +44,11 @@ export type UiAction =
   | { kind: 'descend' }
   | { kind: 'none' };
 
-interface FloatNum { text: string; colour: number; wx: number; wy: number; t: number; big: boolean; }
+interface FloatNum {
+  text: string; colour: number; wx: number; wy: number; t: number; big: boolean;
+  /** Extra px of head start, so two floaters over one tile do not draw as one. */
+  lift: number;
+}
 interface LogLine { text: string; colour: number; t: number; }
 
 const GOLD = '#ffcf5c';
@@ -104,6 +108,14 @@ export class Hud {
    */
   assemblyTurns = 0;
 
+  /**
+   * The fusion ceiling and what is held against it, set by the game each frame.
+   * A readout for the same reason: the cost of everything is priced per component,
+   * so how many components you may hold is the first thing the player has to know.
+   */
+  handSize = 1;
+  handHeld = 0;
+
   /** Where the minimap reads the world from. Bound per floor. */
   private map: (() => { floor: Floor; x: number; y: number; dir: Dir }) | null = null;
 
@@ -140,7 +152,14 @@ export class Hud {
   // ------------------------------------------------------------------ feedback
 
   addFloat(text: string, colour: number, wx: number, wy: number, big = false): void {
-    this.floats.push({ text, colour, wx, wy, t: 0, big });
+    /**
+     * Stack floaters that share a tile instead of drawing them on top of each
+     * other. A body can produce two in one beat — the damage number from your cast
+     * and then the caption for the round it lost — and superimposed they read as
+     * one mangled word rather than as two events.
+     */
+    const together = this.floats.filter((f) => f.wx === wx && f.wy === wy).length;
+    this.floats.push({ text, colour, wx, wy, t: 0, big, lift: Math.min(3, together) * 15 });
     if (this.floats.length > 24) this.floats.shift();
   }
 
@@ -219,6 +238,7 @@ export class Hud {
     this.drawCastBar(ctx, W);
     this.drawLog(ctx, W);
     this.drawVitals(ctx, W);
+    this.drawHand(ctx);
     this.drawParty(ctx, W);
     this.drawSealedNote(ctx, W);
     this.drawAltarPrompt(ctx, W);
@@ -337,10 +357,29 @@ export class Hud {
           ctx.fillRect(mx - bw / 2, ty - 12, bw * Math.max(0, e.hp / e.maxHp), bh);
 
           const st = this.combat.statusesOf(e).filter((sx) => sx.turns > 0);
+          /**
+           * Status pips, ABOVE the name plate. They used to sit at `ty - 22`, which
+           * is inside the plate's own box, so every pip was drawn across the name —
+           * survivable while a pip was decoration, not while it carries the brace.
+           *
+           * A braced body acts next round however it is painted, so the pips that
+           * would have stopped it are drawn HOLLOW: same colour, no fill, "held but
+           * not biting". Timing a freeze against the brace is the difference between
+           * the lines that clear a hand-size-1 run and the lines that die on floor
+           * 4, and it was the half of that rhythm nothing on screen showed.
+           */
+          const braced = this.combat.bracedFor(e) > 0;
           let sx2 = mx - (st.length * 9) / 2;
           for (const sv of st) {
-            ctx.fillStyle = hexCss(STATUS_META[sv.id].colour);
-            ctx.fillRect(sx2, ty - 22, 6, 6);
+            const pip = hexCss(STATUS_META[sv.id].colour);
+            if (braced && DENIAL_STATUSES.includes(sv.id)) {
+              ctx.strokeStyle = pip;
+              ctx.lineWidth = 1;
+              ctx.strokeRect(sx2 + 0.5, ty - 39.5, 5, 5);
+            } else {
+              ctx.fillStyle = pip;
+              ctx.fillRect(sx2, ty - 40, 6, 6);
+            }
             sx2 += 9;
           }
         }
@@ -354,7 +393,7 @@ export class Hud {
       this.engine.worldToUi(v, p);
       if (p.behind) continue;
       const k = f.t / 1.3;
-      const rise = 34 * (1 - Math.pow(1 - k, 2));
+      const rise = f.lift + 34 * (1 - Math.pow(1 - k, 2));
       ctx.globalAlpha = Math.max(0, 1 - Math.pow(k, 2.4));
       ctx.font = `bold ${f.big ? 20 : 15}px ui-monospace, monospace`;
       ctx.textAlign = 'center';
@@ -575,18 +614,57 @@ export class Hud {
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     if (ok) this.hits.push({ rect: [bx, by, tw, 32], action: { kind: 'cast' } });
 
-    // What this hand cost, tucked above the pill's leading edge. Left-aligned
-    // there rather than to the right of the pill, which is where the cycle-target
-    // button lives once there is more than one thing to shoot at.
+    // What this hand cost. Its own pill, clear ABOVE the log's top line: the
+    // readout used to sit with its baseline exactly on that line, so a wide cast
+    // pill pushed it into the log's first message and the two read as one string.
+    // Left-aligned rather than right, which is where the cycle-target button lives
+    // once there is more than one thing to shoot at.
     if (this.assemblyTurns > 0) {
-      ctx.font = '10px ui-monospace, monospace';
-      ctx.textBaseline = 'bottom';
-      ctx.globalAlpha = 0.8;
-      ctx.fillStyle = PARCH;
-      ctx.fillText(`${this.assemblyTurns} turn${this.assemblyTurns > 1 ? 's' : ''}`, bx + 2, by - 4);
-      ctx.globalAlpha = 1;
+      const cost = `${this.assemblyTurns} turn${this.assemblyTurns > 1 ? 's' : ''} spent`;
+      ctx.font = '9px ui-monospace, monospace';
+      const pw = ctx.measureText(cost).width + 16;
+      const py = by - 26;
+      rr(ctx, bx, py, pw, 16, 8);
+      ctx.fillStyle = 'rgba(14,9,16,0.82)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,207,92,0.45)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = GOLD;
+      ctx.fillText(cost, bx + 8, py + 8.5);
       ctx.textBaseline = 'top';
     }
+  }
+
+  /**
+   * The fusion ceiling: how many components you can hold, and how many you are
+   * holding.
+   *
+   * Always on, because hand size is the number the whole turn economy is priced
+   * against and nothing else in the game ever states it — at a hand of one the
+   * player's only encounter with it was a refused swipe. Information, not a
+   * control, so it takes no hit region.
+   */
+  private drawHand(ctx: CanvasRenderingContext2D): void {
+    // A debug-lifted hand can hold more than the real ceiling; show the larger of
+    // the two rather than rendering a fraction that reads as a bug.
+    const cap = Math.max(this.handSize, this.handHeld);
+    const full = this.handHeld >= cap;
+    const label = `HAND ${this.handHeld}/${cap}`;
+    ctx.font = '8px ui-monospace, monospace';
+    const w = ctx.measureText(label).width + 14;
+    const x = 12, y = 50, h = 14;
+    rr(ctx, x, y, w, h, 7);
+    ctx.fillStyle = 'rgba(14,9,16,0.7)';
+    ctx.fill();
+    ctx.strokeStyle = full ? 'rgba(255,207,92,0.75)' : 'rgba(232,217,176,0.28)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = full ? GOLD : PARCH;
+    ctx.fillText(label, x + 7, y + h / 2 + 0.5);
+    ctx.textBaseline = 'top';
   }
 
   private drawLog(ctx: CanvasRenderingContext2D, W: number): void {

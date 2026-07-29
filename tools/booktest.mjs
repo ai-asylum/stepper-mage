@@ -1,81 +1,154 @@
-/** Verifies the ported grimoire: flip, tear, fan, merge-cast. */
-import { chromium } from 'playwright-core';
-import path from 'node:path';
-const b = await chromium.launch({ channel:'chrome', headless:true });
-const p = await b.newPage({ viewport:{width:390,height:844}, deviceScaleFactor:2, isMobile:true, hasTouch:true });
-const errs = [];
-p.on('pageerror', e => errs.push(String(e)));
-p.on('console', m => { if (m.type()==='error' && !/404|favicon/.test(m.text())) errs.push(m.text()); });
-await p.goto('http://localhost:5199/', { waitUntil:'networkidle' });
-await p.waitForFunction(()=>!!window.__game, null, {timeout:40000});
-await p.waitForTimeout(4200);   // let the intro cascade settle
-const shot = async n => { await p.screenshot({ path: path.join('_shots', `bk-${n}.png`) }); console.log('  shot bk-'+n); };
+/**
+ * Verifies the ported grimoire: flip, tear, fan, merge-cast, and the two gates on
+ * a tear (you have not learned it / your hand is full).
+ *
+ * The book is FIVE element pages. Animate, Growth and Multishot are belt
+ * ingredients with no page, so the old "tear Animate" beat could not be true —
+ * `tearAt` wraps modulo the book's length, so the index that used to mean Animate
+ * now means Spark. It is replaced by the assertion that holds today: no index in
+ * the book yields an ingredient. The belt restores that path
+ * (Roadmap/Ingredient_Belt.md).
+ *
+ * Order matters here. The hand-size gate runs BEFORE any multi-page
+ * `selectPages`, because that debug helper lifts the hand ceiling for the session.
+ */
+import { serve, launch, openGame, check, note, finish } from './harness.mjs';
 
-console.log('after intro:', await p.evaluate(() => {
+const stopServer = await serve();
+const browser = await launch();
+// The intro cascade has to settle before the book will accept a gesture.
+const { page, errors, shot, ev } = await openGame(browser, {
+  prefix: 'bk', wait: 4200, freshSave: true,
+});
+
+const INGREDIENTS = ['animate', 'grow', 'split'];
+
+const intro = await ev(() => {
   const g = window.__game;
-  return { page: g.book.currentSpell.name, index: g.book.index, busy: g.book.busy, fan: g.fan.count };
-}));
+  return {
+    page: g.book.currentSpell.name, index: g.book.index, busy: g.book.busy,
+    fan: g.fan.count, handSize: g.meta.handSize, learned: g.state.pages,
+  };
+});
+console.log('after intro:', intro);
+check('the book opens on a page', !!intro.page, String(intro.page));
+check('hand size is 1 on a fresh save', intro.handSize === 1, String(intro.handSize));
 await shot('01-intro-settled');
 
 console.log('\n-- flip forward twice --');
-await p.evaluate(() => { window.__game.book.swipe(1); });
-await p.waitForTimeout(500);
-await p.evaluate(() => { window.__game.book.swipe(1); });
-await p.waitForTimeout(600);
-console.log('now on:', await p.evaluate(() => window.__game.book.currentSpell.name));
+await ev(() => { window.__game.book.swipe(1); });
+await page.waitForTimeout(500);
+await ev(() => { window.__game.book.swipe(1); });
+await page.waitForTimeout(600);
+const flipped = await ev(() => ({
+  name: window.__game.book.currentSpell.name, index: window.__game.book.index,
+}));
+console.log('now on:', flipped);
+check('flipping moves the book off page 0', flipped.index !== intro.index, JSON.stringify(flipped));
 await shot('02-flipped');
 
-console.log('\n-- grant pages + mana, tear Animate and Fireball --');
-console.log(await p.evaluate(async () => {
+console.log('\n-- the book is five element pages --');
+const shape = await ev(() => {
+  const g = window.__game;
+  g.grantAll();
+  g.book.refresh();
+  const ids = g.bookPages();
+  return { ids, atSeven: ids[7 % ids.length] };
+});
+console.log(shape);
+check('a full book is five pages', shape.ids.length === 5, shape.ids.join(','));
+check('no page is an ingredient',
+  shape.ids.every((id) => !INGREDIENTS.includes(id)), shape.ids.join(','));
+// The case this replaces asserted index 7 was Animate. `tearAt` takes the index
+// modulo the book's length, so in a five-page book 7 is Spark.
+check('index 7 wraps to Spark in a five-page book', shape.atSeven === 'spark', shape.atSeven);
+
+console.log('\n-- canRip gating: unlearned page, then a full hand --');
+const gating = await ev(() => {
+  const g = window.__game;
+  const ids = g.bookPages();
+  const learned = {};
+  // Only Fireball learned. The BOOK keeps all five pages (setBookPages is not
+  // called), which is the point: canRip has to refuse the four it can reach.
+  g.state.pages = ['fire'];
+  for (let i = 0; i < ids.length; i++) {
+    g.fan.clear();
+    learned[ids[i]] = g.book.tearAt(i);
+  }
+  // index 7 is Spark, and Spark is not learned
+  g.fan.clear();
+  const wrapped = g.book.tearAt(7);
+
+  // Hand full: at hand size 1 the second tear of a learned page is refused.
+  g.fan.clear();
+  const first = g.book.tearAt(0);
+  const second = g.book.tearAt(0);
+  const handAfter = g.fan.count;
+  g.fan.clear();
+  return { learned, wrapped, first, second, handAfter, handSize: g.meta.handSize };
+});
+console.log(gating);
+check('a learned page tears', gating.learned.fire === true, JSON.stringify(gating.learned));
+check('every unlearned page is refused',
+  ['frost', 'spark', 'gust', 'rot'].every((id) => gating.learned[id] === false),
+  JSON.stringify(gating.learned));
+check('a wrapped index is gated on what it lands on, not on what it used to be',
+  gating.wrapped === false, String(gating.wrapped));
+check('at hand size 1 the first tear lands and the second is refused',
+  gating.first === true && gating.second === false, `${gating.first} / ${gating.second}`);
+check('a refused tear does not grow the hand', gating.handAfter === 1, `fan ${gating.handAfter}`);
+
+console.log('\n-- tear two elements and cast the fusion --');
+// The gating tears above each bought the room a round, and a tear is BLOCKED
+// (not refused) while one is still resolving. Let them drain.
+await page.waitForTimeout(1200);
+const torn = await ev(async () => {
   const g = window.__game;
   g.grantAll();
   // stand next to a prop and target it
-  const prop = g.floor.entities.find(e => e.kind==='prop' && !e.animated);
+  const prop = g.floor.entities.find((e) => e.kind === 'prop' && !e.animated);
   const grid = g.floor.grid;
-  for (const [d,dx,dy] of [[0,0,1],[1,-1,0],[2,0,-1],[3,1,0]]) {
-    const px = prop.sprite.tx+dx*3, py = prop.sprite.ty+dy*3;
-    if (grid.walkable(px,py)) { g.place(px,py,d); break; }
+  for (const [d, dx, dy] of [[0, 0, 1], [1, -1, 0], [2, 0, -1], [3, 1, 0]]) {
+    const px = prop.sprite.tx + dx * 3, py = prop.sprite.ty + dy * 3;
+    if (grid.walkable(px, py)) { g.place(px, py, d); break; }
   }
+  await g.selectPages(['fire', 'frost']);
   g.hud.target = prop;
-  await g.selectPages(['animate','fire']);
-  await new Promise(r=>setTimeout(r,60));
-  return { fanCount: g.fan.count, fanIds: g.fan.gameIds, preview: g.hud.currentCast()?.name };
-}));
-await p.waitForTimeout(900);
+  await new Promise((r) => setTimeout(r, 60));
+  return {
+    fanCount: g.fan.count, fanIds: g.fan.gameIds,
+    preview: g.hud.currentCast()?.name, propHp: prop.hp,
+  };
+});
+console.log(torn);
+check('two pages sit in the fan', torn.fanCount === 2, `fan ${torn.fanCount}`);
+check('the fan previews the authored fusion', torn.preview === 'Steam Burst', String(torn.preview));
+await page.waitForTimeout(900);
 await shot('03-torn-fan');
 
 console.log('\n-- cast (fan merges, then the spell fires) --');
-await p.evaluate(() => window.__game.castNow());
-await p.waitForTimeout(700);
+await ev(() => window.__game.castNow());
+await page.waitForTimeout(700);
 await shot('04-merging');
-await p.waitForTimeout(1400);
-console.log(await p.evaluate(() => {
+const after = await ev(() => {
   const g = window.__game;
-  const gol = g.floor.entities.find(e => e.animated);
-  return { fanAfter: g.fan.count, golem: gol ? gol.spriteId : 'NONE', golemHp: gol?.hp };
-}));
+  const prop = g.floor.entities.find((e) => e.kind === 'prop');
+  return {
+    fanAfter: g.fan.count,
+    propHp: prop ? prop.hp : null, propAlive: prop ? prop.alive : null,
+    animated: g.floor.entities.filter((e) => e.animated).length,
+  };
+});
+await page.waitForTimeout(1400);
+console.log(after);
+check('the merge empties the fan', after.fanAfter === 0, `fan ${after.fanAfter}`);
+check('the fusion hits the furniture',
+  after.propHp === null || after.propHp < torn.propHp || after.propAlive === false,
+  `${torn.propHp} -> ${after.propHp}`);
+check('nothing rose — no page supplies animate', after.animated === 0, String(after.animated));
+note('the golem path returns with the belt', 'Roadmap/Ingredient_Belt.md');
 await shot('05-after-cast');
 
-console.log('\n-- canRip gating (unlearned page / not enough mana) --');
-console.log(await p.evaluate(() => {
-  const g = window.__game;
-  g.fan.clear();
-  g.state.pages = ['fire'];          // only Fireball learned
-  g.state.mana = 2;
-  const pages = g.book;
-  const results = {};
-  for (const [i, nm] of [[0,'fire(learned,affordable)'],[1,'frost(unlearned)'],[7,'animate(unlearned)']]) {
-    g.fan.clear();
-    results[nm] = pages.tearAt(i);
-  }
-  g.fan.clear();
-  g.state.mana = 2;
-  const a = pages.tearAt(0);          // 2 mana, ok
-  const bb = pages.tearAt(0);         // would need 4, refuse
-  results['second fireball over budget'] = bb;
-  void a;
-  return results;
-}));
-
-console.log('\nerrors:', errs.length ? errs.slice(0,6) : 'none');
-await b.close();
+finish(errors);
+await browser.close();
+stopServer();

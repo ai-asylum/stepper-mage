@@ -13,7 +13,26 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Run the enemy round on each component taken, so assembling in combat is punished.
 - [x] Show assembly cost in the HUD: turns spent this assembly, beside the cast bar.
 - [x] Retune enemy damage and HP for the new tempo across all five floors.
-- [ ] Commit changes.
+
+### Post-review fixes (Run 1)
+
+- [x] Price the rank ladder against the turn economy so rank is not strictly better than fusing.
+- [x] Stop a two-turn freeze refreshing before it expires at one action per round.
+- [x] Let the only hand-size-1 freeze reach the SHATTER threshold, or lower the threshold.
+- [x] Fix the standoff band where hostiles are targetable but may not act.
+- [x] Rebase COMBOS so no pair costs more turns than it beats.
+- [x] Give Gust its stagger and make Decay worth the rounds it needs.
+- [x] Scale healing with the cost curve and stop the cap discarding floor-1 heals.
+- [x] Make `Combat.takeTurn` report whether anything acted, and pace the rounds.
+- [x] Count only paid turns in the HUD readout; move it off the log's first row.
+- [x] Split "hand full" from "not learned", and surface the hand size.
+- [x] Resolve cast legality before the merge so a refusal cannot eat the hand.
+- [x] Wrap the turn and cast paths in `try/finally` so a throw cannot soft-lock input.
+- [x] Clamp `slots` and `handSize` on load; restore `handSizeBonus` after debug use.
+- [x] Refresh targets on the keyboard clear path.
+- [x] Repoint the harnesses at element-only scenarios and drop `state.mana`.
+- [x] Move the engage radius and SHATTER threshold into tuning; fix the jitter comment.
+- [x] Commit changes.
 
 ## Phase 2 — Altar_Reward_Node
 

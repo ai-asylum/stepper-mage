@@ -715,28 +715,24 @@ export function actionPage(spell: SpellDef, index: number): HTMLCanvasElement {
   ctx.textAlign = 'center';
   wrapText(ctx, spell.effect, W / 2, 512, 380, 32);
 
-  // mana cost diamonds
-  const n = spell.cost;
-  const pipW = 34;
-  const startX = W / 2 - ((n - 1) * pipW) / 2;
-  for (let i = 0; i < n; i++) {
-    const x = startX + i * pipW;
-    const y = 584;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(Math.PI / 4);
-    ctx.shadowColor = '#7ec8ff';
-    ctx.shadowBlur = 12;
-    ctx.fillStyle = '#4aa8e8';
-    ctx.fillRect(-9, -9, 18, 18);
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#bfe8ff';
-    ctx.fillRect(-9, -9, 9, 9);
-    ctx.restore();
-  }
+  // LOCAL: upstream prints the spell's mana cost here. This game has no mana —
+  // a page costs a TURN to tear and the cast itself is free — so the pip row
+  // states that instead. One pip, because tearing is always one turn; the price
+  // of a fusion is the number of pages, which the hand already shows.
+  ctx.save();
+  ctx.translate(W / 2, 584);
+  ctx.rotate(Math.PI / 4);
+  ctx.shadowColor = '#ffcf5c';
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = '#c8922e';
+  ctx.fillRect(-9, -9, 18, 18);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#ffe9ad';
+  ctx.fillRect(-9, -9, 9, 9);
+  ctx.restore();
   ctx.fillStyle = INK_SOFT;
   ctx.font = '16px Georgia, serif';
-  ctx.fillText('MANA', W / 2, 620);
+  ctx.fillText('ONE TURN', W / 2, 620);
 
   return c;
 }
