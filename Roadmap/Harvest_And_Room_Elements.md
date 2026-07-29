@@ -4,7 +4,7 @@
 **Started:** 2026-07-29 12:10
 **Status:** shipped
 
-Room fixtures become element taps, and objects react to being hit. Line of sight, non-depleting, one hand slot and one turn, always rank 1.
+Room fixtures become element taps, and objects react to being hit. Adjacent and facing, non-depleting, one hand slot and one turn, always rank 1.
 
 ## Why this phase
 
@@ -15,7 +15,9 @@ It is also the only place Stone, Water, Oil and Starlight exist, which is what u
 ## Settled decisions
 
 - Four elements with no book page: Stone, Water, Oil, Starlight.
-- Line of sight, not adjacency. It is magic.
+- ~~Line of sight, not adjacency. It is magic.~~ **Superseded:** adjacent and
+  facing, like every other interaction with an object. See `## Reaching` in the
+  design doc — line of sight let the player strip a floor from its doorway.
 - Non-depleting — the candelabra stays lit. The cost is proximity plus a hand slot plus a turn.
 - Always rank 1, never scales with rank.
 - Harvested elements are never storable. Animating a fixture removes it as a tap.

@@ -32,9 +32,9 @@ export interface TreeView {
    * Starting-book pages that selling `id` would give up, by name.
    *
    * A refund is otherwise free and reversible, so it needs no confirmation — but
-   * selling the fourth binding drops a page out of the book, and a golden page is
-   * the only thing in the game that survived a run to get there. That one is not
-   * reversible, so it is stated on the card BEFORE the tap.
+   * selling a slot node drops a page out of the starting book, and a page dropped
+   * is not a page a re-purchase gives back. So it is stated on the card BEFORE the
+   * tap, on the rare save that has a page to lose.
    */
   atRisk: (id: NodeId) => string[];
 }
@@ -517,8 +517,8 @@ export class TreeScreen {
    * SELL, on the card, as its own control. Returns its content-space rect.
    *
    * Not the whole card, which is what buying is: a refund is reversible at the same
-   * price and needs no confirmation, but selling the fourth binding can drop a
-   * golden page for good, and that must not be one stray thumb away. Dimmed and
+   * price and needs no confirmation, but selling a slot node can drop a page out of
+   * the starting book for good, and that must not be one stray thumb away. Dimmed and
    * still tappable when something depends on this node — exactly like the HARVEST
    * pill at a full hand, so the gesture stays available and the refusal says why.
    */

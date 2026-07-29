@@ -16,7 +16,7 @@ different question, and no source may answer another's.
 | Source | Job | Economy |
 |---|---|---|
 | **Page** | supplies an **element** — a damage type and its status | infinite, ranks 1-3 |
-| **Fixture** | supplies an **element the room owns** | free, line of sight, unlimited, not storable |
+| **Fixture** | supplies an **element the room owns** | free, adjacent and facing, unlimited, not storable |
 | **Ingredient** | **shapes a cast**, never supplies an element | consumed, generous drops |
 
 A page has exactly one job and an ingredient has exactly one job, so they cannot
@@ -85,14 +85,20 @@ reuses the existing `Greater`/`Mighty` empowerment ladder rather than adding a
 second damage multiplier. Rank 1→2 is a free altar upgrade. **Rank 2→3 costs a
 rank-2 page**, sacrificed.
 
-**Sealed by default.** Pages found in a run are gone when the run ends. The only
-exception is a golden page.
+**Sealed by default.** Pages found in a run are gone when the run ends. A golden
+page is the one exception, and only for the single run that follows it.
 
 ## Room fixtures — harvest
 
-Line of sight, non-depleting (the candelabra stays lit), costs a hand slot and a
-turn, and **always rank 1 with no rank scaling** — so owning the page is strictly
-better and the fixture is a substitute plus an enabler.
+**Adjacent, and facing it** — non-depleting (the candelabra stays lit), costs a hand
+slot and a turn, and **always rank 1 with no rank scaling** — so owning the page is
+strictly better and the fixture is a substitute plus an enabler.
+
+Reaching a fixture is a move, not a glance. Line of sight was the earlier rule and
+it made the whole room a shelf you could take from without leaving the doorway; it
+is the standing-next-to-it that costs you position, and position is what a stepper
+trades in. The same rule governs every interaction with an object — see
+**Reaching** below.
 
 Four elements that have **no page**, so a fixture is never a redundant copy:
 
@@ -113,7 +119,7 @@ pile, fungus. Some props are components, some are bodies.
 
 ### Three uses per object, mutually exclusive
 
-1. **Harvest** its element — line of sight, non-depleting, costs a slot and a turn.
+1. **Harvest** its element — adjacent and facing, non-depleting, costs a slot and a turn.
 2. **Animate** it — costs an animation ingredient plus an element; it walks off as a
    golem, so it stops being a tap.
 3. **React** — hit it with the right element and it goes off. The object is the
@@ -173,9 +179,13 @@ Always at least one spell option. Otherwise any of: heal · stars · rank-up ·
 A rolled page already at max rank pays **2 stars** instead — the run funds the meta
 precisely when the run has nothing left to teach you.
 
-**Golden page** → claimed into a `meta.loadout` slot, permanent from next run as a
-normal page. If slots are full you choose what it displaces. Golden pages *are* the
-mechanism behind "choose your starting spellbook" — one system, not two.
+**Golden page** → **granted at the start of your next run, and that run only.** It
+is a gift forwarded one run, not an addition to the starting book: you begin the
+next descent already holding it, and the run after that you do not.
+
+Nothing in the game is permanent. A golden page is the one thing that survives a
+run boundary, and it survives exactly one — which keeps the reset that makes an
+altar choice matter, while giving a good run something to hand its successor.
 
 ## Golems persist through the stairs
 
@@ -216,6 +226,22 @@ Nothing else is deed-gated. Money buys options, deeds buy permission to start de
 The **grimoire / bestiary** — which prop animates into which golem, which pairs are
 authored. Selling a record of something the player already discovered is a paywall
 on their own memory.
+
+## Reaching
+
+**Every interaction with an object requires standing next to it and facing it.**
+One rule, no exceptions: harvest a fixture, claim an altar, open a chest, take the
+stairs down. Spells are the only thing that reach across a room.
+
+The distinction is what separates the two halves of the game. A spell is aimed —
+anything you can see, you can hit. An interaction is *reached*, and reaching costs
+you the turns to walk there and the facing to commit to it, in a game where turns
+are the only currency and facing is most of your information. Interactions that
+worked at range let the player strip a floor from its doorway.
+
+Facing matters as much as distance: an altar behind you is not an altar you are at.
+The prompt has to describe something the player can see, or it reads as the game
+firing at random.
 
 ## Guidance
 

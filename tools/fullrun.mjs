@@ -340,14 +340,27 @@ async function tour() {
       if (!st) return null;
       standOff(g, st, 1);
       g.hud.clearSelection();
+      /**
+       * Both halves of the reach rule, from the harness side. Taking the stairs is
+       * adjacent AND facing (`docs/DESIGN.md`, Reaching), so `standOff` has to leave
+       * the player looking at them — and turning on the spot has to take the DESCEND
+       * button off the screen, or the rule is only being enforced in the refusal.
+       */
+      const adjacent = Math.abs(st.sprite.tx - g.stepper.x) + Math.abs(st.sprite.ty - g.stepper.y) <= 1;
+      const facing = g.hud.descendReady;
+      g.place(g.stepper.x, g.stepper.y, (g.stepper.dir + 1) % 4);
+      const turned = g.hud.descendReady;
+      standOff(g, st, 1);
       return {
         before: g.state.depth, visible: st.sprite.group.visible,
-        adjacent: Math.abs(st.sprite.tx - g.stepper.x) + Math.abs(st.sprite.ty - g.stepper.y) <= 1,
+        adjacent, facing, turned, backAgain: g.hud.descendReady,
       };
     }, STAND_OFF);
     console.log('   stairs:', JSON.stringify(stairs));
-    check(`floor ${depth} stairs are reachable`, !!stairs && stairs.adjacent,
+    check(`floor ${depth} stairs are reachable`, !!stairs && stairs.adjacent && stairs.facing,
       JSON.stringify(stairs));
+    check(`floor ${depth} DESCEND comes and goes with the facing`,
+      !!stairs && stairs.turned === false && stairs.backAgain === true, JSON.stringify(stairs));
     await shot(`d${depth}-stairs`);
 
     await page.keyboard.press('KeyF');          // the descend hotkey, same code path

@@ -19,7 +19,10 @@ It is also where golden pages live — the single mechanism by which anything pe
 - Other kinds: heal, stars, rank-up, sacrifice, reroll charge, golden page.
 - Rank 1→2 is free. Rank 2→3 costs a rank-2 page, sacrificed.
 - A rolled page already at max rank pays 2 stars instead.
-- Golden pages are claimed into a `meta.loadout` slot; a full loadout forces a displace-choice.
+- ~~Golden pages are claimed into a `meta.loadout` slot; a full loadout forces a
+  displace-choice.~~ **Superseded:** a golden page is granted at the start of the
+  NEXT run and that run only — a gift forwarded one run, not an addition to the
+  starting book. No slot competition, so no displace step.
 
 ## Out of scope
 
@@ -34,6 +37,7 @@ in [docs/DESIGN.md](../docs/DESIGN.md); do not restate it here.
 ## Acceptance
 
 - No roll is ever spell-free.
-- A golden page taken on floor 2 is in the book at the start of the next run, as a normal page.
+- A golden page taken on floor 2 is in the book at the start of the next run, as a
+  normal page — and gone the run after that.
 - Reaching rank 3 always costs a rank-2 page.
 - A used altar is visibly used.

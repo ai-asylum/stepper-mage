@@ -32,14 +32,13 @@ import type { Floor } from '../game/floor';
  * "at least one offer of these kinds". The rest are the reasons an altar stays
  * interesting once the book is full.
  *
- * `displace` is not rolled: it is the follow-up step a golden page opens when the
- * permanent loadout has no free slot, so the player says what it replaces instead
- * of finding out afterwards.
+ * Every kind here is ROLLED and taken in one tap. There is no follow-up step: a
+ * golden page is a one-run gift and competes for nothing, so nothing an altar
+ * hands out asks a second question.
  */
 export type AltarOfferKind =
   | 'new' | 'upgrade' | 'sacrifice' | 'star' | 'golden'
-  | 'heal' | 'stars' | 'reroll'
-  | 'displace';
+  | 'heal' | 'stars' | 'reroll';
 
 /**
  * One of the three things an altar is offering.
@@ -54,7 +53,7 @@ export interface AltarOffer {
   kind: AltarOfferKind;
   /**
    * The page this offer is about, or `''` when it is about nothing in the book
-   * (heal, stars, reroll). A `displace` offer carries the page being DROPPED.
+   * (heal, stars, reroll).
    */
   id: string;
   /** The headline. Already carries its own number where it has one. */
@@ -65,10 +64,10 @@ export interface AltarOffer {
   /** The body line. */
   detail: string;
   /**
-   * What taking this costs, spelled out, or null when it is free. Only the two
-   * offers that take something away for good have one — the rank-3 sacrifice and
-   * a displaced loadout slot — and a price the player meets only in the log
-   * afterwards is a trap, so a card must draw this.
+   * What taking this costs, spelled out, or null when it is free. Only an offer
+   * that takes something away for good has one — today that is the rank-3
+   * sacrifice alone — and a price the player meets only in the log afterwards is a
+   * trap, so a card must draw this.
    */
   cost: string | null;
   /** Health restored, stars paid, charges banked — 0 when the offer has no number. */
@@ -79,7 +78,7 @@ export interface AltarOffer {
   toRank: number;
   /** How long a full rank ladder is, so a card need not import the rule. */
   maxRank: number;
-  /** Draw the golden treatment: this one outlives the run. */
+  /** Draw the golden treatment: this one crosses into the next run. */
   golden: boolean;
   /**
    * The rank-2 page a sacrifice spends. Logic only — what the player must SEE is
@@ -191,15 +190,15 @@ export class Hud {
   altarInReach: Entity | null = null;
 
   /**
-   * Whether the selected thing is actually on screen this frame.
+   * The fixture within reach, set by the game each turn.
    *
-   * A target survives being turned away from — everything in your room is a
-   * candidate at any distance, which is what lets you keep a reticle on a body while
-   * you back down a corridor. So a prompt ABOUT the target has to ask this as well,
-   * or the game offers to harvest a candelabra that is behind you. Set by
-   * `drawWorldOverlay`, which is the only thing that knows where a sprite landed.
+   * Its own field rather than a question about `target`, because reach and
+   * selection are different things: a target survives being turned away from —
+   * that is what lets you keep a reticle on a body while you back down a corridor —
+   * and an interaction does not. `main.ts` owns both answers and they come from the
+   * same predicate the taps use, so no prompt here can be lit while the rule refuses.
    */
-  private targetOnScreen = false;
+  harvestInReach: Entity | null = null;
 
   /**
    * Turns the hand currently held has cost. A readout, not a control: the price
@@ -380,7 +379,6 @@ export class Hud {
     const project = (pt: THREE.Vector3, out: { x: number; y: number; behind: boolean }) =>
       this.engine.worldToUi(pt, out);
 
-    this.targetOnScreen = false;
     for (const e of this.candidates) {
       if (!e.alive || !e.sprite.group.visible) { e.sprite.setOutline(0xffffff, false); continue; }
 
@@ -401,7 +399,6 @@ export class Hud {
 
       const box = e.sprite.screenBox(project);
       if (!box) { e.sprite.setOutline(0xffffff, false); continue; }
-      if (e === this.target) this.targetOnScreen = true;
 
       // The whole silhouette is the touch target, with a small margin.
       this.hits.push({
@@ -459,8 +456,14 @@ export class Hud {
       if (isTarget) {
         // An object about to go off says so ON ITSELF, before the cast — "the barrel
         // did that" is not something a caption after the fact can teach.
-        const label = e.kind === 'chest' && !e.spent ? 'OPEN'
-          : interactive ? 'TAKE A SPELL'
+        // An INSTRUCTION only while the instruction would work: an altar you are
+        // standing at and facing says what to do with it, and one across the room
+        // says what it is. Telling the player to take a spell from something the
+        // reach rule will refuse is the game pointing at its own refusal.
+        const label = interactive
+          ? (e === this.altarInReach
+              ? (e.kind === 'chest' ? 'OPEN' : 'TAKE A SPELL')
+              : displayName(e.spriteId).toUpperCase())
           : animatable && wantsObject ? `ANIMATE ${displayName(e.spriteId).toUpperCase()}`
           : react ? `${displayName(e.spriteId).toUpperCase()} · ${react.verb}`
           : displayName(e.spriteId).toUpperCase();
@@ -930,10 +933,10 @@ export class Hud {
     return out;
   }
 
-  /** The fixture element the selected object would give up, or null. */
+  /** The fixture element the object in reach would give up, or null. */
   private harvestTarget(): { entity: Entity; id: string } | null {
-    const e = this.target;
-    if (!e || !e.alive || !this.targetOnScreen) return null;
+    const e = this.harvestInReach;
+    if (!e || !e.alive) return null;
     // `hp <= 0` is a body playing its death animation — it is still `alive` until the
     // sprite is gone, and offering to harvest a barrel that is in pieces was the one
     // way this pill could contradict the room.
@@ -945,9 +948,11 @@ export class Hud {
   /**
    * HARVEST: the room's own element, offered on the thing that supplies it.
    *
-   * Only ever drawn for the SELECTED object, which is what makes line of sight the
-   * rule without a second visibility system — the reticle can only be on something
-   * `targetsInView` handed over. Adjacency is deliberately not required. It is magic.
+   * Drawn for the fixture you are standing at and FACING, and for nothing else
+   * (`docs/DESIGN.md`, Reaching) — so it comes and goes with the rule rather than
+   * staying lit across the room and refusing. Nothing to do with the reticle: it
+   * appears whether or not you have tapped the thing, because at one tile ahead
+   * there is only ever one thing it could mean.
    *
    * A full hand DIMS it rather than hiding it or shouting: at a hand of one a full
    * hand is the steady state, so an alarm here would be permanent, and a control that
@@ -966,11 +971,11 @@ export class Hud {
     /**
      * The prompt band, above the hand: a card in the fan reaches to about
      * `bookTop - 200` and its glow above that, so anything lower is drawn across the
-     * component you just took. Shares the altar prompt's row — both say "there is
-     * something here to take" — and steps up when the altar has that row, which is
-     * the one moment both can be true at once.
+     * component you just took. It can share the altar prompt's row outright — both
+     * say "there is something here to take", and both now describe the ONE tile in
+     * front of you, so a fixture and an altar can no longer both be in reach.
      */
-    const bx = (W - tw) / 2, by = this.bookTop - (this.altarInReach ? 334 : 300);
+    const bx = (W - tw) / 2, by = this.bookTop - 300;
     const col = def?.colour ?? 0xffcf5c;
     ctx.globalAlpha = full ? 0.42 : 1;
     rr(ctx, bx, by, tw, 28, 14);
@@ -993,7 +998,9 @@ export class Hud {
   /**
    * "Take the spell" prompt. Collecting used to happen by walking into the altar,
    * which meant it fired while the altar was behind you and out of frame — you
-   * got a spell from something you never saw. Now it is a deliberate tap.
+   * got a spell from something you never saw. Now it is a deliberate tap, on an
+   * altar you are standing at and facing, so the prompt always has its subject on
+   * the screen with it.
    */
   private drawAltarPrompt(ctx: CanvasRenderingContext2D, W: number): void {
     const e = this.altarInReach;
@@ -1083,26 +1090,16 @@ export class Hud {
    */
   private drawOffers(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     const offers = this.offers!;
-    /**
-     * The displace step reuses this modal from the other side: the reward is
-     * already claimed and what is on the table is its price. "THE ALTAR OFFERS /
-     * choose one" would frame throwing a page out of the starting book as a third
-     * gift, which is the one reading that makes it feel like a trick.
-     */
-    const displace = offers.some((o) => o.kind === 'displace');
     ctx.fillStyle = 'rgba(8,5,12,0.86)';
     ctx.fillRect(0, 0, W, H);
 
     ctx.textAlign = 'center';
     ctx.font = 'bold 12px ui-monospace, monospace';
-    ctx.fillStyle = displace ? GOLD : '#b98cff';
-    ctx.fillText(displace ? 'YOUR LOADOUT IS FULL' : 'THE ALTAR OFFERS', W / 2, H * 0.16);
+    ctx.fillStyle = '#b98cff';
+    ctx.fillText('THE ALTAR OFFERS', W / 2, H * 0.16);
     ctx.font = '9px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(232,217,176,0.55)';
-    ctx.fillText(
-      displace ? 'choose the page the golden one replaces' : 'choose one',
-      W / 2, H * 0.16 + 16,
-    );
+    ctx.fillText('choose one', W / 2, H * 0.16 + 16);
 
     const cw = W - 48, x = 24, gap = 12;
     /**
@@ -1134,9 +1131,9 @@ export class Hud {
       const danger = o.kind === 'sacrifice';
 
       if (o.golden) {
-        // The only card in the game that glows. A golden page is the sole route
-        // by which anything survives the run, and it shows up in maybe half of a
-        // full run's altars — it cannot be a card you skim.
+        // The only card in the game that glows. A golden page is the one thing that
+        // crosses a run boundary at all, and it shows up in maybe half of a full
+        // run's altars — it cannot be a card you skim.
         const pulse = 0.6 + Math.sin(this.engine.time * 2.4) * 0.4;
         ctx.save();
         ctx.shadowColor = `rgba(255,207,92,${0.35 + pulse * 0.35})`;
@@ -1202,7 +1199,9 @@ export class Hud {
       ctx.fillStyle = o.golden ? GOLD : '#fff4dc';
       ctx.fillText(o.name, x + 18, y + 26);
 
-      if (o.golden) this.drawSeal(ctx, x + cw - 14, y + 10, 'PERMANENT');
+      // NEXT RUN and not PERMANENT: the seal is the card's one-word summary, and
+      // the whole of what a golden page is now is WHEN it pays out.
+      if (o.golden) this.drawSeal(ctx, x + cw - 14, y + 10, 'NEXT RUN');
       else if (o.toRank > 0) this.drawRankPips(ctx, x + cw - 14, y + 13, o);
 
       ctx.font = '9px ui-monospace, monospace';
@@ -1211,8 +1210,8 @@ export class Hud {
       ctx.fillStyle = o.golden ? 'rgba(255,240,206,0.88)' : 'rgba(226,216,200,0.72)';
       bodies[i].forEach((ln, k) => ctx.fillText(ln, x + 18, y + 50 + k * 12));
 
-      // The price, on the card, BEFORE it is taken — only the rank-3 sacrifice and
-      // a displaced loadout slot have one, and both take something away for good.
+      // The price, on the card, BEFORE it is taken — only the rank-3 sacrifice has
+      // one, because it is the only offer that takes something away for good.
       // A banded row with a warning disc rather than one more line of body text:
       // a player who meets this price in the log afterwards was tricked by the UI.
       if (py) {
@@ -1246,9 +1245,8 @@ export class Hud {
     });
 
     // A reroll charge is spendable HERE and nowhere else, so the modal is the only
-    // place it can be reached. Not offered over the displace step: that choice is
-    // the consequence of one already taken and there is nothing left to re-roll.
-    if (this.state.rerolls > 0 && !displace) {
+    // place it can be reached.
+    if (this.state.rerolls > 0) {
       const label = `↻  REROLL  ×${this.state.rerolls}`;
       ctx.font = 'bold 10px ui-monospace, monospace';
       const tw = ctx.measureText(label).width + 36;
@@ -1318,7 +1316,7 @@ export class Hud {
     }
   }
 
-  /** The golden card's stamp: what makes it different is that it outlives the run. */
+  /** The golden card's stamp: what makes it different is WHEN it pays out. */
   private drawSeal(ctx: CanvasRenderingContext2D, right: number, top: number, label: string): void {
     ctx.font = 'bold 7.5px ui-monospace, monospace';
     const w = ctx.measureText(label).width + 14, h = 14;

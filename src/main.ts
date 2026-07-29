@@ -20,7 +20,7 @@ import {
 } from './spells/spells';
 import { harvestCard, harvestColour } from './spells/harvestCards';
 import { Rng } from './core/rng';
-import type { Dir } from './dungeon/grid';
+import { DIR_VEC, type Dir } from './dungeon/grid';
 import { THEMES } from './art/theme';
 import {
   CHEST_HEAL_SPREAD, PLAYER_MAX_HP, chestHealBase, descendHeal, healable,
@@ -41,14 +41,24 @@ import {
  * the starting book quietly dissolved it (you drifted toward starting with
  * everything, and altars stopped mattering).
  *
- * The only exception is a GOLDEN page, which is claimed into a `loadout` slot —
- * rare enough to be an event, slot-limited so it stays a decision rather than
- * accumulation.
+ * The only thing that crosses a run boundary at all is a GOLDEN page, and it
+ * crosses exactly one — see `giftedPage`. Nothing writes `loadout` but the star
+ * tree's trim in `applyTree`.
  */
 interface Meta {
   stars: number;
   /** The pages you begin every run holding. */
   loadout: string[];
+  /**
+   * The page a golden altar gilded, waiting for the run after it.
+   *
+   * A one-shot gift and not a fourth entry in `loadout`: you begin the NEXT
+   * descent holding it, and the descent after that you do not. Consumed at run
+   * start (see `takeGift`), which is why it is a single id rather than a list —
+   * at most one golden page is claimable per run, so at most one can ever be
+   * waiting here.
+   */
+  giftedPage: string | null;
   /**
    * How many pages the starting book can hold. DERIVED from `nodes` — see
    * `applyTree`, which is the only thing allowed to write it.
@@ -115,9 +125,8 @@ function applyTree(m: Meta): Meta {
   m.handSize = derivedHandSize(m.nodes);
   m.slots = derivedSlots(m.nodes);
   // Refunding the fourth binding has to give the fourth page back too, or the
-  // loadout keeps a slot nobody owns. Trimmed from the FRONT for the same reason
-  // `claimGolden` trims from the front: the last page in the book is the one the
-  // player chose to put there, and the first ones are the defaults.
+  // loadout keeps a slot nobody owns. Trimmed from the FRONT, because the first
+  // entries are the defaults and anything past them was put there deliberately.
   if (m.loadout.length > m.slots) m.loadout = m.loadout.slice(m.loadout.length - m.slots);
   return m;
 }
@@ -149,11 +158,17 @@ function loadMeta(): Meta {
         handSize: 0,
         best: savedCount(m.best, 0, 0),
         nodes: migrateOwned(m.nodes, savedCount(m.handSize, 1, 1), savedCount(m.slots, 3, 1)),
+        // Through the same guard the loadout gets, so a hand-edited save cannot
+        // gift a page that has none — and unlike the loadout it has no fallback,
+        // because "no page waiting" is the normal state.
+        giftedPage: typeof m.giftedPage === 'string' && isPageElement(m.giftedPage)
+          ? m.giftedPage : null,
       });
     }
   } catch { /* corrupt or unavailable storage: fall through to defaults */ }
   return applyTree({
     stars: 0, loadout: [...DEFAULT_LOADOUT], slots: 0, handSize: 0, best: 0, nodes: [],
+    giftedPage: null,
   });
 }
 
@@ -176,10 +191,34 @@ async function boot(): Promise<void> {
    */
   let runSeed = `run-${Date.now() % 100000}`;
 
+  /**
+   * Take the golden page the last run left, if it left one.
+   *
+   * Consumed HERE — at run start, and SAVED before the run has drawn a frame —
+   * rather than when the next run is set up. A run begins exactly once per page
+   * load (a finished run reaches the next one through `location.reload()`), so
+   * this is the only boundary that exists to hang the "and that run only" half of
+   * the rule on. Clearing it at the END of the run instead would hand the same
+   * gift out again to anyone who shut the tab mid-descent, which is a permanent
+   * page reached by closing a window.
+   */
+  const takeGift = (): string | null => {
+    const id = meta.giftedPage;
+    if (!id) return null;
+    meta.giftedPage = null;
+    saveMeta(meta);
+    // Already in the starting book — the gift has nothing to add, and pushing a
+    // duplicate would put the same page in the grimoire twice.
+    return meta.loadout.includes(id) ? null : id;
+  };
+  /** Kept for the log line the first floor raises: a gift has to be announced. */
+  const gifted = takeGift();
+  const startPages = gifted ? [...meta.loadout, gifted] : [...meta.loadout];
+
   const state: PlayerState = {
     hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP,
-    pages: [...meta.loadout],
-    ranks: Object.fromEntries(meta.loadout.map((id) => [id, 1])),
+    pages: startPages,
+    ranks: Object.fromEntries(startPages.map((id) => [id, 1])),
     stars: 0,
     rerolls: 0,
     depth: 1,
@@ -291,6 +330,50 @@ async function boot(): Promise<void> {
     return false;
   };
 
+  // ------------------------------------------------------------------ reaching
+
+  /**
+   * Is this object REACHABLE — adjacent, and faced?
+   *
+   * The one rule behind every interaction in the game (`docs/DESIGN.md`,
+   * Reaching): harvesting a fixture, claiming an altar, opening a chest and taking
+   * the stairs all ask this and nothing else. Spells are the only thing that still
+   * crosses a room.
+   *
+   * "Adjacent and facing" collapses to ONE tile — the one directly ahead — so
+   * diagonals never count at any facing, which is the whole point: reaching costs
+   * you the turns to walk there and the facing to commit to it.
+   *
+   * Read off `stepper.x` / `stepper.y` deliberately. The eye sits `PULLBACK`
+   * behind the tile centre (`game/stepper.ts`) and that is a camera offset, not a
+   * position — measuring reach from it would make the rule depend on the lens.
+   *
+   * The tile you are standing on counts too. Nothing solid can share it, so this
+   * only ever answers for the stairs, which are a hole in the floor you can stand
+   * on: being on top of them is not reaching across a room, and losing DESCEND by
+   * walking onto them would read as a fault.
+   */
+  const inReach = (e: Entity): boolean => {
+    const dx = e.sprite.tx - stepper.x, dy = e.sprite.ty - stepper.y;
+    if (dx === 0 && dy === 0) return true;
+    const [fx, fy] = DIR_VEC[stepper.dir];
+    return dx === fx && dy === fy;
+  };
+
+  /**
+   * Why an object is out of reach, in the player's words, or null when it is not.
+   *
+   * Two refusals and not one, because "step closer" said to someone already
+   * standing beside the altar is the game describing a world the player cannot
+   * see. Distance and facing fail for different reasons and are fixed by
+   * different inputs.
+   */
+  const reachRefusal = (e: Entity, thing: string): string | null => {
+    if (inReach(e)) return null;
+    const d = Math.abs(e.sprite.tx - stepper.x) + Math.abs(e.sprite.ty - stepper.y);
+    return d > 1 ? `Step closer to the ${thing}.` : `Turn to face the ${thing}.`;
+  };
+
   /**
    * Take the room's element off a fixture.
    *
@@ -301,8 +384,10 @@ async function boot(): Promise<void> {
    * why this can be done twice. `docs/DESIGN.md` rejects depleting fixtures outright,
    * and that rule is only safe because harvests are also non-storable.
    *
-   * Line of sight and nothing else: `hud.candidates` is `targetsInView`, so being
-   * able to put a reticle on the thing is the whole requirement. It is magic.
+   * Adjacent and facing, like every other interaction (`inReach`). Line of sight
+   * was the earlier rule — "it is magic" — and it made the whole room a shelf you
+   * could take from without leaving the doorway, which is the position cost a
+   * stepper is supposed to pay.
    */
   const harvestFrom = (e: Entity): boolean => {
     if (!canTakeComponent()) return false;
@@ -310,8 +395,9 @@ async function boot(): Promise<void> {
     if (!e.alive || e.hp <= 0 || e.kind !== 'prop' || e.animated) return false;
     const id = harvestOf(e.spriteId);
     if (!id) return false;
-    if (!hud.candidates.includes(e)) {
-      hud.addLog('That is not in sight.', 0xffcf5c);
+    const why = reachRefusal(e, displayName(e.spriteId).toLowerCase());
+    if (why) {
+      hud.addLog(why, 0xffcf5c);
       return false;
     }
     if (fan.count >= handSize()) {
@@ -386,16 +472,14 @@ async function boot(): Promise<void> {
   /**
    * At most one golden page per run.
    *
-   * Golden pages are the only thing in the game that writes to `meta.loadout`, so
-   * the rate they arrive at IS the rate the starting book changes at. A run that
-   * could gild three pages turns the loadout back into accumulation, which is the
-   * exact thing sealing found pages exists to prevent.
+   * A golden page is the only thing a run can hand to the run after it, and one
+   * is a gift where three would be a starting book assembled a floor at a time —
+   * the same accumulation that sealing found pages exists to prevent, just moved
+   * one run down. `meta.giftedPage` holds one id for exactly this reason.
    */
   let goldenClaimed = false;
   /** Skips the golden page's rarity roll, so a harness can drive it. Debug only. */
   let goldenForced = false;
-  /** A claimed golden page waiting for the player to say what it displaces. */
-  let pendingGolden: string | null = null;
 
   /** Turns this hand has cost so far. Purely a readout; see the HUD. */
   let assemblyTurns = 0;
@@ -486,14 +570,15 @@ async function boot(): Promise<void> {
   const refreshTargets = (): void => {
     hud.candidates = targetsInView(floor.grid, floor, stepper.x, stepper.y, stepper.dir);
     hud.tornIds = fan.gameIds;
+    // Every prompt for an INTERACTION is recomputed here, off the same predicate
+    // the interaction itself uses, so a control cannot be lit while the rule would
+    // refuse it. Turning away takes all three of them off the screen.
     hud.altarInReach = altarInReach();
+    hud.harvestInReach = harvestInReach();
 
     // The DESCEND button only appears when it would actually work.
     const st = floor.entities.find((e) => e.kind === 'stairs');
-    hud.setDescendReady(
-      combat.bossDead && !!st &&
-      Math.abs(st.sprite.tx - stepper.x) + Math.abs(st.sprite.ty - stepper.y) <= 1,
-    );
+    hud.setDescendReady(combat.bossDead && !!st && inReach(st));
 
     const ids = fan.gameIds;
     if (hud.target && !hud.candidates.includes(hud.target)) hud.target = null;
@@ -589,9 +674,13 @@ async function boot(): Promise<void> {
   };
 
   /**
-   * A page you can keep. The gilding is the moment of claiming it, not something
-   * the page carries — it lands in the loadout as an ordinary page and starts
-   * every later run at rank 1 like any other.
+   * A page forwarded one run. The gilding is the moment of claiming it, not
+   * something the page carries — next run it is an ordinary rank-1 page in your
+   * hands, and the run after that it is gone.
+   *
+   * No `cost`. The card's price band is drawn as an alarm, for the two offers that
+   * take something away for good, and a gift that expires is not one of those —
+   * "that run only" is a limit on the gift and belongs in the same breath as it.
    */
   const goldenOffer = (id: string): AltarOffer => {
     const def = SPELL_BY_ID[id];
@@ -600,11 +689,9 @@ async function boot(): Promise<void> {
       kind: 'golden', id, name: def?.name ?? id, tag: 'GOLDEN PAGE',
       colour: def?.colour ?? 0xffcf5c,
       detail: held
-        ? 'Gilded. It joins the book you begin every run holding.'
-        : 'Gilded. Yours now, and in the book you begin every run holding.',
-      cost: meta.loadout.length >= meta.slots
-        ? 'Your loadout is full — you choose what it replaces.'
-        : null,
+        ? 'Gilded. You begin your next descent holding it — that descent only.'
+        : 'Gilded. Yours now, and again when your next descent begins — that descent only.',
+      cost: null,
       amount: 0, rank: state.ranks[id] ?? 0, toRank: 0, maxRank: MAX_RANK, golden: true,
     };
   };
@@ -651,6 +738,8 @@ async function boot(): Promise<void> {
     const out: AltarOffer[] = [];
     // A golden page skips the weighting and goes first: when it is on the table it
     // IS the table, and burying it behind a heal would be the wrong emphasis.
+    // Never a page the starting book already holds — you would begin the next run
+    // holding that one anyway, so gilding it is a card that grants nothing.
     const gild = ELEMENT_SPELLS.filter((sp) => !meta.loadout.includes(sp.id)).map((sp) => sp.id);
     if (!goldenClaimed && gild.length && (goldenForced || rng.chance(GOLDEN_CHANCE))) {
       out.push(goldenOffer(rng.pick(gild)));
@@ -771,8 +860,8 @@ async function boot(): Promise<void> {
 
   const takeFromAltar = (e: Entity): void => {
     if (e.kind !== 'altar' || e.spent || claimedAltars.has(e)) return;
-    const d = Math.abs(e.sprite.tx - stepper.x) + Math.abs(e.sprite.ty - stepper.y);
-    if (d > 1) { hud.addLog('Step closer to the altar.'); return; }
+    const why = reachRefusal(e, 'altar');
+    if (why) { hud.addLog(why); return; }
     hud.offers = rollAltarOffers(e, altarNonce.get(e) ?? 0);
     hud.offerAltar = e;
   };
@@ -792,7 +881,7 @@ async function boot(): Promise<void> {
   const rerollOffers = (): void => {
     const e = hud.offerAltar;
     const open = hud.offers;
-    if (!e || !open || open.some((o) => o.kind === 'displace')) return;
+    if (!e || !open) return;
     if (state.rerolls <= 0) {
       hud.addLog('You have no reroll charges.', 0xffcf5c);
       return;
@@ -831,65 +920,22 @@ async function boot(): Promise<void> {
   };
 
   /**
-   * Write a golden page into the permanent loadout.
+   * Leave a golden page for the next run.
    *
-   * Through the same guards `loadMeta` applies on the way in — element ids only,
-   * no duplicates, never more than `slots` — so what this writes is a save the
-   * loader would accept. The new page is appended LAST and the trim takes from the
-   * front of what was kept, so the thing the player just chose can never be the
-   * thing that gets dropped to make room for it.
+   * One field and one id, saved immediately, and it never touches `meta.loadout` —
+   * the starting book is the star tree's business now, and a gift that entered it
+   * would be a permanent page arriving from a run rather than from a purchase.
+   * Written the moment it is claimed so the gift survives the tab being shut with
+   * the rest of the run in it; `takeGift` is what makes it survive exactly once.
    */
-  const claimGolden = (id: string, drop: string | null): void => {
-    const cap = Math.max(1, meta.slots);
-    const kept = meta.loadout
-      .filter((p) => p !== drop && p !== id && isPageElement(p))
-      .slice(0, cap - 1);
-    meta.loadout = [...kept, id];
+  const giftGolden = (id: string): void => {
+    meta.giftedPage = isPageElement(id) ? id : null;
     saveMeta(meta);
     goldenClaimed = true;
   };
 
-  /**
-   * The follow-up step a full loadout forces: which page the golden one replaces.
-   *
-   * A second choice rather than a silent overwrite, because the loadout is the
-   * book the player starts every future run with — quietly dropping one of its
-   * pages is the single most consequential thing an altar could do without asking.
-   */
-  const displaceOffers = (id: string): AltarOffer[] => {
-    const gold = SPELL_BY_ID[id];
-    return meta.loadout.map((drop) => {
-      const def = SPELL_BY_ID[drop];
-      return {
-        kind: 'displace' as const, id: drop, name: def?.name ?? drop, tag: 'REPLACE',
-        colour: def?.colour ?? 0xb98cff,
-        detail: `${gold?.name ?? id} takes this slot in your starting book.`,
-        cost: `You will no longer begin runs holding ${def?.name ?? drop}.`,
-        amount: 0, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
-      };
-    });
-  };
-
-  const takeDisplace = (o: AltarOffer): void => {
-    const id = pendingGolden;
-    hud.offers = null;
-    pendingGolden = null;
-    if (!id) return;
-    claimGolden(id, o.id);
-    const gold = SPELL_BY_ID[id];
-    hud.setShout(`${(gold?.name ?? id).toUpperCase()} GILDED`, 0xffcf5c);
-    hud.addLog(
-      `${gold?.name ?? id} takes ${o.name}'s place in your starting book, from the next run on.`,
-      0xffcf5c,
-    );
-    refreshTargets();
-  };
-
   /** Apply the offer the player picked, and empty the altar. */
   const chooseOffer = (o: AltarOffer): void => {
-    // Not a roll: the consequence of one already taken, and the altar is spent.
-    if (o.kind === 'displace') { takeDisplace(o); return; }
-
     const e = hud.offerAltar;
     hud.offers = null;
     hud.offerAltar = null;
@@ -932,19 +978,18 @@ async function boot(): Promise<void> {
         break;
       }
       case 'golden':
-        // Learned this run too. A permanent page you cannot use until the next run
-        // is a reward taken on faith, and the altar has to pay out where it stands.
+        // Learned this run too. A page you cannot use until the next run is a
+        // reward taken on faith, and the altar has to pay out where it stands.
         if ((state.ranks[o.id] ?? 0) === 0) {
           state.ranks[o.id] = 1;
           learnPage(o.id);
         }
-        if (meta.loadout.length < meta.slots) {
-          claimGolden(o.id, null);
-          hud.setShout(`${o.name.toUpperCase()} GILDED`, 0xffcf5c);
-          hud.addLog(`${o.name} is yours for good — it is in your book from the next run on.`, 0xffcf5c);
-        } else {
-          pendingGolden = o.id;
-        }
+        giftGolden(o.id);
+        hud.setShout(`${o.name.toUpperCase()} GILDED`, 0xffcf5c);
+        hud.addLog(
+          `${o.name} is gilded — you begin your next descent holding it, that descent only.`,
+          0xffcf5c,
+        );
         break;
       case 'heal': {
         // Recomputed rather than trusted: the offer's number was clamped when the
@@ -986,9 +1031,6 @@ async function boot(): Promise<void> {
     fx.rise(tmp, o.colour);
     sfx.shimmer(o.golden ? 990 : o.kind === 'star' || o.kind === 'stars' ? 720 : 880);
     refreshTargets();
-    // The displace choice opens while the altar's light is still up, so claiming
-    // and paying for it read as one moment rather than two unrelated modals.
-    if (pendingGolden) hud.offers = displaceOffers(pendingGolden);
   };
 
   /**
@@ -997,8 +1039,8 @@ async function boot(): Promise<void> {
    */
   const openChest = (e: Entity): void => {
     if (e.kind !== 'chest' || e.spent) return;
-    const d = Math.abs(e.sprite.tx - stepper.x) + Math.abs(e.sprite.ty - stepper.y);
-    if (d > 1) { hud.addLog('Step closer to the chest.'); return; }
+    const why = reachRefusal(e, 'chest');
+    if (why) { hud.addLog(why); return; }
     void floor.openChest(e);
     const rng = new Rng(`${runSeed}-chest-${state.depth}-${e.sprite.tx}-${e.sprite.ty}`);
     const stars = 3 + rng.int(0, 2) + state.depth;
@@ -1016,14 +1058,30 @@ async function boot(): Promise<void> {
     refreshTargets();
   };
 
-  /** The nearest unused altar or chest you could reach, for the prompt. */
+  /** The unused altar or chest you are standing at and facing, for the prompt. */
   const altarInReach = (): Entity | null => {
     for (const e of floor.entities) {
       if (!e.alive || e.spent) continue;
       if (e.kind !== 'altar' && e.kind !== 'chest') continue;
-      if (Math.abs(e.sprite.tx - stepper.x) + Math.abs(e.sprite.ty - stepper.y) <= 1) return e;
+      if (inReach(e)) return e;
     }
     return null;
+  };
+
+  /**
+   * The fixture you are standing at and facing, for the HARVEST pill.
+   *
+   * One tile, so one answer — which is what lets the pill stop being tied to the
+   * reticle. Under line of sight the pill had to follow the selected object,
+   * because "which of the six things in this room" had no other answer; the reach
+   * rule answers it, and requiring a tap on the thing you are already nose to nose
+   * with would have been the reticle standing in for a rule that no longer needs it.
+   */
+  const harvestInReach = (): Entity | null => {
+    const [fx, fy] = DIR_VEC[stepper.dir];
+    const e = floor.entityAt(stepper.x + fx, stepper.y + fy);
+    if (!e || !e.alive || e.hp <= 0 || e.kind !== 'prop' || e.animated) return null;
+    return harvestOf(e.spriteId) ? e : null;
   };
 
   const wireCombat = (): void => {
@@ -1141,6 +1199,15 @@ async function boot(): Promise<void> {
 
     hud.addLog(theme.name, theme.accent);
     hud.setShout(`DEPTH ${'I'.repeat(Math.min(5, depth))}`, theme.accent);
+    // The gift has to be SAID on the floor it arrives on. It was claimed at an
+    // altar in a run that has already ended, so a page silently appearing in the
+    // book is the player finding a spell they cannot account for.
+    if (depth === 1 && gifted) {
+      hud.addLog(
+        `The gilded ${SPELL_BY_ID[gifted]?.name ?? gifted} is in your book — for this descent.`,
+        0xffcf5c,
+      );
+    }
     busy = false;
     document.getElementById('boot')?.classList.add('gone');
   };
@@ -1174,8 +1241,13 @@ async function boot(): Promise<void> {
     if (!combat.bossDead) return;
     const st = floor.entities.find((e) => e.kind === 'stairs');
     if (!st) return;
-    const d = Math.abs(st.sprite.tx - stepper.x) + Math.abs(st.sprite.ty - stepper.y);
-    if (d > 1) { hud.addLog('The stairs are further in.'); return; }
+    // The stairs keep their own distance line — it is about the floor and not
+    // about a step — and gain a facing one, which is a different instruction.
+    if (!inReach(st)) {
+      const d = Math.abs(st.sprite.tx - stepper.x) + Math.abs(st.sprite.ty - stepper.y);
+      hud.addLog(d > 1 ? 'The stairs are further in.' : 'Turn to face the stairs.');
+      return;
+    }
     if (state.depth >= THEMES.length) {
       engine.setDesat(0.5);
       // Winning ends the run too, and it ends it holding the biggest bank the game
@@ -1242,8 +1314,11 @@ async function boot(): Promise<void> {
    *
    * Refused while anything that requires it is owned — see `refundBlocker` for why
    * that is the rule rather than a cascade. The one thing a legal refund can still
-   * destroy is a page: selling the fourth binding gives up the fourth slot, so a
-   * golden page sitting in it is reported back rather than vanishing quietly.
+   * destroy is a page: selling the fourth binding gives up the fourth slot, so
+   * whatever was in it is reported back rather than vanishing quietly. Only a save
+   * from before the reset can have a page in there today — nothing in the game
+   * writes `loadout` any more — and reporting it is still cheaper than a save that
+   * loses a page without saying so.
    */
   const refundNode = (id: string): TreeResult => {
     const why = refundBlocker(id, meta.nodes);
@@ -1271,9 +1346,8 @@ async function boot(): Promise<void> {
     slots: meta.slots,
     /**
      * What a refund would cost beyond stars. Selling a slot node drops pages off
-     * the front of the loadout (`applyTree`), and the only page that can be in
-     * there is one a golden altar offer put there — so it is named before the tap
-     * rather than reported after it.
+     * the front of the loadout (`applyTree`), so anything that would fall off is
+     * named before the tap rather than reported after it.
      */
     atRisk: (id) => {
       const lose = meta.loadout.length - derivedSlots(meta.nodes.filter((n) => n !== id));
@@ -1637,8 +1711,13 @@ async function boot(): Promise<void> {
   // targetable, so the reticle and `hud.tornIds` have to be rebuilt with it.
   keys.KeyR = () => { fan.clear(); refreshTargets(); };
   keys.KeyB = () => { book.closed = !book.closed; hud.bookClosed = book.closed; };
-  // Harvest the selected fixture — the keyboard mirror of the HARVEST pill.
-  keys.KeyH = () => { if (hud.target) harvestFrom(hud.target); };
+  // Harvest what you are facing — the keyboard mirror of the HARVEST pill. Falls
+  // back to the reticle so pressing it at something across the room still SAYS why
+  // nothing happened; the pill itself is only ever drawn for a fixture in reach.
+  keys.KeyH = () => {
+    const e = hud.harvestInReach ?? hud.target;
+    if (e) harvestFrom(e);
+  };
   for (let i = 1; i <= 9; i++) {
     keys[`Digit${i}`] = () => tearPage(i - 1);
   }
@@ -1726,21 +1805,23 @@ async function boot(): Promise<void> {
       }
     },
     /**
-     * The fixtures in sight that would give up an element, with what each yields.
+     * The fixtures IN SIGHT that would give up an element, with what each yields.
      *
-     * The list IS the acceptance criterion "animating a fixture removes it from the
-     * harvest list", so it has to be one call and it has to be derived from the same
-     * two things the pill is: what `targetsInView` can see, and `harvestOf`.
+     * Sight and not reach, deliberately: this is the list of things worth walking
+     * to, and it carries the acceptance criterion "animating a fixture removes it
+     * from the harvest list". Whether one can actually be harvested from where you
+     * stand is `hud.harvestInReach`, which is the single fixture the pill draws for.
      */
     harvestable: () => hud.candidates
       .filter((e) => e.alive && e.kind === 'prop' && !e.animated && !!harvestOf(e.spriteId))
       .map((e) => ({ e, spriteId: e.spriteId, yields: harvestOf(e.spriteId) })),
     /**
-     * Harvest the reticle's fixture, or a given one. Same path as the pill, so it
-     * pays the same slot and the same turn; await `componentTurn` for the round.
+     * Harvest the fixture in reach, or a given one. Same path as the pill, so it
+     * pays the same slot and the same turn AND meets the same reach rule; await
+     * `componentTurn` for the round.
      */
     harvest: async (e?: Entity) => {
-      const t = e ?? hud.target;
+      const t = e ?? hud.harvestInReach;
       if (!t || !harvestFrom(t)) return false;
       await componentTurn;
       return true;
@@ -1800,7 +1881,11 @@ async function boot(): Promise<void> {
     altars: () => floor.entities.filter(
       (e) => e.kind === 'altar' && e.alive && !e.spent && !claimedAltars.has(e)),
     chests: () => floor.entities.filter((e) => e.kind === 'chest' && e.alive && !e.spent),
-    /** Same reach rule as the tap, so `place` next to it first. Returns the offers. */
+    /**
+     * Same reach rule as the tap — adjacent AND facing — so `place` on the tile in
+     * front of it first, or this refuses exactly the way a tap would. Returns the
+     * offers.
+     */
     openAltar: (e: Entity) => { takeFromAltar(e); return hud.offers; },
     /**
      * What an altar WOULD offer on a given roll. No reach rule, no state touched,
@@ -1831,13 +1916,7 @@ async function boot(): Promise<void> {
       }
       return hud.offers?.some((o) => o.kind === kind) ? hud.offers : null;
     },
-    /**
-     * Take an offer by index, or the object `openAltar` handed back.
-     *
-     * Also drives the golden page's follow-up step: claiming one with a full
-     * loadout replaces `hud.offers` with the displace choice, and picking from that
-     * list is the same call again.
-     */
+    /** Take an offer by index, or the object `openAltar` handed back. */
     pickOffer: (o: number | AltarOffer) => {
       const list = hud.offers;
       if (!list) return null;
@@ -1881,8 +1960,10 @@ async function boot(): Promise<void> {
      *    Unreachable in practice — a roll holds at most one sacrifice and always
      *    holds something else — but the order is what makes that true by rule
      *    rather than by luck;
-     *  - golden never, because it writes the persisted loadout and opens a second
-     *    modal. Driving it is `openAltarKind` plus `pickOffer`, deliberately.
+     *  - golden never, because it writes the persisted save and pays out in the
+     *    NEXT run, so a pass that took one would be measuring a different starting
+     *    book than the one it claims. Driving it is `openAltarKind` plus
+     *    `pickOffer`, deliberately.
      */
     takeAltar: (e: Entity) => {
       takeFromAltar(e);

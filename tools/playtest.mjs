@@ -80,6 +80,57 @@ check('there is furniture to aim at', !!propInfo, propInfo ? propInfo.sprite : '
 await page.waitForTimeout(700);
 await shot('01-targeting-prop');
 
+console.log('\n=== 3b. reaching: harvest is adjacent AND facing ===');
+/**
+ * The one rule behind every interaction (`docs/DESIGN.md`, Reaching). Read-only —
+ * nothing here spends a turn or a slot, and the player is put back where section 3
+ * left them, because the beats after this one cast from that spot.
+ */
+const reach = await ev(() => {
+  const g = window.__game;
+  const grid = g.floor.grid;
+  const home = { x: g.stepper.x, y: g.stepper.y, dir: g.stepper.dir };
+  const dirs = [[0, 0, 1], [1, -1, 0], [2, 0, -1], [3, 1, 0]];
+  /** Stand `gap` tiles from `e`, facing it. */
+  const face = (e, gap) => {
+    for (const [d, dx, dy] of dirs) {
+      const px = e.sprite.tx + dx * gap, py = e.sprite.ty + dy * gap;
+      if (!grid.walkable(px, py)) continue;
+      if (grid.rayTiles(px, py, d, gap).length < gap - 1) continue;
+      g.place(px, py, d);
+      return true;
+    }
+    return false;
+  };
+  let out = null;
+  for (const e of g.floor.entities) {
+    if (e.kind !== 'prop' || e.animated || !e.alive) continue;
+    if (!face(e, 1) || g.hud.harvestInReach !== e) continue;
+    out = { fixture: e.spriteId, facing: !!g.hud.harvestInReach };
+    // Adjacent, turned around: the distance is unchanged and the pill must go.
+    g.place(g.stepper.x, g.stepper.y, (g.stepper.dir + 2) % 4);
+    out.turnedAway = !!g.hud.harvestInReach;
+    // Across the room, with the reticle ON it: spells reach, interactions do not.
+    out.across = null;
+    for (let want = 4; want >= 2 && out.across === null; want--) {
+      if (!face(e, want)) continue;
+      g.hud.target = e;
+      out.across = !!g.hud.harvestInReach;
+      out.stillVisible = g.harvestable().some((h) => h.e === e);
+    }
+    break;
+  }
+  g.place(home.x, home.y, home.dir);
+  return out;
+});
+console.log(reach);
+check('a fixture you stand at and face offers a harvest', !!reach && reach.facing,
+  JSON.stringify(reach));
+check('turning away from it withdraws the offer', !!reach && reach.turnedAway === false,
+  JSON.stringify(reach));
+check('line of sight alone is not reach', !!reach && reach.across === false && !!reach.stillVisible,
+  JSON.stringify(reach));
+
 console.log('\n=== 4. one page, one turn: Fireball on the furniture ===');
 const solo = await ev(async () => {
   const g = window.__game;

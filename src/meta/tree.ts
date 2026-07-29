@@ -166,7 +166,12 @@ export const TREE: readonly TreeNode[] = [
   {
     id: 'slots4', name: 'Fourth Binding', price: PRICES.slots4, requires: [], live: true,
     slots: 4,
-    effect: 'Your starting book binds a fourth page, so a golden page displaces less.',
+    // NOTE: the slot this buys has nothing to fill it today. Golden pages used to
+    // be what wrote the starting book and they are now a one-run gift that never
+    // touches it (`docs/DESIGN.md`, Altar), so no mechanism currently CHOOSES a
+    // starting page. Stated flatly rather than papered over with copy that promises
+    // one — the missing half is a design question, not a wording problem.
+    effect: 'Your starting book binds a fourth page.',
   },
 ];
 
