@@ -15,25 +15,37 @@ const STEP_TIME = 0.235;
 /** Seconds per 90-degree turn. */
 const TURN_TIME = 0.17;
 /**
- * Eye height as a fraction of wall height.
+ * The framing, which is four numbers that only work together.
  *
- * Low on purpose. Everything worth looking at is standing on the floor and is
- * about half the ceiling's height, so an eye at 60% of the wall looked down on
- * the whole cast and pushed their feet off the bottom of the frame. At 50% the
- * floor reads from a tile and a bit away and a creature three tiles off stands
- * entirely inside the band above the grimoire.
+ * The hard requirement is that the floor stays readable even while you are
+ * standing against a wall — that is how you know you are against it, and how you
+ * count tiles. The wall you are touching has its base half a tile away, and from
+ * an eye at human height that is a ~65-degree look down: steeper than any sane
+ * lens holds at the same time as the horizon. So the eye comes down, the eye sits
+ * back, and the lens widens, each paying part of the cost:
+ *
+ * - `EYE` — low. Cheap in distortion, expensive in drama: the world towers.
+ * - `PULLBACK` — sitting back off the tile centre. The cheapest of the three; it
+ *   costs no distortion at all, only a small camera arc when you turn.
+ * - `PITCH` — nearly nothing now. Pitch raises the floor into frame but it takes
+ *   the horizon up with it, and past a few degrees the whole frame reads as floor.
+ * - The camera's vertical field of view (90, set in `Engine`) plus the lens shift
+ *   in `Engine.frameAbove`.
+ *
+ * Measured at 390x844: the floor at the base of a wall you are touching lands at
+ * 68% of the screen, against a grimoire whose top edge is at 74%. The horizon
+ * sits at 36% and the ceiling three tiles out at 11%, so the band above the book
+ * reads as a room rather than as all floor or all wall.
  */
-const EYE = 0.50;
+const EYE = 0.25;
+const PULLBACK = 0.30;
 
 /**
- * Downward camera pitch, radians. Without this the view is all wall and ceiling:
- * you cannot see the floor, so you cannot count tiles, and a wall one step away
- * feels like a wall you are already touching.
- *
- * This is a rotation, so it keystones the walls; it stays small. The rest of the
- * framing is a lens shift instead — see `Engine.frameAbove`.
+ * Downward camera pitch, radians — see the framing note above. Kept near zero
+ * because it is a rotation, so it keystones the walls, and because it moves the
+ * horizon rather than just the floor.
  */
-export const PITCH = -0.135;
+export const PITCH = -0.03;
 
 export type MoveKind = 'forward' | 'back' | 'left' | 'right';
 
@@ -103,6 +115,12 @@ export class Stepper {
     this.fromYaw = this.toYaw = dirYaw(dir);
   }
 
+  /** Eye height as a fraction of wall height. See `EYE`. */
+  eyeFrac = EYE;
+
+  /** How far back from the tile centre the eye sits. See `PULLBACK`. */
+  pullback = PULLBACK;
+
   /** Where the camera should be right now, in world space. */
   eye(out: THREE.Vector3, time: number): void {
     const p = easeStep(Math.min(1, this.moveT));
@@ -121,10 +139,12 @@ export class Stepper {
     const [bdx, bdy] = DIR_VEC[this.bumpDir as Dir] ?? [0, 0];
     const bk = this.bump * 0.09;
 
+    const yaw = this.yaw();
+    const back = Math.min(0.45, this.pullback);
     out.set(
-      x + sway * Math.cos(this.yaw()) + bdx * bk,
-      WALL_H * EYE + bob + idle,
-      z - sway * Math.sin(this.yaw()) + bdy * bk,
+      x + sway * Math.cos(yaw) + bdx * bk + Math.sin(yaw) * back,
+      WALL_H * this.eyeFrac + bob + idle,
+      z - sway * Math.sin(yaw) + bdy * bk + Math.cos(yaw) * back,
     );
   }
 

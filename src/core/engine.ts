@@ -198,7 +198,9 @@ export class Engine {
     this.renderer.setClearColor(0x000000, 1);
 
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(72, 1, 0.02, 60);
+    // 90 vertical. Wide for a first-person view, because the frame has to hold the
+    // horizon and the floor at your feet at once — see Stepper's PULLBACK.
+    this.camera = new THREE.PerspectiveCamera(90, 1, 0.02, 60);
 
     this.target = new THREE.WebGLRenderTarget(1, 1, {
       minFilter: THREE.NearestFilter,
@@ -273,6 +275,11 @@ export class Engine {
     const shift = Math.max(0, Math.min(0.35, 0.5 - topY / this.sh / 2));
     if (Math.abs(shift - this.frameShift) < 0.002) return;
     this.frameShift = shift;
+    this.applyProjection();
+  }
+
+  setFov(deg: number): void {
+    this.camera.fov = deg;
     this.applyProjection();
   }
 
