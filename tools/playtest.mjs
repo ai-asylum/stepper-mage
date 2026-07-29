@@ -2,12 +2,16 @@
  * Scripted playtest. Drives the real game through its own public surface and
  * screenshots each beat, so the core loop is verified rather than assumed.
  *
- * Every beat here is ELEMENTS ONLY, because that is the whole game right now:
- * Animate, Growth and Multishot are belt ingredients with no page, so nothing
- * can tear them and no golem is reachable. What used to be the animate beat is
- * now the two checks that ARE true today — an ingredient has no page, and a hand
- * of ingredients is refused. The golem path comes back with the belt
- * (Roadmap/Ingredient_Belt.md).
+ * Every beat here is ELEMENTS ONLY, and that is now a statement about the DEFAULT
+ * SAVE rather than about the game: the five ingredients exist and have no page, so
+ * nothing in the book can tear one, and the belt they come off is locked until the
+ * star tree node is bought. So this file measures a first run — no belt, no golems —
+ * and the ingredient rule it asserts is the one that holds at every hand size: an
+ * ingredient has no page and is never castable alone.
+ *
+ * The belt itself, and the golem path it restores, are driven in the belt harness
+ * (Roadmap/Ingredient_Belt.md) — reaching them needs two purchases, which is a
+ * different measurement from "what does floor 1 hand a new player".
  */
 import { serve, launch, openGame, check, note, finish } from './harness.mjs';
 
@@ -16,7 +20,7 @@ const browser = await launch();
 const { page, errors, shot, ev } = await openGame(browser, { prefix: 'pt', wait: 2600 });
 
 /** Ids that exist for `resolveCast` but have no page — nothing can tear these. */
-const INGREDIENTS = ['animate', 'grow', 'split'];
+const INGREDIENTS = ['animate', 'moss', 'grow', 'split', 'sand'];
 
 console.log('\n=== 1. state at spawn ===');
 const spawn = await ev(() => {
@@ -38,28 +42,37 @@ check('the starting book holds only elements',
 check('the player spawns alive', spawn.hp > 0 && spawn.hp === spawn.maxHp, `${spawn.hp}/${spawn.maxHp}`);
 
 console.log('\n=== 2. the ingredient rule ===');
-const ingredients = await ev(async () => {
+const ingredients = await ev(async (INGREDIENTS) => {
   const g = window.__game;
   g.grantAll();
   const out = { book: g.bookPages(), refusals: {}, torn: {} };
-  for (const id of ['animate', 'grow', 'split']) {
+  out.belt = { capacity: g.belt().capacity, locked: g.belt().locked };
+  for (const id of INGREDIENTS) {
     out.refusals[id] = g.combat.preview([id], { kind: 'enemy' }).refusal ?? null;
     g.fan.clear();
     await g.selectPages([id]);
     out.torn[id] = g.fan.count;
   }
   out.refusals['grow+split'] = g.combat.preview(['grow', 'split'], { kind: 'enemy' }).refusal ?? null;
+  out.refusals['sand+grow'] = g.combat.preview(['sand', 'grow'], { kind: 'enemy' }).refusal ?? null;
   g.fan.clear();
   return out;
-});
+}, INGREDIENTS);
 console.log(ingredients);
 check('a full book is five element pages', ingredients.book.length === 5, ingredients.book.join(','));
 check('no ingredient has a page to tear',
   INGREDIENTS.every((id) => ingredients.torn[id] === 0), JSON.stringify(ingredients.torn));
 check('a hand of ingredients alone is refused',
-  [...INGREDIENTS, 'grow+split'].every((k) => !!ingredients.refusals[k]),
+  [...INGREDIENTS, 'grow+split', 'sand+grow'].every((k) => !!ingredients.refusals[k]),
   JSON.stringify(ingredients.refusals));
-note('golems are unreachable in this build', 'no page supplies animate until Roadmap/Ingredient_Belt.md');
+// Replaces the note that said golems were unreachable. They are reachable now — the
+// belt exists — so what is true of a DEFAULT save is the claim worth making, and it
+// is the reason nothing rises later in this file.
+check('the belt is locked on a default save, so no ingredient can be kept yet',
+  ingredients.belt.locked === true && ingredients.belt.capacity === 0,
+  JSON.stringify(ingredients.belt));
+note('the belt and the golem path are driven separately',
+  'both need the hand-size-2 and belt nodes bought — see Roadmap/Ingredient_Belt.md');
 
 console.log('\n=== 3. walk to a prop and target it ===');
 const propInfo = await ev(() => {
@@ -171,7 +184,9 @@ const golem = await ev(() => {
   const gol = g.floor.entities.find((e) => e.animated);
   return gol ? gol.spriteId : null;
 });
-check('nothing animated — no page can supply animate', golem === null, String(golem));
+// Not "no page can supply animate" any more — the honest reason is that this run
+// never held an ingredient, because its belt has no loops to keep one in.
+check('nothing animated — the hand held only elements', golem === null, String(golem));
 
 console.log('\n=== 5. fusion resolution table ===');
 const ELEMENT_SETS = [
@@ -180,7 +195,10 @@ const ELEMENT_SETS = [
   ['fire', 'frost', 'spark'], ['fire', 'gust', 'spark'], ['fire', 'frost', 'gust'],
   ['fire', 'fire'], ['fire', 'fire', 'fire'],
 ];
-const INGREDIENT_SETS = [['animate'], ['grow'], ['split'], ['grow', 'grow']];
+const INGREDIENT_SETS = [
+  ['animate'], ['moss'], ['grow'], ['split'], ['sand'],
+  ['grow', 'grow'], ['sand', 'split'], ['animate', 'grow'],
+];
 const table = await ev(([elems, ingrs]) => {
   const g = window.__game;
   const row = (s) => {

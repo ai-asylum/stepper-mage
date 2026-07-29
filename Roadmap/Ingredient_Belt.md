@@ -1,8 +1,8 @@
 # Ingredient Belt
 
 **Player-facing:** yes
-**Started:** —
-**Status:** planned
+**Started:** 2026-07-29 15:20
+**Status:** shipped
 
 A strip of pouch slots under the grimoire holding the five consumable ingredients.
 

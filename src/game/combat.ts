@@ -27,6 +27,7 @@ import {
   STATUS_META, displayName, harvestOf, isFixtureElement, resolveCast,
   type CastTarget, type Element, type ResolvedCast, type StatusId,
 } from '../spells/spells';
+import { BOSS_INGREDIENTS, rollDropCount, rollIngredient, type BeltState } from '../spells/belt';
 import {
   ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CONDUCTION_ARC_RANGE,
   CONDUCTION_ARC_SHARE, CONDUCTION_MULT, DAMAGE_JITTER, DECAY_DOT, DEEP_FREEZE_MULT,
@@ -87,6 +88,15 @@ export interface PlayerState {
    */
   rerolls: number;
   depth: number;
+  /**
+   * The ingredient belt — what is in the pouches and how many loops there are.
+   *
+   * On the RUN for the same reason `rerolls` is: `Roadmap/Ingredient_Belt.md` puts
+   * ingredients surviving a run out of scope, so an unspent vial is lost with
+   * everything else the run found. Its CAPACITY comes from the star tree and is
+   * written in one place (`syncBelt` in `main.ts`).
+   */
+  belt: BeltState;
 }
 
 /**
@@ -97,7 +107,11 @@ export interface PlayerState {
  */
 export type LogKind = 'cast' | 'hit' | 'status' | 'death' | 'info' | 'deny' | 'discover';
 
-/** What a component-turn was spent on. Harvest and belt land in later phases. */
+/**
+ * What a component-turn was spent on. All three are live: a page torn out of the
+ * book, an element taken off a fixture, an ingredient drawn off the belt. They cost
+ * the same — one slot, one turn — which is why the cause is a label and not a price.
+ */
 export type TurnCause = 'tear' | 'harvest' | 'belt';
 
 export interface GameEvent {
@@ -212,6 +226,15 @@ export class Combat {
   readonly state: PlayerState;
   private combatants = new Map<Entity, Combatant>();
   private rng: Rng;
+  /**
+   * A stream of its own for what a boss leaves behind.
+   *
+   * Not `this.rng`, deliberately: that one rolls the damage jitter every round, so
+   * drawing loot from it would shift every later swing on the floor. A drop is not
+   * allowed to change a fight, and a separate stream is how that is structural
+   * rather than a claim about call order.
+   */
+  private dropRng: Rng;
   /** Rooms whose encounter has been triggered. */
   private engaged = new Set<number>();
   bossDead = false;
@@ -234,10 +257,20 @@ export class Combat {
    */
   onReactionFx: (fx: ReactionFx) => void = () => {};
   onPlayerHurt: (amount: number) => void = () => {};
+  /**
+   * A boss's ingredient drop, one call per vial.
+   *
+   * Routed out rather than applied here: WHAT a boss pays is combat's business and
+   * whether there is anywhere to keep it is the belt's, and the refusal has to be
+   * said in the player's words by the one place that already says everything else in
+   * them. Returns false when the belt would not take it, so the log can be honest.
+   */
+  onIngredientDrop: (id: string) => boolean = () => false;
 
   constructor(private floor: Floor, state: PlayerState, seed: string) {
     this.state = state;
     this.rng = new Rng(`${seed}-combat`);
+    this.dropRng = new Rng(`${seed}-drops`);
     for (const e of floor.entities) this.register(e);
   }
 
@@ -346,12 +379,14 @@ export class Combat {
 
     if (cast.output === 'golem') {
       if (!targetEntity) return false;
-      const ok = await this.floor.animateProp(targetEntity);
+      // `cast.count` carries the risen body's HP — golems have no volley — and the
+      // floor adds its depth term on top. Handed over rather than assigned after,
+      // because assigning it here is what used to make the floor's own scaling dead.
+      const ok = await this.floor.animateProp(targetEntity, cast.count);
       if (!ok) {
         this.onEvent({ kind: 'deny', text: 'That will not wake.' });
         return false;
       }
-      targetEntity.hp = targetEntity.maxHp = cast.count;
       this.register(targetEntity);
       const c = this.combatants.get(targetEntity)!;
       c.damage = cast.damage;
@@ -582,8 +617,23 @@ export class Combat {
       this.onEvent({
         kind: 'info', text: 'The stairs grind open below.', colour: 0xffe58a,
       });
+      this.dropIngredients();
     } else if (t.kind === 'enemy') {
       this.state.stars += 1;
+    }
+  }
+
+  /**
+   * What a boss leaves behind, besides the stairs.
+   *
+   * Rolled off combat's own seeded rng so a floor pays the same drop twice for the
+   * same seed, which is what makes a harness able to assert about it. Generous by
+   * design — see `belt.ts` on why scarcity here means the mechanic never gets used.
+   */
+  private dropIngredients(): void {
+    const n = rollDropCount(this.dropRng, BOSS_INGREDIENTS);
+    for (let i = 0; i < n; i++) {
+      this.onIngredientDrop(rollIngredient(this.dropRng, this.state.belt));
     }
   }
 
@@ -646,8 +696,14 @@ export class Combat {
    * you leaf through in an empty room advertises the exact opposite of the rule
    * this phase exists to establish.
    *
-   * `_cause` is unused today; it is here so a harvest and a belt draw can be
-   * told apart from a tear once those exist, without changing every call site.
+   * `_cause` is still unused, and that is the finding rather than an omission: all
+   * three sources now exist and a round is a round whichever of them bought it. It
+   * is carried so the caller's own bookkeeping can tell them apart — and so that a
+   * cause which ever DOES change the round has somewhere to be read.
+   *
+   * Note where the free component of TimeSand is handled: not here. A free component
+   * does not buy a cheap round, it buys no round at all, so `spendComponentTurn` in
+   * `main.ts` never reaches this.
    */
   async takeTurn(_cause: TurnCause): Promise<boolean> {
     this.turns++;

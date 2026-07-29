@@ -16,10 +16,17 @@ import {
 } from './book/bridge';
 import { SPELLS as BOOK_PAGES, setBookPages, type SpellDef } from './spells/pages';
 import {
-  ELEMENT_SPELLS, SPELL_BY_ID, displayName, harvestOf, isPageElement,
+  ELEMENT_SPELLS, INGREDIENT_IDS, SPELL_BY_ID, displayName, harvestOf, isFreeToTake,
+  isIngredient, isPageElement, wantsCorpse, wantsObject,
   type ResolvedCast,
 } from './spells/spells';
 import { harvestCard, harvestColour } from './spells/harvestCards';
+import { ingredientCard, ingredientColour } from './spells/ingredientCards';
+import {
+  ALTAR_INGREDIENTS, BELT_LOCKED, CHEST_INGREDIENTS, beltAdd, beltConsume, beltHeld,
+  beltRefusalFor, beltRefuse, beltSetCapacity, beltTotal, newBelt, rollDropCount,
+  rollIngredient,
+} from './spells/belt';
 import { Rng } from './core/rng';
 import { DIR_VEC, type Dir } from './dungeon/grid';
 import { THEMES } from './art/theme';
@@ -238,7 +245,18 @@ async function boot(): Promise<void> {
     stars: 0,
     rerolls: 0,
     depth: 1,
+    // Empty, and as wide as the tree has paid for. A run never inherits a vial.
+    belt: newBelt(derivedBeltSlots(meta.nodes)),
   };
+
+  /**
+   * Re-derive how many loops the strap has.
+   *
+   * The belt's capacity is a function of the owned node set and nothing else, which
+   * is the same rule `applyTree` states for hand size and for the same reason: a
+   * refund must not be able to leave a stale ceiling behind. This is the only writer.
+   */
+  const syncBelt = (): void => beltSetCapacity(state.belt, derivedBeltSlots(meta.nodes));
 
   const fx = new CastFx();
   engine.scene.add(fx.group);
@@ -457,6 +475,164 @@ async function boot(): Promise<void> {
     (p.glow.material as THREE.ShaderMaterial).uniforms.uColor.value.setHex(col);
   };
 
+  // -------------------------------------------------------------------- the belt
+
+  /**
+   * How many components the sand pays for BESIDES its own draw.
+   *
+   * Two, from `docs/DESIGN.md`. Implemented as "the sand grants three and is itself
+   * the first", which is what makes "free to take" and "the next two are free" one
+   * rule rather than two — and what makes a second vial compose without a special
+   * case.
+   */
+  const SAND_FREE_COMPONENTS = 2;
+
+  /**
+   * How many of this ingredient could still be drawn.
+   *
+   * The belt is not decremented when a vial is taken OUT, because consumption
+   * happens on the cast and a hand can always be put back (`Roadmap/Ingredient_Belt.md`).
+   * So "what is left to draw" is the stack minus what is already in the hand, and
+   * this is the subtraction that stops two draws from spending one vial.
+   */
+  const beltAvailable = (id: string): number =>
+    beltHeld(state.belt, id) - fan.gameIds.filter((h) => h === id).length;
+
+  /**
+   * Put an ingredient in the hand as a card.
+   *
+   * The same route a harvest takes (`addHarvestCard`) for the same reason — the fan
+   * holds page-shaped things and `src/book/` is not to be restructured — with the
+   * belt's own card art (`spells/ingredientCards.ts`) and its own halo colour, so a
+   * hand holding a page, a harvest and a vial reads as three different objects.
+   */
+  const addIngredientCard = (id: string): void => {
+    const card = ingredientCard(id);
+    if (!card) return;
+    // Rises from BELOW the fan and a little to the side of where a harvest comes
+    // from: the belt is a separate object under the grimoire, not a page of it.
+    fan.add(card, new THREE.Vector3(0.06, -0.19, -0.34), new THREE.Quaternion());
+    const p = fan.pages[fan.pages.length - 1];
+    if (!p) return;
+    const col = ingredientColour(id);
+    p.mat.uniforms.uGold.value.setHex(col);
+    (p.glow.material as THREE.ShaderMaterial).uniforms.uColor.value.setHex(col);
+  };
+
+  /**
+   * Draw one off the belt — a single tap, where the book is flip-and-tear.
+   *
+   * Priced exactly like a tear and a harvest, through the same two gates: one hand
+   * slot, one turn. TimeSand is the one exception and it is not special-cased here —
+   * it grants the free components and `spendComponentTurn` is what declines to charge
+   * for them, including for this draw.
+   *
+   * Nothing is removed from the belt. That is the settled rule and it is what makes
+   * returning a hand free: the stack is only spent when the cast actually goes off
+   * (`consumeIngredients`).
+   */
+  const takeIngredient = (id: string): boolean => {
+    if (!canTakeComponent() || !isIngredient(id)) return false;
+    const name = SPELL_BY_ID[id]?.name ?? id;
+    /**
+     * A locked strap says so out loud, and records the moment so the strip can pulse
+     * for it — `docs/DESIGN.md` renders the belt while locked precisely so the
+     * capability advertises itself, and being told why is the other half of that.
+     */
+    if (state.belt.capacity <= 0) {
+      speakRefusal(beltRefuse(state.belt, BELT_LOCKED));
+      sfx.deny();
+      return false;
+    }
+    if (beltAvailable(id) <= 0) {
+      // Distinguishes "you have none" from "the ones you have are already in your
+      // hand", because the second is fixed by casting and the first is not.
+      speakRefusal(beltRefuse(state.belt, beltHeld(state.belt, id) > 0
+        ? `Your last ${name} is already in your hand.`
+        : `You have no ${name}.`));
+      sfx.deny();
+      return false;
+    }
+    if (fan.count >= handSize()) {
+      speakRefusal('Your hand is full. Cast it, or put it back.');
+      sfx.deny();
+      return false;
+    }
+    addIngredientCard(id);
+    if (isFreeToTake(id)) state.belt.free += SAND_FREE_COMPONENTS + 1;
+    hud.addLog(`You draw ${name} off your belt.`, SPELL_BY_ID[id]?.colour);
+    // What is in the hand decides what is targetable — and for an animating
+    // ingredient it decides it completely, so this cannot wait for the round.
+    refreshTargets();
+    spendComponentTurn('belt');
+    return true;
+  };
+
+  /**
+   * Put one on the belt. The single grant path: chests, bosses and altars all land
+   * here, so the refusal, the log line and the pulse are written once.
+   */
+  const grantIngredient = (id: string): boolean => {
+    const name = SPELL_BY_ID[id]?.name ?? id;
+    const why = beltAdd(state.belt, id);
+    if (why) {
+      /**
+       * Through the say-it-once guard, and WITHOUT the ingredient's name in front of
+       * it, so a chest that pays three onto a locked belt says the reason once rather
+       * than three times in three different names — which would bury the chest's own
+       * line in a log that holds four. The full-belt refusal already names what it
+       * turned away, because there the name is the actionable half.
+       */
+      speakRefusal(why);
+      return false;
+    }
+    const n = beltHeld(state.belt, id);
+    hud.addLog(`${name} goes on your belt${n > 1 ? ` — ${n} now` : ''}.`,
+      SPELL_BY_ID[id]?.colour);
+    return true;
+  };
+
+  /**
+   * Spend the ingredients a cast just used.
+   *
+   * Called only after `combat.cast` has reported that the spell went off, which is
+   * the one place a vial may be destroyed: a refused cast consumes nothing, and a
+   * returned hand consumes nothing, because neither reaches here. One call per CARD
+   * rather than per distinct id, so a hand of two Growth spends two.
+   */
+  const consumeIngredients = (ids: string[]): void => {
+    for (const id of ids) if (isIngredient(id)) beltConsume(state.belt, id);
+  };
+
+  /**
+   * The hand is empty, however it emptied — cast, returned, or dropped by a refund.
+   *
+   * The assembly's bill and the sand's remaining charges both belong to the hand
+   * being assembled, so both are cleared by the same event. Watching the count is the
+   * only place that catches all of them with one rule: the merge animation empties
+   * the fan from inside itself.
+   */
+  const resetAssembly = (): void => {
+    assemblyTurns = 0;
+    state.belt.free = 0;
+  };
+
+  /**
+   * Put the whole hand back. Free, and it consumes nothing.
+   *
+   * One helper rather than three copies of `fan.clear(); refreshTargets()`, because
+   * the sand made the pair incomplete: returning a hand that holds TimeSand has to
+   * give up its remaining free components too, or you keep the vial AND keep the
+   * discount — a return that pays you is not a return. The per-frame check on an
+   * empty fan catches this eventually; doing it here makes it true immediately,
+   * which is what a caller that returns and re-assembles in one breath needs.
+   */
+  const returnHand = (): void => {
+    fan.clear();
+    resetAssembly();
+    refreshTargets();
+  };
+
   // The ported book throws its own sparkles and shakes; route them at the game.
   // The book works in hand-scale units (~0.4m from the eye); CastFx works in
   // dungeon scale, so these are scaled up to stay visible.
@@ -524,6 +700,30 @@ async function boot(): Promise<void> {
    * see.
    */
   const spendComponentTurn = (cause: TurnCause): void => {
+    /**
+     * TimeSand already paid for this one.
+     *
+     * Here rather than at each of the three call sites, because the sand is not a
+     * cheaper TEAR — it is a component that costs no turn, whichever source it came
+     * from, and a rule stated once is a rule that cannot disagree with itself. Note
+     * what a free component is NOT: a fast round. The room does not act at all, so
+     * nothing steps, nothing swings and no status ticks — which is the whole of what
+     * `docs/DESIGN.md` means by turning a 3-slot cast into a 0-turn cast.
+     *
+     * `busy` is deliberately never raised, so the next component can be taken in the
+     * same breath: three free components in three frames is the point of the vial.
+     */
+    if (state.belt.free > 0) {
+      state.belt.free--;
+      componentTurn = Promise.resolve();
+      hud.addLog(
+        `The sand holds — no turn spent. ${state.belt.free > 0
+          ? `${state.belt.free} more free.` : 'The last of it.'}`,
+        SPELL_BY_ID.sand.colour,
+      );
+      refreshTargets();
+      return;
+    }
     busy = true;
     componentTurn = (async () => {
       try {
@@ -577,9 +777,18 @@ async function boot(): Promise<void> {
    * own golems are excluded: they are on your side.
    */
   const isLegal = (e: Entity, ids: string[]): boolean => {
-    const wantsObject = ids.includes('animate');
+    /**
+     * Coffin Moss raises the DEAD, and nothing on a floor is a corpse yet — the
+     * corpse-raising phase is what puts one there. So a hand holding moss has no
+     * legal target at all, the reticle clears, and the cast bar is what says why.
+     * First, because it is the narrowest rule in here.
+     */
+    if (wantsCorpse(ids)) return false;
     const animatable = e.kind === 'prop' && !e.animated;
-    if (wantsObject) return animatable;
+    // Asked of the ingredient's ROLE and not of the literal id `animate`, which is a
+    // working name the designer still owns (`docs/DESIGN.md`, Open) — gating the
+    // reticle on the string meant renaming it would silently break targeting.
+    if (wantsObject(ids)) return animatable;
     return e.hostile || animatable;
   };
 
@@ -750,6 +959,34 @@ async function boot(): Promise<void> {
       cost: null, amount: 1, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
     });
     weights.push(3);
+    /**
+     * A bundle of one ingredient.
+     *
+     * `Roadmap/Altar_Reward_Node.md` put this out of scope "until the belt"; the belt
+     * is here. Only offered when the belt can actually take it — a locked strap or a
+     * belt with no free loop would make this a wasted third of the decision, which is
+     * the same rule the heal follows. WHICH ingredient is a uniform draw, because both
+     * "how common animation ingredients are" and "whether shapers drop at altars"
+     * are `## Open — not decided` and a weighting here would answer them by stealth.
+     *
+     * Three rather than the two a chest pays, because this one is spending a slot that
+     * could have been a rank or a floor's worth of health.
+     */
+    const keepable = INGREDIENT_IDS.filter((id) => beltRefusalFor(state.belt, id) === null);
+    if (keepable.length) {
+      const pick = rng.pick(keepable);
+      const def = SPELL_BY_ID[pick];
+      pool.push({
+        kind: 'ingredient', id: pick, name: `${def.name} ×${ALTAR_INGREDIENTS}`,
+        tag: 'FOR THE BELT', colour: def.colour,
+        detail: `${def.effect} Consumed on casting, and never a spell on its own.`,
+        cost: null, amount: ALTAR_INGREDIENTS, rank: 0, toRank: 0, maxRank: MAX_RANK,
+        golden: false,
+      });
+      // Level with stars and a charge: a hand of consumables is worth about what a
+      // banked charge is, and neither should out-draw the heal that keeps a run alive.
+      weights.push(3);
+    }
 
     const out: AltarOffer[] = [];
     // A golden page skips the weighting and goes first: when it is on the table it
@@ -1022,6 +1259,16 @@ async function boot(): Promise<void> {
         hud.setShout(`✦ ${o.amount} CELESTIAL STARS`, 0xffcf5c);
         hud.addLog(`The altar pays ${o.amount} stars into the bank.`, 0xffcf5c);
         break;
+      case 'ingredient': {
+        // Through the same one grant path everything else uses, so the belt's own
+        // rules apply — and counted, because a full loop can refuse part of a bundle
+        // and the shout must not promise three when two landed.
+        let got = 0;
+        for (let i = 0; i < o.amount; i++) if (grantIngredient(o.id)) got++;
+        const name = SPELL_BY_ID[o.id]?.name ?? o.id;
+        hud.setShout(got ? `${name.toUpperCase()} ×${got}` : 'NOWHERE TO KEEP IT', o.colour);
+        break;
+      }
       case 'reroll':
         state.rerolls += o.amount;
         hud.setShout('REROLL CHARGE', 0x8cc8ff);
@@ -1068,6 +1315,18 @@ async function boot(): Promise<void> {
     state.hp += heal;
     hud.setShout(`✦ ${stars} CELESTIAL STARS`, 0xffcf5c);
     hud.addLog(`The chest yields ${stars} stars and ${heal} health.`, 0xffcf5c);
+    /**
+     * And ingredients, generously.
+     *
+     * Granted even when the belt is locked, deliberately: the refusal is the moment
+     * the capability advertises itself ("you have nowhere to keep it", with the strap
+     * pulsing), and suppressing the drop would hide the belt from every player who
+     * has not bought it — which is the opposite of what the design asks the locked
+     * strip to do.
+     */
+    for (let i = rollDropCount(rng, CHEST_INGREDIENTS); i > 0; i--) {
+      grantIngredient(rollIngredient(rng, state.belt));
+    }
     entityPos(e, tmp);
     fx.rise(tmp, 0xffcf5c);
     sfx.shimmer(720);
@@ -1127,6 +1386,10 @@ async function boot(): Promise<void> {
       fx.shake = Math.min(1.3, fx.shake + 0.5);
     };
 
+    // A boss pays in ingredients as well as stars. Combat decides what falls; the
+    // belt decides whether it can be kept, and `grantIngredient` says either way.
+    combat.onIngredientDrop = (id) => grantIngredient(id);
+
     /**
      * An object going off. Deliberately NOT shaped like a cast: no bolt leaves the
      * player's hands, the burst is centred on the OBJECT and then answers on every
@@ -1174,7 +1437,7 @@ async function boot(): Promise<void> {
 
     stepper = new Stepper(floor.grid, floor.grid.start.x, floor.grid.start.y, floor.grid.start.dir);
     combat = new Combat(floor, state, `${runSeed}-floor-${depth}`);
-    hud = new Hud(engine, state, combat, () => fan.gameIds, () => { fan.clear(); refreshTargets(); });
+    hud = new Hud(engine, state, combat, () => fan.gameIds, returnHand);
     hud.bookClosed = book.closed;
     hud.bankedStars = meta.stars;
     hud.pinGoal = pinReadout();
@@ -1309,13 +1572,17 @@ async function boot(): Promise<void> {
   const afterTreeChange = (): void => {
     applyTree(meta);
     saveMeta(meta);
+    // The strap is as wide as the tree says and never wider. Reconciled here for the
+    // reason the hand ceiling is: a refund that left the old capacity behind would
+    // hand out loops nobody owns.
+    syncBelt();
     // The pinned goal is a readout in the run, not just in the menu, so every
     // transaction that could move it has to refresh it.
     hud.pinGoal = pinReadout();
     // A refund can drop the ceiling below what is already torn out. Returning a
     // component is free and never punished (`docs/DESIGN.md`, Turn economy), so the
     // hand goes back in the book rather than the ceiling being quietly exceeded.
-    if (fan.count > handSize()) { fan.clear(); refreshTargets(); }
+    if (fan.count > handSize()) returnHand();
     hud.bankedStars = meta.stars;
   };
 
@@ -1528,7 +1795,7 @@ async function boot(): Promise<void> {
     // The assembly's bill is cleared by the hand emptying, however it emptied —
     // and the merge animation empties the fan from inside itself, so watching the
     // count is the only place that catches a cast and a return with one rule.
-    if (fan.count === 0) assemblyTurns = 0;
+    if (fan.count === 0) resetAssembly();
     hud.assemblyTurns = assemblyTurns;
     // The fusion ceiling, on screen. Nothing else in the game states it, and at a
     // hand of one the player would otherwise only ever meet it as a refusal.
@@ -1590,8 +1857,16 @@ async function boot(): Promise<void> {
       // it must not be swallowed, or the two ends of the contract drift apart again.
       if (!await combat.cast(ids, hud.target)) {
         hud.addLog('The cast comes apart in your hands.', 0xff9a6a);
+      } else {
+        // The one place a vial is destroyed: the spell has gone off. A refused cast
+        // never reaches here, which is how "consumed only on cast" is a structural
+        // fact rather than a rule someone has to remember at four call sites.
+        consumeIngredients(ids);
       }
     } finally {
+      // The hand is gone either way — a merge cannot be un-merged — so the sand's
+      // remaining charges go with it rather than surviving into the next assembly.
+      resetAssembly();
       // A throw anywhere above used to leave `busy` true forever, which locks every
       // gesture in the game — including the ones that would let you walk away.
       busy = false;
@@ -1622,6 +1897,7 @@ async function boot(): Promise<void> {
       case 'cycle': cycleTarget(); break;
       case 'altar': takeFromAltar(a.entity); break;
       case 'harvest': harvestFrom(a.entity); break;
+      case 'belt': takeIngredient(a.id); break;
       case 'offer': chooseOffer(a.offer); break;
       case 'reroll': rerollOffers(); break;
       case 'chest': openChest(a.entity); break;
@@ -1669,8 +1945,15 @@ async function boot(): Promise<void> {
   };
 
   /** UI actions that are explicit controls — these always beat a page gesture. */
-  const UI_CONTROLS: ReadonlySet<string> =
-    new Set(['cast', 'clear', 'descend', 'bookToggle', 'cycle', 'altar', 'chest', 'harvest', 'tree']);
+  /**
+   * `belt` is in here for a reason worth stating: the strip is drawn UNDER the
+   * grimoire, which means every pouch sits inside the book's gesture zone. Without
+   * this, a tap on a pouch is a page flip.
+   */
+  const UI_CONTROLS: ReadonlySet<string> = new Set([
+    'cast', 'clear', 'descend', 'bookToggle', 'cycle', 'altar', 'chest', 'harvest',
+    'belt', 'tree',
+  ]);
 
   /**
    * Is this pointer position a book gesture rather than a dungeon gesture?
@@ -1798,7 +2081,7 @@ async function boot(): Promise<void> {
   keys.BracketRight = () => book.swipe(1);
   // Same path the HUD's own clear takes: returning the hand changes what is
   // targetable, so the reticle and `hud.tornIds` have to be rebuilt with it.
-  keys.KeyR = () => { fan.clear(); refreshTargets(); };
+  keys.KeyR = () => returnHand();
   keys.KeyB = () => { book.closed = !book.closed; hud.bookClosed = book.closed; };
   // Harvest what you are facing — the keyboard mirror of the HARVEST pill. Falls
   // back to the reticle so pressing it at something across the room still SAYS why
@@ -1880,6 +2163,12 @@ async function boot(): Promise<void> {
      * at the real starting hand size of one — and dropped again in `finally`,
      * because leaving it lifted raised the real tear ceiling for the rest of the
      * session and quietly ran every later check at hand size 3.
+     *
+     * PAGES ONLY, and it CLEARS first. Both were harmless while the book was the only
+     * source; now that a hand can mix a page with an ingredient, calling this after
+     * drawing a vial throws the vial away. `takeComponents` is the one to use for a
+     * mixed hand — this one is left exactly as it was, because three harnesses are
+     * written against it clearing.
      */
     selectPages: async (ids: string[]) => {
       fan.clear();
@@ -1892,6 +2181,36 @@ async function boot(): Promise<void> {
       } finally {
         handSizeBonus = 0;
       }
+    },
+    /**
+     * Assemble a hand out of ANY sources, in the order given, appending to whatever
+     * is already held.
+     *
+     * The mixed-hand version of `selectPages`, and the phase needs one: the whole
+     * point of the belt is that a cast is an ingredient PLUS an element, so a helper
+     * that can only reach one of the two sources cannot express the core verb. Each
+     * component goes through its own real gesture — `tearPage` for a page,
+     * `takeIngredient` for a vial — so each pays its own slot and its own turn.
+     *
+     * The ceiling is lifted only as far as the requested TOTAL needs, so a hand that
+     * already fits (animate + fire at hand size 2, which is what the tree sells) is
+     * assembled at the real ceiling and proves the real thing.
+     */
+    takeComponents: async (ids: string[]) => {
+      handSizeBonus = Math.max(0, fan.count + ids.length - meta.handSize);
+      try {
+        for (const id of ids) {
+          if (isIngredient(id)) {
+            if (takeIngredient(id)) await componentTurn;
+            continue;
+          }
+          const i = BOOK_PAGES.findIndex((pg) => pg.gameId === id);
+          if (i >= 0 && tearPage(i)) await componentTurn;
+        }
+      } finally {
+        handSizeBonus = 0;
+      }
+      return fan.gameIds;
     },
     /**
      * The fixtures IN SIGHT that would give up an element, with what each yields.
@@ -1915,6 +2234,60 @@ async function boot(): Promise<void> {
       await componentTurn;
       return true;
     },
+    /**
+     * The belt, as the renderer sees it: the pouches in strip order, how many loops
+     * the strap has, the sand's remaining free components, and the last refusal with
+     * its timestamp (which is what a strap pulse reads).
+     */
+    belt: () => ({
+      slots: state.belt.slots.map((s) => ({ ...s })),
+      capacity: state.belt.capacity,
+      locked: state.belt.capacity <= 0,
+      total: beltTotal(state.belt),
+      free: state.belt.free,
+      refusal: state.belt.refusal,
+      /** What is left to draw, which is the stack minus what the hand already holds. */
+      available: Object.fromEntries(INGREDIENT_IDS.map((id) => [id, beltAvailable(id)])),
+    }),
+    /** Every ingredient that exists, with the id the hand holds it by. */
+    ingredients: () => INGREDIENT_IDS.map((id) => ({
+      id, name: SPELL_BY_ID[id].name, role: SPELL_BY_ID[id].role,
+      effect: SPELL_BY_ID[id].effect, free: isFreeToTake(id),
+    })),
+    /**
+     * Put ingredients on the belt through the real grant path, refusals included —
+     * so a locked belt answers here exactly as it answers a chest. Returns how many
+     * were actually kept.
+     */
+    grantIngredient: (id: string, n = 1) => {
+      let got = 0;
+      for (let i = 0; i < n; i++) if (grantIngredient(id)) got++;
+      return got;
+    },
+    /**
+     * Draw one into the hand. The same path the pouch tap takes, so it pays the same
+     * slot and the same turn — and `await`s the round, like `harvest` does. TimeSand
+     * resolves instantly because its round is never bought.
+     */
+    takeIngredient: async (id: string) => {
+      if (!takeIngredient(id)) return false;
+      await componentTurn;
+      return true;
+    },
+    /**
+     * Put the hand back. The one return gesture the game has (the CLEAR pill and
+     * `R`), here so a harness can prove the half of the rule that matters: returning
+     * an ingredient neither consumes it nor costs a turn.
+     */
+    returnHand: () => {
+      returnHand();
+      return { held: fan.count, belt: state.belt.slots.map((s) => ({ ...s })) };
+    },
+    /**
+     * Why the belt would refuse this, without asking it to — the locked line the
+     * strip pulses for.
+     */
+    beltRefusalFor: (id: string) => beltRefusalFor(state.belt, id),
     /**
      * What the HUD would do with a tap here, without doing it — the HUD's controls
      * are laid out from measured text and a measured book edge, so where one IS is
@@ -2053,6 +2426,11 @@ async function boot(): Promise<void> {
      *    NEXT run, so a pass that took one would be measuring a different starting
      *    book than the one it claims. Driving it is `openAltarKind` plus
      *    `pickOffer`, deliberately.
+     *  - an INGREDIENT never, and for the same class of reason: this order describes a
+     *    competent player at hand size 1, and at hand size 1 there is no belt to keep
+     *    one on (the node requires hand size 2), so an ingredient is a slot spent on
+     *    something the run cannot use. It is not in `order`, so it is only ever taken
+     *    when it is the whole roll — which cannot happen, since every roll holds a page.
      */
     takeAltar: (e: Entity) => {
       takeFromAltar(e);

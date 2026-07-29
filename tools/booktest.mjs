@@ -2,12 +2,12 @@
  * Verifies the ported grimoire: flip, tear, fan, merge-cast, and the two gates on
  * a tear (you have not learned it / your hand is full).
  *
- * The book is FIVE element pages. Animate, Growth and Multishot are belt
- * ingredients with no page, so the old "tear Animate" beat could not be true —
- * `tearAt` wraps modulo the book's length, so the index that used to mean Animate
- * now means Spark. It is replaced by the assertion that holds today: no index in
- * the book yields an ingredient. The belt restores that path
- * (Roadmap/Ingredient_Belt.md).
+ * The book is FIVE element pages. All five ingredients are belt items with no page,
+ * so the old "tear Animate" beat could not be true — `tearAt` wraps modulo the book's
+ * length, so the index that used to mean Animate now means Spark. It is replaced by
+ * the assertion that holds permanently: no index in the book yields an ingredient.
+ * The belt is where an ingredient comes from now, and it is driven in its own
+ * harness (Roadmap/Ingredient_Belt.md); this file is about the BOOK.
  *
  * Order matters here. The hand-size gate runs BEFORE any multi-page
  * `selectPages`, because that debug helper lifts the hand ceiling for the session.
@@ -21,7 +21,7 @@ const { page, errors, shot, ev } = await openGame(browser, {
   prefix: 'bk', wait: 4200, freshSave: true,
 });
 
-const INGREDIENTS = ['animate', 'grow', 'split'];
+const INGREDIENTS = ['animate', 'moss', 'grow', 'split', 'sand'];
 
 const intro = await ev(() => {
   const g = window.__game;
@@ -145,8 +145,12 @@ check('the merge empties the fan', after.fanAfter === 0, `fan ${after.fanAfter}`
 check('the fusion hits the furniture',
   after.propHp === null || after.propHp < torn.propHp || after.propAlive === false,
   `${torn.propHp} -> ${after.propHp}`);
-check('nothing rose — no page supplies animate', after.animated === 0, String(after.animated));
-note('the golem path returns with the belt', 'Roadmap/Ingredient_Belt.md');
+// Was "no page supplies animate". Still nothing rose, but the reason to assert is
+// that a hand of two ELEMENTS resolves to a projectile — an animating ingredient is
+// the only thing that makes a golem, and this hand never held one.
+check('nothing rose — two elements make a bolt, not a body',
+  after.animated === 0, String(after.animated));
+note('the golem path is driven in the belt harness', 'Roadmap/Ingredient_Belt.md');
 await shot('05-after-cast');
 
 finish(errors);

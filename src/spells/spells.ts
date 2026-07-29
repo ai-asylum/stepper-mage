@@ -17,7 +17,18 @@
  *    supplies it, which is why every prop is a spell component.
  */
 
-export type SpellRole = 'bolt' | 'modifier' | 'animate';
+/**
+ * What a component DOES to a cast, which for an ingredient is its whole identity.
+ *
+ * `animate` and `raise` are two roles and not one because `docs/DESIGN.md` makes
+ * them two ingredients: object animation works on turn one because every room has
+ * props, corpse raising needs a kill first. They differ only in what they may be
+ * aimed at, so the role is the difference — and `tempo` is the odd one out, the
+ * role for an ingredient that changes what the cast COSTS and nothing about what it
+ * is (TimeSand). A tempo component contributes no damage, no status and no element,
+ * which is why it can be free.
+ */
+export type SpellRole = 'bolt' | 'modifier' | 'animate' | 'raise' | 'tempo';
 export type StatusId =
   | 'burning' | 'frozen' | 'soaked' | 'shocked' | 'decay' | 'stagger' | 'oiled';
 export type Element =
@@ -143,20 +154,70 @@ export const SPELLS: SpellDef[] = [
     flavor: '"It was already old when the doors were hung."',
   },
 
+  /**
+   * The belt. Five ingredients, and every one of them SHAPES a cast — none supplies
+   * an element and none supplies a status, which is the rule that keeps the belt from
+   * becoming a second spellbook (`docs/DESIGN.md`, "Three sources, three questions").
+   * `docs/DESIGN.md`'s "Rejected" table cut eight candidate ingredients for breaking
+   * exactly that rule, so the note on each of these says which job it owns that no
+   * page and no fixture has.
+   *
+   * `animate`'s NAME is `## Open — not decided` in the design doc. `animate` is a
+   * working id describing the mechanic and nothing more; naming it is the designer's
+   * call, and inventing a name here would be filling in that section by inference.
+   */
   {
+    // Owns: turning something in the room into a body on your side. No page and no
+    // fixture produces an ally at all, so there is nothing to duplicate.
     id: 'animate', name: 'Animate', glyph: '💫', role: 'animate', kind: 'ingredient', source: 'belt', element: 'none', cost: 3,
     colour: 0xb98cff, effect: 'Wakes an object. It rises and fights for you.',
     flavor: '"Everything wants to stand up. Most things need asking."',
   },
   {
+    /**
+     * Owns: raising the dead. Deliberately a SECOND ingredient rather than a wider
+     * Animate — object animation opens a fight because every room has props, and moss
+     * snowballs one because it needs a kill first, so which you are holding changes
+     * how you want to open a room.
+     *
+     * It has nothing to act on in this build, honestly: no entity in the game is a
+     * corpse yet (Roadmap/Corpse_Raising_And_Golem_Persistence.md adds them), so
+     * every moss cast is refused and says why. The seam is `CastTarget`'s `corpse`
+     * kind, which exists here and is produced by nothing.
+     */
+    id: 'moss', name: 'Coffin Moss', glyph: '🌿', role: 'raise', kind: 'ingredient', source: 'belt', element: 'none', cost: 3,
+    colour: 0x6f9a86, effect: 'Spread on the fallen. What died gets up again.',
+    flavor: '"It grows best where the lid did not quite shut."',
+  },
+  {
+    // Owns: scale. Growth was a PAGE and moving it to the belt is what made the
+    // page/ingredient split airtight (`docs/DESIGN.md`, Rejected — "Shapers as
+    // pages"), so a Growth page is the thing this must not be.
     id: 'grow', name: 'Growth', glyph: '🌱', role: 'modifier', kind: 'ingredient', source: 'belt', element: 'none', cost: 2,
     colour: 0x8ce06a, effect: 'Makes the cast bigger and harder hitting.',
     flavor: '"More is a kind of answer."',
   },
   {
+    // Owns: target count. Mirrorleaf and Wolfsbane Thread were both cut for
+    // duplicating THIS, so Multishot is the owner of the job rather than a copy of
+    // one — and it is a spread, so it is worth three bodies and never three hits.
     id: 'split', name: 'Multishot', glyph: '✨', role: 'modifier', kind: 'ingredient', source: 'belt', element: 'none', cost: 3,
     colour: 0xffd9f0, effect: 'Splits the cast across three targets.',
     flavor: '"Why choose?"',
+  },
+  {
+    /**
+     * Owns: the PRICE of a cast. The only component in the game that touches the turn
+     * economy, and the only one that changes nothing about what the cast is — no
+     * damage, no status, no element, no target. `cost: 0` because it is free to take.
+     *
+     * Not Fourth Finger, which was cut for duplicating the tree's hand-size node:
+     * this does not raise the ceiling on what you may hold, it lowers what holding it
+     * costs. A bigger hand and a cheaper hand are different purchases.
+     */
+    id: 'sand', name: 'TimeSand', glyph: '⏳', role: 'tempo', kind: 'ingredient', source: 'belt', element: 'none', cost: 0,
+    colour: 0xf0d79a, effect: 'Free to take. This cast\'s next two components are free too.',
+    flavor: '"Borrowed from the hour you were going to need later."',
   },
 ];
 
@@ -196,6 +257,43 @@ export const FIXTURE_SPELLS: SpellDef[] = SPELLS.filter(
 
 /** Ingredients are belt items: they shape a cast but are never a cast. */
 export const INGREDIENT_SPELLS: SpellDef[] = SPELLS.filter((s) => s.kind === 'ingredient');
+
+/** Ids of the five, in belt order. The one list a drop roll and the strip share. */
+export const INGREDIENT_IDS: string[] = INGREDIENT_SPELLS.map((s) => s.id);
+
+/** Is this a belt item rather than something the book or the room supplies? */
+export function isIngredient(id: string): boolean {
+  return SPELL_BY_ID[id]?.kind === 'ingredient';
+}
+
+/**
+ * Does this hand need an OBJECT to aim at?
+ *
+ * Asked of the role and not of the id, because the id is a working name that the
+ * designer still owns (see the `animate` entry) — `isLegal` in `main.ts` used to
+ * gate targeting on the literal string `'animate'`, which made a rename silently
+ * break the reticle rather than fail the build.
+ */
+export function wantsObject(ids: string[]): boolean {
+  return ids.some((id) => SPELL_BY_ID[id]?.role === 'animate');
+}
+
+/** Does this hand need a CORPSE to aim at? Nothing is one yet — see `moss`. */
+export function wantsCorpse(ids: string[]): boolean {
+  return ids.some((id) => SPELL_BY_ID[id]?.role === 'raise');
+}
+
+/**
+ * Is taking this component free?
+ *
+ * TimeSand only. It is the one ingredient whose whole job is the turn economy, and
+ * `docs/DESIGN.md` is explicit about why it cannot cost one: pay a turn AND a hand
+ * slot to save two and the trade is marginal, where free it turns a 3-slot cast into
+ * a 0-turn cast.
+ */
+export function isFreeToTake(id: string): boolean {
+  return SPELL_BY_ID[id]?.role === 'tempo';
+}
 
 /** Can this be the root of a cast? True for harvested elements too. */
 export function isElement(id: string): boolean {
@@ -534,9 +632,16 @@ export function harvestOf(propId: string): string | null {
   return FIXTURE_SPELLS.find((s) => s.element === el)?.id ?? null;
 }
 
-/** What the cast is being aimed at — the target is part of the fusion. */
+/**
+ * What the cast is being aimed at — the target is part of the fusion.
+ *
+ * `corpse` is the seam Coffin Moss aims through and NOTHING produces one today; the
+ * corpse-raising phase is what puts a body of that kind on the floor. It is here
+ * rather than left out so the moss refusal is a rule about the target ("that is not
+ * a corpse") instead of a hardcoded "never", which is the version that would rot.
+ */
 export interface CastTarget {
-  kind: 'enemy' | 'boss' | 'prop' | 'golem' | 'chest' | 'self' | 'none';
+  kind: 'enemy' | 'boss' | 'prop' | 'golem' | 'chest' | 'corpse' | 'self' | 'none';
   /** For props: the sprite id, so an animate cast can name the body. */
   propId?: string;
 }
@@ -585,8 +690,8 @@ export function costOf(ids: string[]): number {
  * Order of resolution:
  *   0. No element, no cast. Ingredients shape a spell; they are never the spell,
  *      so a hand holding only ingredients is refused before anything else runs.
- *   1. An `animate` page turns the cast into a GOLEM, whose body comes from the
- *      targeted prop and whose touch is infused by the element pages present.
+ *   1. An animating ingredient turns the cast into a GOLEM, whose body comes from
+ *      the target and whose touch is infused by the elements present.
  *   2. Otherwise an authored `COMBOS` row for the exact element set wins.
  *   3. Otherwise compose: strongest authored subset, scaled, with leftover
  *      elements riding along as reduced-power statuses.
@@ -600,6 +705,7 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
 
   const elements = defs.filter((d) => d.kind === 'element').map((d) => d.element);
   const hasAnimate = defs.some((d) => d.role === 'animate');
+  const hasRaise = defs.some((d) => d.role === 'raise');
   const mods = defs.filter((d) => d.role === 'modifier').map((d) => d.id);
 
   // duplicate counts drive empowerment
@@ -635,12 +741,25 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
     return { ...base, name: 'Nothing', refusal: 'Nothing to shape — a cast needs an element.' };
   }
 
-  // ---- 1. animate: the target supplies the body -------------------------
-  if (hasAnimate) {
-    if (target.kind !== 'prop' || !target.propId) {
+  // ---- 1. animation: the target supplies the body -----------------------
+  /**
+   * Two ingredients share this branch because they build the same thing out of
+   * different bodies — an object for `animate`, a corpse for `raise` — and what a
+   * golem IS should not fork on which ingredient woke it. They differ only in what
+   * they will accept, which is the whole of `docs/DESIGN.md`'s reason for them being
+   * two ingredients: one works on turn one, the other needs a kill first.
+   */
+  if (hasAnimate || hasRaise) {
+    const accepted = (hasAnimate && target.kind === 'prop')
+      || (hasRaise && target.kind === 'corpse');
+    if (!accepted || !target.propId) {
       return {
-        ...base, name: 'Animate', output: 'golem',
-        refusal: 'Animate needs an object. Target a thing, not a creature.',
+        ...base, name: hasAnimate ? 'Animate' : 'Coffin Moss', output: 'golem',
+        refusal: hasAnimate
+          ? 'Animate needs an object. Target a thing, not a creature.'
+          // Always taken today: nothing in the game is a corpse until the
+          // corpse-raising phase puts one on the floor. See the `moss` entry.
+          : 'Nothing here has fallen. Coffin Moss only raises the dead.',
       };
     }
     const body = bodyName(target.propId);

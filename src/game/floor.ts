@@ -87,8 +87,21 @@ export class Floor {
     if (p.kind === 'stairs') sprite.group.visible = false;
   }
 
-  /** Swap a prop's art for its golem form — the core verb's visual payoff. */
-  async animateProp(e: Entity): Promise<boolean> {
+  /**
+   * Swap a prop's art for its golem form — the core verb's visual payoff.
+   *
+   * `castHp` is what the CAST says the risen body is worth (26 base, half again with
+   * Growth); the depth term is this floor's business and stays here with the rest of
+   * the floor's numbers. Both halves are needed and neither knows the other: a cast
+   * cannot know how deep it was released, and a floor cannot know whether the cast
+   * carried Growth.
+   *
+   * It is a parameter rather than two assignments because there used to be two — this
+   * set a depth-scaled figure and `Combat.cast` overwrote it with the cast's — so the
+   * depth scaling was dead the whole time the animate path was unreachable, and came
+   * back to life as a bug the moment the belt made it reachable again.
+   */
+  async animateProp(e: Entity, castHp = 26): Promise<boolean> {
     if (e.kind !== 'prop' || e.animated || !e.golemId) return false;
     const tex = await loadSprite(e.golemId);
     const old = e.sprite;
@@ -106,7 +119,7 @@ export class Floor {
     e.animated = true;
     e.kind = 'prop';
     e.hostile = false;      // a golem you raised fights FOR you
-    e.hp = e.maxHp = 26 + this.depth * 6;
+    e.hp = e.maxHp = castHp + this.depth * 6;
     risen.play('rise');
     return true;
   }

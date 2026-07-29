@@ -13,7 +13,7 @@ Status values: `planned` · `in progress` · `shipped` · `paused`. Only one pha
 | 2 | [Altar_Reward_Node](Altar_Reward_Node.md) | yes | shipped |
 | 3 | [Harvest_And_Room_Elements](Harvest_And_Room_Elements.md) | yes | shipped |
 | 4 | [Star_Tree](Star_Tree.md) | yes | shipped |
-| 5 | [Ingredient_Belt](Ingredient_Belt.md) | yes | planned |
+| 5 | [Ingredient_Belt](Ingredient_Belt.md) | yes | shipped |
 | 6 | [Corpse_Raising_And_Golem_Persistence](Corpse_Raising_And_Golem_Persistence.md) | yes | planned |
 | 7 | [Guidance_And_Blessings](Guidance_And_Blessings.md) | yes | planned |
 | 8 | [Deeper_Dungeon](Deeper_Dungeon.md) | yes | planned |

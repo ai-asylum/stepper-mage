@@ -113,13 +113,16 @@ export const TREE: readonly TreeNode[] = [
     effect: 'Hold three: element triples, or one element and two ingredients.',
   },
   {
+    // Live as of the Ingredient_Belt phase: the loops are real, a drop that lands
+    // with none of them bought is refused, and a card promising an effect that has
+    // already arrived is the one thing the `live` flag exists to prevent.
     id: 'belt3', name: 'Ingredient Belt', price: PRICES.belt3, requires: ['hand2'],
-    live: false, lands: 'phase 5 — Ingredient_Belt', beltSlots: 3,
+    live: true, beltSlots: 3,
     effect: 'Three loops on the strap. Ingredients can be picked up and kept.',
   },
   {
     id: 'belt6', name: 'Deep Belt', price: PRICES.belt6, requires: ['belt3'],
-    live: false, lands: 'phase 5 — Ingredient_Belt', beltSlots: 6,
+    live: true, beltSlots: 6,
     effect: 'Six loops. Carry every shape at once instead of choosing at the drop.',
   },
   {

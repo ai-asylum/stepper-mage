@@ -68,13 +68,13 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 5 — Ingredient_Belt
 
-- [ ] Draw the belt strip under the book in locked, empty and filled states.
-- [ ] Implement the five ingredients: object animation, Coffin Moss, Growth, Multishot, TimeSand.
-- [ ] Make TimeSand free to take and zero the turn cost of the next two components.
-- [ ] Drop ingredients generously from chests, bosses and altars.
-- [ ] Show "you have nowhere to keep it" and pulse the strap when the belt is locked.
-- [ ] Consume an ingredient only on cast; taking one out stays returnable.
-- [ ] Commit changes.
+- [x] Draw the belt strip under the book in locked, empty and filled states.
+- [x] Implement the five ingredients: object animation, Coffin Moss, Growth, Multishot, TimeSand.
+- [x] Make TimeSand free to take and zero the turn cost of the next two components.
+- [x] Drop ingredients generously from chests, bosses and altars.
+- [x] Show "you have nowhere to keep it" and pulse the strap when the belt is locked.
+- [x] Consume an ingredient only on cast; taking one out stays returnable.
+- [x] Commit changes.
 
 ## Phase 6 — Corpse_Raising_And_Golem_Persistence
 
@@ -113,4 +113,5 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Break the monochrome orange cast; make each floor read as its own palette.
 - [ ] Add a chest golem sprite and let Animate target chests.
 - [ ] Untangle the HUD text layer: log lines, captions and name plates overdraw each other.
+- [ ] Give the sixth belt loop and the fourth loadout slot something they can hold.
 - [ ] Commit changes.
