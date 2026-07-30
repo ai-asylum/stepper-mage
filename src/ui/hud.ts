@@ -116,6 +116,15 @@ export type UiAction =
    * tap on a pouch would leaf the book instead.
    */
   | { kind: 'belt'; id: string }
+  /**
+   * Put ONE component back — the card tapped in the fan above the grimoire. Free,
+   * and it is the only way to undo a single choice: CLEAR still dumps the lot.
+   *
+   * A CONTROL, so `UI_CONTROLS` in `main.ts` has it, for the reason the CAST pill is
+   * in there: the fan's lowest cards sit a few px above the book's top edge, and a
+   * tap that jitters low must not turn into a page flip.
+   */
+  | { kind: 'card'; index: number }
   | { kind: 'move'; m: 'forward' | 'back' }
   | { kind: 'turn'; d: -1 | 1 }
   | { kind: 'descend' }
@@ -126,6 +135,22 @@ export type UiAction =
    */
   | { kind: 'tree' }
   | { kind: 'none' };
+
+/**
+ * One card of the fan, as a screen rect in CSS px.
+ *
+ * Supplied by the game rather than laid out here, because the fan is real 3D
+ * geometry parented to the book's own camera (`src/book/fan.ts`) — the HUD cannot
+ * know where a card is without projecting it, and projecting it needs the book's
+ * scene. `index` is the fan index and not the array position: a card behind the
+ * camera is skipped, so the two can differ.
+ */
+export interface HandCard {
+  index: number;
+  x: number; y: number; w: number; h: number;
+  /** The card's roll in radians, CCW. The fan tilts every card; the badge follows. */
+  rot: number;
+}
 
 interface FloatNum {
   text: string; colour: number; wx: number; wy: number; t: number; big: boolean;
@@ -266,6 +291,13 @@ export class Hud {
   handSize = 1;
   handHeld = 0;
 
+  /**
+   * Where the fan's cards are on screen, in fan order, projected by the game each
+   * frame. Empty while the hand is merging — a card already flying into the cast
+   * cannot be taken back, so it must not look tappable.
+   */
+  handCards: HandCard[] = [];
+
   /** Where the minimap reads the world from. Bound per floor. */
   private map: (() => { floor: Floor; x: number; y: number; dir: Dir }) | null = null;
 
@@ -396,6 +428,9 @@ export class Hud {
       ? Math.round(H * 0.90)
       : Math.round(this.measuredBookTop);
     this.drawBelt(ctx, W);
+    // Before the CAST bar, so that where a card's box and the bar's touch, CAST wins:
+    // `hit` scans backwards, so whatever is pushed last is on top.
+    this.drawFanCards(ctx, W);
     this.drawCastBar(ctx, W);
     this.drawLog(ctx, W);
     this.drawVitals(ctx, W);
@@ -874,6 +909,62 @@ export class Hud {
     if (this.state.rerolls > 0) {
       this.pill(ctx, 12 + w + 6, y, `↻ REROLL ×${this.state.rerolls}`,
         '#cfe6ff', 'rgba(140,200,255,0.6)');
+    }
+  }
+
+  /**
+   * The fan is cancellable: one small ✕ per card, with the whole card as its target.
+   *
+   * DRAW SMALL, HIT BIG — the belt's lesson. The badge is a 16px dark disc with a
+   * hairline gold rim; the card behind it is ~80x105px and that is what the thumb
+   * actually lands on. Deliberately the quietest thing in the band: nothing here is
+   * filled, bold or pulsed, because the CAST pill is the loud control above the book
+   * and this must not compete with it. The card's own golden halo is already the
+   * "this is live" signal, so the badge only has to say what a tap DOES.
+   *
+   * A ✕ rather than an arrow pointing back at the source, because the three sources
+   * have three different destinations — a page goes into the book, a vial onto the
+   * belt, and a harvested element nowhere at all (`docs/DESIGN.md`: fixtures are not
+   * storable) — so no arrow is true for all three. ✕ is, and it is also the one mark
+   * that cannot be misread as "cast this one", which is the misreading that would
+   * cost the player a hand.
+   */
+  private drawFanCards(ctx: CanvasRenderingContext2D, W: number): void {
+    if (this.offers) return;            // the modal owns every tap; see drawBelt
+    for (const c of this.handCards) {
+      /**
+       * Pushed in FAN ORDER, which is what resolves an overlap: `slot()` steps each
+       * card toward the camera by its index, so the highest index is the one drawn on
+       * top — and `hit` scans backwards, so the highest index is also the first tested.
+       * The card the player can see is the card that answers.
+       */
+      this.hits.push({ rect: [c.x, c.y, c.w, c.h], action: { kind: 'card', index: c.index } });
+
+      /**
+       * Pinned to the card's own top-right corner, which means following its TILT: the
+       * fan rolls every card by up to 0.18rad, and the rect here is the upright box, so
+       * a badge parked at the box's corner floats off the paper on the outer cards.
+       * Rotated and inset, it sits ON the card at any hand size.
+       */
+      const hw = c.w / 2 - 10, hh = c.h / 2 - 10;
+      const sn = Math.sin(c.rot), cs = Math.cos(c.rot);
+      // Clamped inside the stage: at 295px the outer card of a three-card fan hangs
+      // off the edge, and a badge drawn past it is a control that looks unreachable.
+      const bx = Math.min(W - 11, Math.max(11, c.x + c.w / 2 + hw * cs - hh * sn));
+      const by = c.y + c.h / 2 - (hw * sn + hh * cs);
+      ctx.beginPath();
+      ctx.arc(bx, by, 8, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(14,9,16,0.86)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,207,92,0.55)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.strokeStyle = PARCH;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(bx - 3, by - 3); ctx.lineTo(bx + 3, by + 3);
+      ctx.moveTo(bx + 3, by - 3); ctx.lineTo(bx - 3, by + 3);
+      ctx.stroke();
     }
   }
 

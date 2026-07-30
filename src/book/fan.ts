@@ -127,6 +127,24 @@ export class Fan {
     sfx.merge();
   }
 
+  /**
+   * Take ONE card out of the hand, by index. Returns the spell it held.
+   *
+   * Local addition on top of upstream, which only has all-or-nothing `clear()`.
+   * This game lets the player cancel a single component, so a per-card removal is
+   * needed and there is no upstream call to route it through. Disposal is exactly
+   * `clear()`'s, one card's worth; the surviving cards need no fixing up because
+   * `slot(i, n)` derives every position from the index and the count, so `update`
+   * re-lays the fan out on the next frame.
+   */
+  removeAt(i: number): SpellDef | null {
+    if (this.merging || i < 0 || i >= this.pages.length) return null;
+    const [p] = this.pages.splice(i, 1);
+    camera.remove(p.group);
+    p.mat.dispose();
+    return p.spell;
+  }
+
   /** Return all pages to the book (refund flow). */
   clear() {
     for (const p of this.pages) {

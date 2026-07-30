@@ -6,14 +6,15 @@ import {
   Combat, targetsInView, MAX_RANK, type PlayerState, type TurnCause,
 } from './game/combat';
 import { CastFx } from './spells/vfx';
-import { Hud, type AltarOffer } from './ui/hud';
+import { Hud, type AltarOffer, type HandCard } from './ui/hud';
 import { TreeScreen, type TreeAction } from './ui/tree';
 import { routeCost, routeTo } from './ui/treeCommon';
 import { Book } from './book/book';
 import { Fan } from './book/fan';
 import {
-  bookScene, camera as bookCam, tickBook, resizeBook, sinks, sfx,
+  bookScene, camera as bookCam, projectToScreen, tickBook, resizeBook, sinks, sfx,
 } from './book/bridge';
+import { PAGE_H, PAGE_W } from './book/pageMaterial';
 import { SPELLS as BOOK_PAGES, setBookPages, type SpellDef } from './spells/pages';
 import {
   ELEMENT_SPELLS, INGREDIENT_IDS, SPELL_BY_ID, displayName, harvestOf, isFreeToTake,
@@ -631,6 +632,81 @@ async function boot(): Promise<void> {
     fan.clear();
     resetAssembly();
     refreshTargets();
+  };
+
+  /**
+   * Put ONE component back — the tap on its card in the fan.
+   *
+   * Free, because `docs/DESIGN.md` settles that returning a component is free. What it
+   * is NOT is a refund: `assemblyTurns` is untouched here on purpose. The readout says
+   * how many turns this assembly has cost, and taking a page back does not un-live the
+   * enemy round it bought — a decrementing counter would advertise a rewind the room
+   * never got. (It still zeroes when the hand reaches empty, which is the existing rule
+   * for a hand that has emptied *however* it emptied, and an empty hand has no bill.)
+   *
+   * Where the component goes is the only thing that differs by source, and all three
+   * answers were already settled by something else:
+   *  - a PAGE goes back into the book, and there is nothing to do for it: the book
+   *    regrows the page the instant it tears one (`Book.tear` sets `uReveal`/`regrowT`),
+   *    so the fan was the only thing still holding it.
+   *  - an INGREDIENT goes back on the belt, and there is nothing to do for that either:
+   *    the belt is never decremented when a vial is drawn, only when a cast goes off
+   *    (`consumeIngredients`), so the count restores itself the moment the card leaves
+   *    the hand — `beltAvailable` and the pouch badge both subtract what the hand holds.
+   *  - a HARVESTED element is DISCARDED. Fixtures are non-storable and `docs/DESIGN.md`
+   *    rejects banking one outright, so there is nowhere to put it; the candelabra is
+   *    still lit, and the way to get it back is to walk over and pay another turn.
+   */
+  const returnComponent = (index: number): boolean => {
+    if (dead || fan.busy) return false;
+    const id = fan.gameIds[index];
+    const spell = fan.removeAt(index);
+    if (!spell) return false;
+    const def = SPELL_BY_ID[id];
+    const name = def?.name ?? spell.name;
+    if (def?.source === 'belt') {
+      hud.addLog(`${name} goes back in its pouch.`, def.colour);
+      // The sand's unspent free components leave with the vial. Keeping them would be
+      // a return that pays you — the same reason `returnHand` clears them.
+      if (isFreeToTake(id)) state.belt.free = 0;
+    } else if (def?.source === 'fixture') {
+      hud.addLog(`The ${name} slips away — harvest it again when you need it.`, def.colour);
+    } else {
+      hud.addLog(`${name} goes back into the book.`, def?.colour);
+    }
+    sfx.pageFlip();
+    // Same follow-up as `returnHand`: what the hand holds decides what is targetable,
+    // and for an animating ingredient it decides it completely.
+    refreshTargets();
+    return true;
+  };
+
+  const cardPos = new THREE.Vector3();
+
+  /**
+   * Where each card of the fan is on screen, in fan order.
+   *
+   * The fan is 3D geometry parented to the BOOK's camera, not a HUD rect, so the only
+   * honest answer is to project it — the same trick `Sprite.screenBox` uses for a
+   * creature: project the centre, project a point one half-height above it, and read
+   * the pixel scale off the difference. Both the centre and the size come off the LIVE
+   * transform (the mesh is offset by `-PAGE_W/2`, so the group's origin is the card's
+   * centre, and the group's scale is the fan's shrink), which is what keeps the box on
+   * a card that is still flying in or hovering.
+   */
+  const handCardBoxes = (): HandCard[] => {
+    const out: HandCard[] = [];
+    const mid = { x: 0, y: 0 }, top = { x: 0, y: 0 };
+    for (let i = 0; i < fan.pages.length; i++) {
+      const g = fan.pages[i].group;
+      g.getWorldPosition(cardPos);
+      if (!projectToScreen(cardPos.x, cardPos.y, cardPos.z, mid)) continue;
+      if (!projectToScreen(cardPos.x, cardPos.y + PAGE_H * 0.5 * g.scale.y, cardPos.z, top)) continue;
+      const h = Math.abs(mid.y - top.y) * 2;
+      const w = h * (PAGE_W / PAGE_H);
+      out.push({ index: i, x: mid.x - w / 2, y: mid.y - h / 2, w, h, rot: g.rotation.z });
+    }
+    return out;
   };
 
   // The ported book throws its own sparkles and shakes; route them at the game.
@@ -1801,6 +1877,10 @@ async function boot(): Promise<void> {
     // hand of one the player would otherwise only ever meet it as a refusal.
     hud.handSize = handSize();
     hud.handHeld = fan.count;
+    // The fan's cards, projected so one of them can be tapped back. Nothing while the
+    // hand is merging: a card already flying into the cast cannot be taken back, and
+    // the fan cannot un-merge.
+    hud.handCards = fan.busy ? [] : handCardBoxes();
     // Named on the page it belongs to, so "not learned" never has to share a
     // channel with "hand full".
     hud.sealedPage = !book.closed && !state.pages.includes(book.currentSpell.gameId)
@@ -1898,6 +1978,7 @@ async function boot(): Promise<void> {
       case 'altar': takeFromAltar(a.entity); break;
       case 'harvest': harvestFrom(a.entity); break;
       case 'belt': takeIngredient(a.id); break;
+      case 'card': returnComponent(a.index); break;
       case 'offer': chooseOffer(a.offer); break;
       case 'reroll': rerollOffers(); break;
       case 'chest': openChest(a.entity); break;
@@ -1949,10 +2030,15 @@ async function boot(): Promise<void> {
    * `belt` is in here for a reason worth stating: the strip is drawn UNDER the
    * grimoire, which means every pouch sits inside the book's gesture zone. Without
    * this, a tap on a pouch is a page flip.
+   *
+   * `card` is the other way round and belongs here for the CAST pill's reason rather
+   * than the belt's: the fan sits ABOVE the book's top edge, so `overBook` does not
+   * claim it — but the lowest card is only ~80px clear of that edge, and the grace
+   * band plus the jitter in a real tap is exactly how a cancel becomes a page flip.
    */
   const UI_CONTROLS: ReadonlySet<string> = new Set([
     'cast', 'clear', 'descend', 'bookToggle', 'cycle', 'altar', 'chest', 'harvest',
-    'belt', 'tree',
+    'belt', 'card', 'tree',
   ]);
 
   /**
@@ -2282,6 +2368,28 @@ async function boot(): Promise<void> {
     returnHand: () => {
       returnHand();
       return { held: fan.count, belt: state.belt.slots.map((s) => ({ ...s })) };
+    },
+    /**
+     * The fan's cards as the HUD sees them: what each holds, where it came from, and
+     * the screen rect a tap has to land in. The rects are projected from live 3D
+     * geometry, so where a card IS is only answerable by asking.
+     */
+    handCards: () => handCardBoxes().map((c) => ({
+      ...c,
+      id: fan.gameIds[c.index],
+      source: SPELL_BY_ID[fan.gameIds[c.index]]?.source,
+    })),
+    /**
+     * Cancel ONE component. The same path the card tap takes, so it proves the three
+     * things this has to be: free (no turn bought), no refund (`turns` does not move),
+     * and non-destructive to the belt.
+     */
+    returnComponent: (index: number) => {
+      const ok = returnComponent(index);
+      return {
+        ok, held: fan.gameIds, turns: assemblyTurns, free: state.belt.free,
+        belt: state.belt.slots.map((s) => ({ ...s })),
+      };
     },
     /**
      * Why the belt would refuse this, without asking it to — the locked line the
