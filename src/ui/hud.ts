@@ -946,21 +946,28 @@ export class Hud {
        * a badge parked at the box's corner floats off the paper on the outer cards.
        * Rotated and inset, it sits ON the card at any hand size.
        */
-      const hw = c.w / 2 - 10, hh = c.h / 2 - 10;
+      // Sat ON the paper at a 10px inset before, where it read as part of the page's
+      // artwork. Perched just outside the corner it reads as something attached TO the
+      // card, which is what a remove control should look like.
+      const hw = c.w / 2 + 2, hh = c.h / 2 + 2;
       const sn = Math.sin(c.rot), cs = Math.cos(c.rot);
       // Clamped inside the stage: at 295px the outer card of a three-card fan hangs
       // off the edge, and a badge drawn past it is a control that looks unreachable.
       const bx = Math.min(W - 11, Math.max(11, c.x + c.w / 2 + hw * cs - hh * sn));
       const by = c.y + c.h / 2 - (hw * sn + hh * cs);
+      // Red, because this is the only destructive control in the band and every other
+      // affordance on screen is gold or parchment. It reads as remove at a glance
+      // without having to be big — and it is the one mark here that must never be
+      // mistaken for "cast".
       ctx.beginPath();
       ctx.arc(bx, by, 8, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(14,9,16,0.86)';
+      ctx.fillStyle = 'rgba(198,50,34,0.95)';
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255,207,92,0.55)';
+      ctx.strokeStyle = 'rgba(255,146,116,0.85)';
       ctx.lineWidth = 1;
       ctx.stroke();
-      ctx.strokeStyle = PARCH;
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#fff0e6';
+      ctx.lineWidth = 1.6;
       ctx.beginPath();
       ctx.moveTo(bx - 3, by - 3); ctx.lineTo(bx + 3, by + 3);
       ctx.moveTo(bx + 3, by - 3); ctx.lineTo(bx - 3, by + 3);
