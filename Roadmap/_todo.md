@@ -76,7 +76,41 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Consume an ingredient only on cast; taking one out stays returnable.
 - [x] Commit changes.
 
-## Phase 6 — Corpse_Raising_And_Golem_Persistence
+## Phase 6 — Casting_And_Movement
+
+- [ ] Charge a turn on cast and on moving only; make taking a component free.
+- [ ] Retune the balance and the acceptance gate against the new rule.
+- [ ] Show the grimoire only while a target is selected.
+- [ ] Auto-select an alerted enemy directly ahead; drop a target that leaves sight.
+- [ ] Replace the grimoire with a large CAST when every hand slot is full.
+- [ ] Remove the manual show/hide control and its key binding.
+- [ ] Move the floor name into the top-left as `DEPTH <n> — <name>`.
+- [ ] Add two-finger swipes: left and right side-step, up and down move and turn 180.
+- [ ] Swap places with the creature ahead or behind, ending up facing its back.
+- [ ] Correct the design doc's turn economy section and everything it concluded.
+- [ ] Commit changes.
+
+## Phase 7 — Pixel_Art_Overlay
+
+- [ ] Prove page text is readable as pixel art before retexturing anything.
+- [ ] Author the book's covers, spine and ribbons through `Pix`, nearest-filtered.
+- [ ] Author the page faces through `Pix`, keeping the model and the curl shader.
+- [ ] Redraw the twelve tree pictograms as pixel art blitted at an integer scale.
+- [ ] Commit changes.
+
+## Phase 8 — Enemy_Identity
+
+- [ ] Decide what "physical" resolves to, and size the sprite run before generating.
+- [ ] Give every entity a facing, and set it when a creature moves or attacks.
+- [ ] Generate front, back and attack frames for every creature and boss.
+- [ ] Pick the drawn frame from the angle between a creature's facing and the camera.
+- [ ] Telegraph an enemy that is about to act, before it acts.
+- [ ] Play an attack pose and a screen effect when an enemy hits the player.
+- [ ] Give creatures elemental weaknesses and resistances that change damage taken.
+- [ ] Teach a creature's element by fighting it, without a tooltip.
+- [ ] Commit changes.
+
+## Phase 9 — Corpse_Raising_And_Golem_Persistence
 
 - [ ] Carry the nearest surviving golem through the stairs when the node is owned.
 - [ ] Preserve the carried golem's rank and infusion at the second tier.
@@ -85,28 +119,28 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Crumble raised corpses after five turns.
 - [ ] Commit changes.
 
-## Phase 7 — Guidance_And_Blessings
+## Phase 10 — Guidance_And_Blessings
 
 - [ ] Add a compass pointing at unclaimed altar, then living boss, then stairs.
 - [ ] Add a run-start blessing: choose one of three at the dungeon mouth.
 - [ ] Fill the bestiary as props are animated and fusions discovered, free and never sold.
 - [ ] Commit changes.
 
-## Phase 8 — Deeper_Dungeon
+## Phase 11 — Deeper_Dungeon
 
 - [ ] Author the seven missing element triples.
 - [ ] Add floors 6 to 10 with their own palettes, rosters and bosses.
 - [ ] Generate the sprite roster for the new floors.
 - [ ] Commit changes.
 
-## Phase 9 — Descent_Unlocks
+## Phase 12 — Descent_Unlocks
 
 - [ ] Record boss kills in `meta` and unlock the floor above each as a start point.
 - [ ] Offer a start-depth choice at run start, every fifth floor.
 - [ ] Grant three catch-up altar draws when starting deep.
 - [ ] Commit changes.
 
-## Phase 10 — Polish_Pass
+## Phase 13 — Polish_Pass
 
 - [ ] Stop target markers drawing through walls.
 - [ ] Fix golems stalling instead of following.

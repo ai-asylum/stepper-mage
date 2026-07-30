@@ -62,7 +62,8 @@
  * shape by being asked and answering.
  */
 import {
-  NODE_BY_ID, TREE, buyBlocker, missingPrereqs, refundBlocker, type NodeId,
+  BELT_OFF_REASON, NODE_BY_ID, TREE, beltGated, buyBlocker, missingPrereqs, refundBlocker,
+  type NodeId,
 } from '../meta/tree';
 import { GOLD, PARCH, hexCss, rr, wrapLines } from './hud';
 import { KIND, NICK, drawIcon, shapePath, type NodeKind } from './treeIcons';
@@ -446,8 +447,17 @@ export class TreeScreen {
       const kind = KIND[n.id];
       const owned = v.owned.includes(n.id);
       const missing = missingPrereqs(n.id, v.owned).length > 0;
+      /**
+       * A flagged-off node reads as LOCKED in the sky, not as READY.
+       *
+       * The gold complete ring means "you can buy this", and a node with 560 stars
+       * against a price of 70 earns it on arithmetic alone — which would put the loudest
+       * "spend here" signal on the screen on the one purchase the tree refuses. Locked is
+       * the language already on the lattice for "not yours yet", so it is borrowed rather
+       * than a sixth state invented: dashed rim, dim icon, and the panel says why.
+       */
       const state: State = owned ? 'owned'
-        : missing ? 'locked'
+        : missing || beltGated(n.id) ? 'locked'
         : v.stars >= n.price ? 'ready' : 'short';
       const cx = SIDE + pitch * (COL[n.id] + 0.5);
       const cy = top + offset + contentH - (TIER[n.id] + 0.5) * rowPitch;
@@ -862,8 +872,16 @@ export class TreeScreen {
     const owned = v.owned.includes(id);
     const missing = missingPrereqs(id, v.owned).map(NAME_OF);
     const colour = FAMILY[id];
+    /**
+     * Turned off in this build — the tag, the note and the button below all read it. Not
+     * folded into `owned`: an owned belt node is still owned, still gold and still sells
+     * for its price, so this only changes what an UNBOUGHT one says.
+     */
+    const off = beltGated(id);
     const state: State = owned ? 'owned'
-      : missing.length ? 'locked'
+      // Locked and never 'ready', for the reason the lattice gives: the ready treatment
+      // is an invitation to spend, and this is the one node that cannot be spent on.
+      : missing.length || off ? 'locked'
       : v.stars >= n.price ? 'ready' : 'short';
     const held = owned ? refundBlocker(id, v.owned) : null;
 
@@ -878,6 +896,7 @@ export class TreeScreen {
       : hexCss(colour, state === 'ready' ? 0.9 : 0.6);
     ctx.fillText(
       owned ? (held ? '✓ OWNED · HELD' : '✓ OWNED')
+        : off ? 'TURNED OFF'
         : state === 'locked' ? 'LOCKED'
         : state === 'ready' ? 'READY TO BUY'
         : `SAVING UP · ${n.price - v.stars} SHORT`,
@@ -912,6 +931,25 @@ export class TreeScreen {
         notes.push({
           text: ln, font: 'bold 8.5px ui-monospace, monospace',
           fill: this.messageBad ? '#ff9a80' : GOLD, lh: 11,
+        });
+      }
+    }
+    /**
+     * Turned off, said BEFORE the tap and in the model's own words — the same rule the
+     * refund refusal below follows. A dimmed button says something is wrong; only this
+     * says what, and "the button does nothing" with no reason on the card is
+     * indistinguishable from the screen being broken.
+     *
+     * Above the effect, because the effect describes a capability that is currently not
+     * purchasable and reading it first invites exactly the tap this is refusing. Skipped
+     * when a message is already up: that message IS this string, arriving from the list
+     * view's own buy path.
+     */
+    if (off && !this.message) {
+      ctx.font = 'bold 8px ui-monospace, monospace';
+      for (const ln of wrapLines(ctx, BELT_OFF_REASON, iw).slice(0, 3)) {
+        notes.push({
+          text: ln, font: 'bold 8px ui-monospace, monospace', fill: '#bcc6ee', lh: 10,
         });
       }
     }
@@ -982,6 +1020,19 @@ export class TreeScreen {
       // Dimmed and STILL tappable: the leaves-only rule is taught by asking and
       // being told what to sell first, so the gesture has to stay available.
       this.hits.push({ rect: [bx, btnY - 4, bw, btnH + 8], action: { kind: 'sell', id } });
+      return;
+    }
+    if (off) {
+      /**
+       * The one state with no gesture at all, and the only place on this screen that has
+       * none. Everything else here is tappable-and-refused on purpose, because the
+       * refusal teaches the rule — but this rule is not about the tree, so there is
+       * nothing to learn from asking, and SAVE FOR THIS would pin a route that cannot be
+       * walked to the end. The plate keeps the button's footprint so the panel does not
+       * reflow between one node and the next.
+       */
+      this.button(ctx, bx, btnY, bw, btnH, 'UNAVAILABLE  ·  TURNED OFF',
+        0x161a2c, 'rgba(154,168,224,0.5)', 'rgba(188,198,238,0.8)', 0.55);
       return;
     }
     if (buyBlocker(id, v.owned, v.stars) === null) {

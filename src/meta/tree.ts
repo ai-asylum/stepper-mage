@@ -21,6 +21,7 @@
  * hand, whereas a max over what is owned cannot go stale — remove the node and the
  * ceiling falls back on its own.
  */
+import { BELT_ENABLED } from '../flags';
 
 export type NodeId =
   | 'hand2' | 'hand3'
@@ -218,6 +219,14 @@ export function derivedSlots(owned: readonly string[]): number {
 
 /** Zero means the belt is a bare strap — locked, and it says so. */
 export function derivedBeltSlots(owned: readonly string[]): number {
+  /**
+   * Zero whatever is owned while the belt is flagged off, and answered HERE rather
+   * than at each reader. Every belt behaviour is derived from the loop count — the
+   * strip's states, what a drop is refused for, what a pouch tap can do — so one
+   * answer in the one derivation is what makes the feature inert. An owned node is
+   * still owned and still refundable; it just raises a ceiling nothing reads.
+   */
+  if (!BELT_ENABLED) return 0;
   return ceiling(owned, 0, (n) => n.beltSlots);
 }
 
@@ -227,6 +236,45 @@ export function derivedGolemsKept(owned: readonly string[]): number {
 
 export function derivedGolemInfusion(owned: readonly string[]): boolean {
   return TREE.some((n) => n.golemInfusion === true && owned.includes(n.id));
+}
+
+/**
+ * The belt chain: `belt3` and everything that reaches it through a prerequisite edge —
+ * `belt6`, corpse rites and all three golem nodes.
+ *
+ * Derived from the edges rather than listed, so a node added under the belt is gated by
+ * the dependency it already declares instead of by a second list that can go stale. A
+ * fixed point rather than one pass, because a dependent can be a dependent's dependent
+ * (`golemKeep2` reaches `belt3` only through two hops).
+ */
+const BELT_CHAIN: ReadonlySet<string> = (() => {
+  const out = new Set<string>(['belt3']);
+  for (;;) {
+    const next = TREE.filter((n) => !out.has(n.id)
+      && (n.requires as readonly string[]).some((r) => out.has(r)));
+    if (!next.length) return out;
+    for (const n of next) out.add(n.id);
+  }
+})();
+
+/**
+ * Why the belt chain cannot be bought right now. Its own exported string because two
+ * screens and one refusal all have to say the same thing, and it names the switch so
+ * the answer to "why can I not buy this" is one grep away.
+ */
+export const BELT_OFF_REASON =
+  'The belt is turned off in this build, so this chain cannot be bought'
+  + ' — see BELT_ENABLED in src/flags.ts.';
+
+/**
+ * Is this node unavailable because the belt is flagged off?
+ *
+ * A PURCHASE gate and nothing more. `refundBlocker` deliberately does not consult it:
+ * a save that already owns a belt node keeps it and keeps its stars back, because a
+ * flag that could confiscate a purchase is a flag that cannot be flipped safely.
+ */
+export function beltGated(id: string): boolean {
+  return !BELT_ENABLED && BELT_CHAIN.has(id);
 }
 
 /** Nodes that name `id` as a prerequisite, owned or not. */
@@ -244,6 +292,10 @@ export function buyBlocker(id: string, owned: readonly string[], stars: number):
   const node = NODE_BY_ID[id];
   if (!node) return `No such node: ${id}.`;
   if (owned.includes(id)) return `${node.name} is already yours.`;
+  // Ahead of the prerequisite and the price, because it is the reason that cannot be
+  // fixed by playing: telling a player to buy Second Hand first for a chain that is
+  // switched off would be pointing them at a purchase that changes nothing.
+  if (beltGated(id)) return BELT_OFF_REASON;
   const missing = missingPrereqs(id, owned);
   if (missing.length) {
     return `${node.name} needs ${missing.map((m) => NODE_BY_ID[m]?.name ?? m).join(' and ')} first.`;

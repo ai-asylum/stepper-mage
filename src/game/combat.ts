@@ -28,6 +28,7 @@ import {
   type CastTarget, type Element, type ResolvedCast, type StatusId,
 } from '../spells/spells';
 import { BOSS_INGREDIENTS, rollDropCount, rollIngredient, type BeltState } from '../spells/belt';
+import { BELT_ENABLED } from '../flags';
 import {
   ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CONDUCTION_ARC_RANGE,
   CONDUCTION_ARC_SHARE, CONDUCTION_MULT, DAMAGE_JITTER, DECAY_DOT, DEEP_FREEZE_MULT,
@@ -631,6 +632,9 @@ export class Combat {
    * design — see `belt.ts` on why scarcity here means the mechanic never gets used.
    */
   private dropIngredients(): void {
+    // Flagged off, a boss pays stars and the stairs and nothing else. `dropRng` is this
+    // roll's alone (`${seed}-drops`), so declining to draw from it moves nothing else.
+    if (!BELT_ENABLED) return;
     const n = rollDropCount(this.dropRng, BOSS_INGREDIENTS);
     for (let i = 0; i < n; i++) {
       this.onIngredientDrop(rollIngredient(this.dropRng, this.state.belt));

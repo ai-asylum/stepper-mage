@@ -150,7 +150,12 @@ check('the fusion hits the furniture',
 // the only thing that makes a golem, and this hand never held one.
 check('nothing rose — two elements make a bolt, not a body',
   after.animated === 0, String(after.animated));
-note('the golem path is driven in the belt harness', 'Roadmap/Ingredient_Belt.md');
+// The note the check above hands off to, and it depends on the flag: with the belt on
+// there is a belt harness that drives the golem path, and with it off there is no path
+// to drive. The CHECK above holds either way — it is about two elements making a bolt.
+note(...(await ev(() => (window.__game.belt().enabled
+  ? ['the golem path is driven in the belt harness', 'Roadmap/Ingredient_Belt.md']
+  : ['no golem path to drive: the belt is flagged off', 'BELT_ENABLED=false in src/flags.ts']))));
 await shot('05-after-cast');
 
 finish(errors);

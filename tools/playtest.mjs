@@ -12,6 +12,10 @@
  * The belt itself, and the golem path it restores, are driven in the belt harness
  * (Roadmap/Ingredient_Belt.md) — reaching them needs two purchases, which is a
  * different measurement from "what does floor 1 hand a new player".
+ *
+ * The belt is currently FLAGGED OFF (`BELT_ENABLED` in src/flags.ts), which is why
+ * section 2's belt claim is gated on `belt().enabled` rather than deleted or relaxed.
+ * Everything else in this file is about elements and holds in both states.
  */
 import { serve, launch, openGame, check, note, finish } from './harness.mjs';
 
@@ -46,7 +50,9 @@ const ingredients = await ev(async (INGREDIENTS) => {
   const g = window.__game;
   g.grantAll();
   const out = { book: g.bookPages(), refusals: {}, torn: {} };
-  out.belt = { capacity: g.belt().capacity, locked: g.belt().locked };
+  out.belt = {
+    capacity: g.belt().capacity, locked: g.belt().locked, enabled: g.belt().enabled,
+  };
   for (const id of INGREDIENTS) {
     out.refusals[id] = g.combat.preview([id], { kind: 'enemy' }).refusal ?? null;
     g.fan.clear();
@@ -68,11 +74,24 @@ check('a hand of ingredients alone is refused',
 // Replaces the note that said golems were unreachable. They are reachable now — the
 // belt exists — so what is true of a DEFAULT save is the claim worth making, and it
 // is the reason nothing rises later in this file.
-check('the belt is locked on a default save, so no ingredient can be kept yet',
-  ingredients.belt.locked === true && ingredients.belt.capacity === 0,
-  JSON.stringify(ingredients.belt));
-note('the belt and the golem path are driven separately',
-  'both need the hand-size-2 and belt nodes bought — see Roadmap/Ingredient_Belt.md');
+//
+// GATED ON THE FLAG (`BELT_ENABLED` in src/flags.ts), and skipped rather than relaxed.
+// The claim is "locked UNTIL the node is bought", which is a statement about a purchase
+// that exists; with the feature off there is no node to buy and the same two numbers
+// would be passing for a different reason. Gating it means flipping the flag back
+// re-arms the assertion instead of leaving a check that quietly proves nothing.
+if (ingredients.belt.enabled) {
+  check('the belt is locked on a default save, so no ingredient can be kept yet',
+    ingredients.belt.locked === true && ingredients.belt.capacity === 0,
+    JSON.stringify(ingredients.belt));
+  note('the belt and the golem path are driven separately',
+    'both need the hand-size-2 and belt nodes bought — see Roadmap/Ingredient_Belt.md');
+} else {
+  note('SKIPPED: the belt is flagged off', 'BELT_ENABLED=false in src/flags.ts');
+  check('with the belt off the strap has no loops at all',
+    ingredients.belt.capacity === 0 && ingredients.belt.locked === true,
+    JSON.stringify(ingredients.belt));
+}
 
 console.log('\n=== 3. walk to a prop and target it ===');
 const propInfo = await ev(() => {

@@ -28,6 +28,7 @@ import {
   beltRefusalFor, beltRefuse, beltSetCapacity, beltTotal, newBelt, rollDropCount,
   rollIngredient,
 } from './spells/belt';
+import { BELT_ENABLED } from './flags';
 import { Rng } from './core/rng';
 import { DIR_VEC, type Dir } from './dungeon/grid';
 import { THEMES } from './art/theme';
@@ -533,6 +534,15 @@ async function boot(): Promise<void> {
    * (`consumeIngredients`).
    */
   const takeIngredient = (id: string): boolean => {
+    /**
+     * Flagged off: nothing comes off the belt into the hand.
+     *
+     * SILENT, unlike every other refusal in here. The others speak because there is a
+     * strap on screen to pulse and a rule the player can act on; with the strip gone
+     * this is only reachable through the debug surface, and a caption about a belt the
+     * player cannot see would be the game explaining a control it never offered.
+     */
+    if (!BELT_ENABLED) return false;
     if (!canTakeComponent() || !isIngredient(id)) return false;
     const name = SPELL_BY_ID[id]?.name ?? id;
     /**
@@ -574,6 +584,13 @@ async function boot(): Promise<void> {
    * here, so the refusal, the log line and the pulse are written once.
    */
   const grantIngredient = (id: string): boolean => {
+    /**
+     * Flagged off: no source pays an ingredient. The three callers skip their rolls
+     * outright, so this is the backstop that also covers the debug grant — and it
+     * returns before `beltAdd`, because the locked-strap refusal it would otherwise
+     * record explains a strip that is not on screen.
+     */
+    if (!BELT_ENABLED) return false;
     const name = SPELL_BY_ID[id]?.name ?? id;
     const why = beltAdd(state.belt, id);
     if (why) {
@@ -1048,7 +1065,13 @@ async function boot(): Promise<void> {
      * Three rather than the two a chest pays, because this one is spending a slot that
      * could have been a rank or a floor's worth of health.
      */
-    const keepable = INGREDIENT_IDS.filter((id) => beltRefusalFor(state.belt, id) === null);
+    // Flagged off, the kind must not roll at all: an offer for the belt would be a third
+    // of the decision spent on a thing the player has no belt to put it on. Stated as its
+    // own guard rather than left to `beltRefusalFor` — a capacity of 0 already empties
+    // this list, but then the reason the card is gone would be an accident of arithmetic.
+    const keepable = BELT_ENABLED
+      ? INGREDIENT_IDS.filter((id) => beltRefusalFor(state.belt, id) === null)
+      : [];
     if (keepable.length) {
       const pick = rng.pick(keepable);
       const def = SPELL_BY_ID[pick];
@@ -1399,9 +1422,16 @@ async function boot(): Promise<void> {
      * pulsing), and suppressing the drop would hide the belt from every player who
      * has not bought it — which is the opposite of what the design asks the locked
      * strip to do.
+     *
+     * Unless the belt is flagged off, in which case there is no strip for the refusal to
+     * advertise. Skipping the ROLL and not just the grant keeps the chest's stars and
+     * heal identical either way: both were already drawn off `rng` above, and nothing
+     * after this line touches it.
      */
-    for (let i = rollDropCount(rng, CHEST_INGREDIENTS); i > 0; i--) {
-      grantIngredient(rollIngredient(rng, state.belt));
+    if (BELT_ENABLED) {
+      for (let i = rollDropCount(rng, CHEST_INGREDIENTS); i > 0; i--) {
+        grantIngredient(rollIngredient(rng, state.belt));
+      }
     }
     entityPos(e, tmp);
     fx.rise(tmp, 0xffcf5c);
@@ -2329,6 +2359,13 @@ async function boot(): Promise<void> {
       slots: state.belt.slots.map((s) => ({ ...s })),
       capacity: state.belt.capacity,
       locked: state.belt.capacity <= 0,
+      /**
+       * Whether the FEATURE is on, which is a different question from whether the strap
+       * has loops: locked means "buy the node", off means "there is no node to buy". The
+       * harnesses gate their belt assertions on this so they skip instead of failing, and
+       * so flipping the flag back re-arms them.
+       */
+      enabled: BELT_ENABLED,
       total: beltTotal(state.belt),
       free: state.belt.free,
       refusal: state.belt.refusal,

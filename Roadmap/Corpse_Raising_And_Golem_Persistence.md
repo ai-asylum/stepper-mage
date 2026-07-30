@@ -2,9 +2,14 @@
 
 **Player-facing:** yes
 **Started:** —
-**Status:** planned
+**Status:** paused
 
 Enemy corpses become animatable, and a surviving golem comes with you down the stairs.
+
+> **Paused.** Every task here needs the belt: Coffin Moss raises a corpse and the
+> animation ingredient raises an object, and both are belt ingredients. The belt is
+> switched off behind `BELT_ENABLED` in `src/flags.ts` pending a UX rethink, so this
+> phase has nothing to build against until that flips back on.
 
 ## Why this phase
 

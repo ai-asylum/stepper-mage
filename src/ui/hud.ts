@@ -22,6 +22,7 @@ import {
 } from '../spells/spells';
 import type { BeltSlot } from '../spells/belt';
 import { drawBeltIcon } from './beltIcons';
+import { BELT_ENABLED } from '../flags';
 import * as THREE from 'three';
 import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
 import { spriteTexture } from '../dungeon/sprites';
@@ -180,8 +181,14 @@ export function hexCss(n: number, a = 1): string {
  * between the fan of torn pages and the book's edge is only ~83px on a 390x844 stage.
  * A magic number in four places is a band that silently overlaps the first time one of
  * them is nudged.
+ *
+ * ZERO while the belt is flagged off, which is the other half of not drawing the strip:
+ * the band is a reservation for something that is no longer there, and 46px of held-open
+ * nothing above the book's edge reads as a rendering fault. Relaxing it here puts the
+ * CAST bar, the cycle button and the log back exactly where they were before the belt
+ * shipped, because all three are laid out off this one constant.
  */
-const BELT_BAND = 46;
+const BELT_BAND = BELT_ENABLED ? 46 : 0;
 
 /**
  * The strip's own geometry, all measured DOWN FROM the book's edge.
@@ -535,9 +542,18 @@ export class Hud {
       // A reactive object wears the reaction's colour, selected or not: hold a Spark
       // in a room with a water barrel and the barrel goes yellow, which is the
       // cheapest way this game will ever teach the table.
+      /**
+       * Violet is the ANIMATE colour — the cast bar's own hint names it as the ring you
+       * tap to animate something — so while the belt is flagged off it would be inviting
+       * a cast that no hand can assemble. Furniture still gets a marker, because it is
+       * still a legal target for a bolt and still harvestable; it wears the tone this
+       * file already paints furniture in (the scenery health bar's `#b08c5a`) instead of
+       * the invitation. Reaction colours are untouched: a barrel going off is an ELEMENT
+       * landing on it, which the belt has nothing to do with.
+       */
       const col = react ? hexCss(react.colour)
         : interactive ? '#ffcf5c'
-        : animatable ? '#b98cff'
+        : animatable ? (BELT_ENABLED ? '#b98cff' : '#b08c5a')
         : '#ff7a5c';
 
       // the down triangle
@@ -1045,6 +1061,15 @@ export class Hud {
    * the book's cover where nothing else is tappable.
    */
   private drawBelt(ctx: CanvasRenderingContext2D, W: number): void {
+    /**
+     * Flagged off: not even the locked strap.
+     *
+     * The bare strap exists to ADVERTISE an unlock, and there is nothing to advertise
+     * while the chain that buys it cannot be bought — a perforated strap with a
+     * BELT · LOCKED caption would be selling a purchase the star tree refuses. So the
+     * whole strip goes, hit rects included, and `BELT_BAND` gives its 46px back.
+     */
+    if (!BELT_ENABLED) return;
     /**
      * The one exception to "always": the altar modal owns the whole frame. Under the
      * veil the strip is a ghost, but its hit rects would still be live — and a pouch tap

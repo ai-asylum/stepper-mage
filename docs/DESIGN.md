@@ -141,6 +141,14 @@ purpose and the enemies around it pay.
 
 ## Belt — ingredients
 
+> **Currently disabled behind a feature flag** (`BELT_ENABLED` in `src/flags.ts`),
+> pending a rethink of the strip's UX and UI. The design below is unchanged and still
+> the design — it is switched off, not withdrawn — and flipping that one boolean
+> restores every behaviour described here. While it is off the strip does not draw, no
+> source pays an ingredient, and the belt's tree chain (including corpse rites and the
+> golem nodes) cannot be bought. Object animation is a belt ingredient, so golems are
+> unreachable in that state; see `Roadmap/Ingredient_Belt.md`.
+
 Renders always, in three visual states so the unlock advertises itself:
 
 - **Locked** — bare strap, no loops, unlit.

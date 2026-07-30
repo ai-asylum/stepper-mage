@@ -13,7 +13,10 @@
  * screen, moved rather than rewritten: layout is one column of cards indented by
  * prerequisite depth, with edges drawn as spines in the left gutter.
  */
-import { TREE, dependents, missingPrereqs, type NodeId, type TreeNode } from '../meta/tree';
+import {
+  BELT_OFF_REASON, TREE, beltGated, dependents, missingPrereqs,
+  type NodeId, type TreeNode,
+} from '../meta/tree';
 import { GOLD, hexCss, rr, wrapLines } from './hud';
 import { FAMILY, NAME_OF, landsLabel, type TreeAction, type TreeView } from './treeCommon';
 
@@ -86,6 +89,8 @@ interface Card {
   risk: string[];
   /** Whether a refund is currently refused, so the sell pill can dim. */
   held: boolean;
+  /** Turned off behind a feature flag — the tag says so, `band` says why. */
+  off: boolean;
   needsY: number; bodyY: number; bandY: number; riskY: number; sellY: number;
 }
 
@@ -162,8 +167,12 @@ export class TreeList {
       const n = row.node;
       const owned = v.owned.includes(n.id);
       const needs = missingPrereqs(n.id, v.owned).map(NAME_OF);
+      /** Turned off behind the belt flag: the tag says so and `band` says why. */
+      const off = beltGated(n.id);
+      // Locked and never 'available': the available treatment is an invitation to tap,
+      // and this is the one card whose tap can only ever be refused.
       const state: State = owned ? 'owned'
-        : needs.length ? 'locked'
+        : needs.length || off ? 'locked'
         : v.stars >= n.price ? 'ready' : 'short';
       const x = cardX(row.depth);
       const w = W - x - RIGHT;
@@ -171,11 +180,20 @@ export class TreeList {
       ctx.font = '9px ui-monospace, monospace';
       const body = wrapLines(ctx, n.effect, w - 30);
       ctx.font = 'bold 7.5px ui-monospace, monospace';
-      const band = n.live ? [] : wrapLines(
-        ctx,
-        `${owned ? 'BOUGHT · ' : ''}EFFECT ARRIVES IN ${landsLabel(n.lands ?? '')}`,
-        w - 52,
-      );
+      /**
+       * The band already exists to say "bought, and inert until a later phase", which is
+       * the same KIND of fact as "turned off in this build" — a schedule note, not a
+       * price and not a warning. So the flag reuses it rather than adding a fifth row
+       * type, and takes priority: a chain that cannot be bought at all is a bigger fact
+       * about the card than which phase its effect was going to land in.
+       */
+      const band = off ? wrapLines(ctx, BELT_OFF_REASON, w - 52)
+        : n.live ? []
+        : wrapLines(
+          ctx,
+          `${owned ? 'BOUGHT · ' : ''}EFFECT ARRIVES IN ${landsLabel(n.lands ?? '')}`,
+          w - 52,
+        );
       const risk = owned ? v.atRisk(n.id) : [];
 
       let c = 38;
@@ -196,6 +214,7 @@ export class TreeList {
           : state === 'short' ? `✦ ${n.price} · ${n.price - v.stars} SHORT`
           : `✦ ${n.price}`,
         held: owned && dependents(n.id).some((d) => v.owned.includes(d)),
+        off: off && !owned,
         needsY, bodyY, bandY, riskY, sellY,
       };
     });
@@ -288,7 +307,9 @@ export class TreeList {
       : state === 'locked' ? 'rgba(170,162,180,0.75)'
       : hexCss(c.colour, state === 'ready' ? 0.85 : 0.5);
     ctx.fillText(
-      state === 'owned' ? '✓ OWNED' : state === 'locked' ? 'LOCKED'
+      state === 'owned' ? '✓ OWNED'
+        : c.off ? 'TURNED OFF'
+        : state === 'locked' ? 'LOCKED'
         : state === 'ready' ? 'AVAILABLE' : 'SAVING UP',
       x + 16, y + 9,
     );

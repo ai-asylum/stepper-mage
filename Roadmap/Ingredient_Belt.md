@@ -2,7 +2,26 @@
 
 **Player-facing:** yes
 **Started:** 2026-07-29 15:20
-**Status:** shipped
+**Status:** shipped — currently **flagged off**
+
+> **Flagged off as of 2026-07-30.** The phase shipped and stays shipped; nothing below
+> has been rewritten and nothing in `_todo.md` has been un-ticked. The strip's UX and UI
+> are being reconsidered, and the feature is parked until the spell book work lands.
+>
+> The switch is `BELT_ENABLED` in [`src/flags.ts`](../src/flags.ts). Flipping that one
+> boolean to `true` is the whole job — the code, the art, the card faces, the tree nodes
+> and the drop tables are all intact. With it `false`: the strip does not draw at all
+> (not even the locked strap) and the `BELT_BAND` layout reservation relaxes to 0, no
+> chest, boss or altar pays an ingredient, nothing can be drawn into the hand,
+> `derivedBeltSlots` is 0, and `belt3`/`belt6` plus corpse rites and the three golem
+> nodes cannot be bought and say why on the card. Anything already owned stays owned and
+> stays refundable — the gate is on the purchase, never on the save.
+>
+> **Consequence, accepted:** object animation is a belt ingredient, so golems are
+> unreachable again while this is off. The animate paths are intact and simply never
+> reached; what went away is everything that ADVERTISED an animation to the player.
+> Belt assertions in `tools/playtest.mjs` and `tools/booktest.mjs` are gated on the flag
+> so they skip cleanly and re-arm when it is flipped back.
 
 A strip of pouch slots under the grimoire holding the five consumable ingredients.
 
