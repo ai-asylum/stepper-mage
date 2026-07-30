@@ -955,6 +955,25 @@ export class Hud {
       // off the edge, and a badge drawn past it is a control that looks unreachable.
       const bx = Math.min(W - 11, Math.max(11, c.x + c.w / 2 + hw * cs - hh * sn));
       const by = c.y + c.h / 2 - (hw * sn + hh * cs);
+      /**
+       * The badge gets its OWN hit region, and a generous one.
+       *
+       * Until this existed the only rect was the card's, and moving the badge outside
+       * the corner put the visible button outside the only thing that answered a tap —
+       * so the ✕ was unclickable while the card's middle still worked, which is worse
+       * than a plain failure because nothing tells you. 44px against an 8px disc: draw
+       * small, hit big, the same rule the belt pouches follow.
+       *
+       * Pushed AFTER the card so it wins `hit`'s backward scan, and computed from the
+       * same live box in the same frame, so it tracks a card that is still flying in
+       * instead of lagging behind the drawn mark.
+       */
+      const bh = 22;
+      this.hits.push({
+        rect: [bx - bh, by - bh, bh * 2, bh * 2],
+        action: { kind: 'card', index: c.index },
+      });
+
       // Red, because this is the only destructive control in the band and every other
       // affordance on screen is gold or parchment. It reads as remove at a glance
       // without having to be big — and it is the one mark here that must never be
