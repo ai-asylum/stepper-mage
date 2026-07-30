@@ -100,7 +100,17 @@ every phase. Never list tasks for editing this file or a phase doc.
       well as the book — an ordered dither over a flat tone is a checkerboard.
 - [x] Commit changes.
 
-## Phase 8 — Enemy_Identity
+## Phase 8 — Pixel_Resolution_Steps
+
+- [ ] Make PPU a runtime value; rebuild every texture and sprite size when it changes.
+- [ ] Author the masonry, bevel, AO and crack constants for each of the four steps.
+- [ ] Author each theme's detail vocabulary at each step, judged by eye not by scale.
+- [ ] Re-derive every sprite at each step from the cached raws, keeping world size fixed.
+- [ ] Add a persisted resolution setting with all four steps, and a way to reach it.
+- [ ] Decide whether the book and tree atlases follow the step, and do what you decide.
+- [ ] Commit changes.
+
+## Phase 9 — Enemy_Identity
 
 - [ ] Decide what "physical" resolves to, and size the sprite run before generating.
 - [ ] Give every entity a facing, and set it when a creature moves or attacks.
@@ -112,7 +122,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Teach a creature's element by fighting it, without a tooltip.
 - [ ] Commit changes.
 
-## Phase 9 — Corpse_Raising_And_Golem_Persistence
+## Phase 10 — Corpse_Raising_And_Golem_Persistence
 
 - [ ] Carry the nearest surviving golem through the stairs when the node is owned.
 - [ ] Preserve the carried golem's rank and infusion at the second tier.
@@ -121,28 +131,28 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Crumble raised corpses after five turns.
 - [ ] Commit changes.
 
-## Phase 10 — Guidance_And_Blessings
+## Phase 11 — Guidance_And_Blessings
 
 - [ ] Add a compass pointing at unclaimed altar, then living boss, then stairs.
 - [ ] Add a run-start blessing: choose one of three at the dungeon mouth.
 - [ ] Fill the bestiary as props are animated and fusions discovered, free and never sold.
 - [ ] Commit changes.
 
-## Phase 11 — Deeper_Dungeon
+## Phase 12 — Deeper_Dungeon
 
 - [ ] Author the seven missing element triples.
 - [ ] Add floors 6 to 10 with their own palettes, rosters and bosses.
 - [ ] Generate the sprite roster for the new floors.
 - [ ] Commit changes.
 
-## Phase 12 — Descent_Unlocks
+## Phase 13 — Descent_Unlocks
 
 - [ ] Record boss kills in `meta` and unlock the floor above each as a start point.
 - [ ] Offer a start-depth choice at run start, every fifth floor.
 - [ ] Grant three catch-up altar draws when starting deep.
 - [ ] Commit changes.
 
-## Phase 13 — Polish_Pass
+## Phase 14 — Polish_Pass
 
 - [x] Stop target markers drawing through walls. (Closed early by Casting_And_Movement.)
 - [ ] Fix golems stalling instead of following.
