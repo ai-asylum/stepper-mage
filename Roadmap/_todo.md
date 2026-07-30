@@ -92,11 +92,13 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 7 — Pixel_Art_Overlay
 
-- [ ] Prove page text is readable as pixel art before retexturing anything.
-- [ ] Author the book's covers, spine and ribbons through `Pix`, nearest-filtered.
-- [ ] Author the page faces through `Pix`, keeping the model and the curl shader.
-- [ ] Redraw the twelve tree pictograms as pixel art blitted at an integer scale.
-- [ ] Commit changes.
+- [x] Prove page text is readable as pixel art before retexturing anything.
+- [x] Author the book's covers, spine and ribbons through `Pix`, nearest-filtered.
+- [x] Author the page faces through `Pix`, keeping the model and the curl shader.
+- [x] Redraw the twelve tree pictograms as pixel art blitted at an integer scale.
+- [x] Snap a flat field to a ramp step and dither only a falloff, in the world as
+      well as the book — an ordered dither over a flat tone is a checkerboard.
+- [x] Commit changes.
 
 ## Phase 8 — Enemy_Identity
 

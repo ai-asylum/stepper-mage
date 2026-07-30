@@ -11,7 +11,7 @@
  * bevels, grain, AO and detail stack without turning to mud.
  */
 import { Noise2, Rng } from '../core/rng';
-import { bayer, hex, mix, Pix, Ramp, rgba, shade, type Col } from './pixel';
+import { hex, mix, Pix, Ramp, resolveLevels, rgba, shade, slopeSoft, type Col } from './pixel';
 import type { FloorDetail, Theme } from './theme';
 
 /** Texels per world unit. Every surface uses this so texel density is uniform. */
@@ -27,10 +27,27 @@ class Field {
   readonly w: number;
   readonly h: number;
   readonly v: Float32Array;
+  /**
+   * Where this field is a FALLOFF rather than an authored tone, 0..1 — the
+   * dither licence `resolveLevels` needs. Only the passes that spread a
+   * brightness change over distance write it (AO edges, the vault's arch, soot,
+   * a waterline). Everything else — masonry, grain, cracks, plate — is a tone
+   * that wants to land on a ramp step and stay there, and dithering it is what
+   * put a checkerboard on every wall.
+   */
+  readonly soft: Float32Array;
 
   constructor(w: number, h: number, init = 0.5) {
     this.w = w; this.h = h;
     this.v = new Float32Array(w * h).fill(init);
+    this.soft = new Float32Array(w * h);
+  }
+
+  /** Declare this texel part of a falloff, licensing it to dither. */
+  soften(x: number, y: number, k: number): void {
+    if (x < 0 || y < 0 || x >= this.w || y >= this.h) return;
+    const i = y * this.w + x;
+    if (k > this.soft[i]) this.soft[i] = k;
   }
 
   at(x: number, y: number): number {
@@ -53,21 +70,18 @@ class Field {
     this.v[y * this.w + x] *= n;
   }
 
-  /** Quantise through a ramp with an ordered dither. */
-  resolve(ramp: Ramp, fine = true): Pix {
-    const p = new Pix(this.w, this.h);
+  /**
+   * Quantise through a ramp. Shared with the book (`src/art/pixel.ts`), so the
+   * flat-snaps-and-only-falloffs-dither rule is one implementation, not two.
+   */
+  resolve(ramp: Ramp, fine = true, seed = 0): Pix {
     const steps = ramp.length - 1;
-    for (let y = 0; y < this.h; y++) {
-      for (let x = 0; x < this.w; x++) {
-        let t = this.v[y * this.w + x];
-        t = t < 0 ? 0 : t > 1 ? 1 : t;
-        const lvl = t * steps;
-        const lo = Math.floor(lvl);
-        const idx = lvl - lo > bayer(x, y, fine) ? lo + 1 : lo;
-        p.set(x, y, ramp.at(idx), { mode: 'set' });
-      }
+    const lvl = new Float32Array(this.w * this.h);
+    for (let i = 0; i < lvl.length; i++) {
+      const t = this.v[i];
+      lvl[i] = (t < 0 ? 0 : t > 1 ? 1 : t) * steps;
     }
-    return p;
+    return resolveLevels(lvl, this.soft, this.w, this.h, ramp, { fine, seed });
   }
 }
 
@@ -123,8 +137,17 @@ function masonry(
   }
 }
 
-/** Multiply darkness into the edges of a face — cheap contact AO. */
+/**
+ * Multiply darkness into the edges of a face — cheap contact AO.
+ *
+ * The three ramps are falloffs, so they carry a dither licence over their own
+ * reach and nowhere else. The span is estimated as `amount * 3`: a mid-grey
+ * field on a five-or-six step ramp, since the ramp itself is not known here.
+ */
 function edgeAo(f: Field, top: number, bottom: number, sides: number): void {
+  const softTop = slopeSoft(top * 3, f.h * 0.28, true);
+  const softBot = slopeSoft(bottom * 3, f.h * 0.3, true);
+  const softSide = slopeSoft(sides * 3, f.w * 0.12, true);
   for (let y = 0; y < f.h; y++) {
     const ty = y / f.h;
     const kTop = top > 0 ? 1 - top * Math.max(0, 1 - ty / 0.28) : 1;
@@ -133,6 +156,9 @@ function edgeAo(f: Field, top: number, bottom: number, sides: number): void {
       const tx = Math.min(x, f.w - 1 - x) / f.w;
       const kSide = sides > 0 ? 1 - sides * Math.max(0, 1 - tx / 0.12) : 1;
       f.mul(x, y, kTop * kBot * kSide);
+      if (kTop < 1) f.soften(x, y, softTop);
+      if (kBot < 1) f.soften(x, y, softBot);
+      if (kSide < 1) f.soften(x, y, softSide);
     }
   }
 }
@@ -178,9 +204,11 @@ function wallDetail(p: Pix, f: Field, rng: Rng, noise: Noise2, theme: Theme, var
     for (let x = 0; x < f.w; x++) {
       const wave = Math.sin(x * 0.11 + rng.next() * 0.2) * 2.2 + noise.at(x * 0.06, 3) * 5;
       const line = Math.round(base + wave);
+      const softTide = slopeSoft(0.3, f.h - line, true);
       for (let y = line; y < f.h; y++) {
         const d = (y - line) / (f.h - line + 1);
         f.mul(x, y, 0.74 + d * 0.1);
+        f.soften(x, y, softTide);
       }
       // the stain edge itself is darkest
       f.mul(x, line, 0.55);
@@ -205,10 +233,14 @@ function wallDetail(p: Pix, f: Field, rng: Rng, noise: Noise2, theme: Theme, var
       }
     }
   } else if (detail === 'bone') {
-    // soot creeping down from the ceiling
+    // soot creeping down from the ceiling — a long falloff, so it may dither
     for (let x = 0; x < f.w; x++) {
       const reach = 10 + noise.fbm(x * 0.05, 1, 3) * 26;
-      for (let y = 0; y < reach; y++) f.mul(x, y, 0.5 + 0.5 * (y / reach));
+      const soft = slopeSoft(1.5, reach, true);
+      for (let y = 0; y < reach; y++) {
+        f.mul(x, y, 0.5 + 0.5 * (y / reach));
+        f.soften(x, y, soft);
+      }
     }
     // bone inlay: a femur or a small skull set into the masonry
     if (variant % 2 === 0) {
@@ -354,7 +386,7 @@ function buildWall(theme: Theme, seed: string, variant: number): Pix {
     crack(f, rng, rng.int(12, WALL_W - 12), rng.int(8, WALL_PX_H - 30), rng.int(24, 46), rng.range(0.9, 2.3));
   }
 
-  const p = f.resolve(theme.wall);
+  const p = f.resolve(theme.wall, true, 11 + variant);
   wallDetail(p, f, rng, noise, theme, variant);
   return p;
 }
@@ -381,7 +413,7 @@ function buildFloor(theme: Theme, seed: string, variant: number): Pix {
   // and how far the wall actually is.
   edgeAo(f, 0.34, 0.34, 0.34);
 
-  const p = f.resolve(theme.floor);
+  const p = f.resolve(theme.floor, true, 41 + variant);
 
   // theme dressing on the ground
   if (theme.detail === 'waterline') {
@@ -446,17 +478,20 @@ function buildCeil(theme: Theme, seed: string, variant: number): Pix {
   const noise = new Noise2(seed + '-n');
   const f = new Field(PPU, PPU, 0.42);
 
-  // rough barrel-vault: brightest along the crown, falling off to the springing
+  // rough barrel-vault: brightest along the crown, falling off to the springing.
+  // The vault IS the falloff, so it holds the licence; the fbm on top of it does not.
+  const softArch = slopeSoft(0.15 * 3, PPU / 2, true);
   for (let y = 0; y < PPU; y++) {
     for (let x = 0; x < PPU; x++) {
       const arch = 1 - Math.abs(x / PPU - 0.5) * 1.5;
       f.set(x, y, 0.34 + arch * 0.2 + (noise.fbm(x * 0.06, y * 0.06, 3) - 0.5) * 0.18);
+      f.soften(x, y, softArch);
     }
   }
   masonry(f, rng, noise, { rowH: 33, blockW: [45, 69], gap: 3, bevel: 0.1, jitter: 0.07 });
   edgeAo(f, 0.2, 0.2, 0.2);
 
-  const p = f.resolve(theme.ceil);
+  const p = f.resolve(theme.ceil, true, 71 + variant);
 
   // a timber beam across every third ceiling tile — gives corridors rhythm
   if (variant % 3 === 0) {

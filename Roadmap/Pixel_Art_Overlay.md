@@ -1,8 +1,8 @@
 # Pixel Art Overlay
 
 **Player-facing:** yes
-**Started:** —
-**Status:** planned
+**Started:** 2026-07-29 22:15
+**Status:** shipped
 
 Every drawn surface above the world becomes real pixel art: the grimoire's textures,
 its page faces, and the star tree's pictograms.
@@ -63,7 +63,12 @@ rather than shipping an unreadable book.
 ## Acceptance
 
 - No antialiased curve or vector-smooth edge remains anywhere on the book, its pages
-  or the tree.
+  or the tree. Two things stay vector on purpose and are not art: the book's 3D
+  silhouette, which is geometry in the crisp overlay pass, and the tree's disc, rim
+  and gauge arc, which are state chrome drawn by `ui/tree.ts` around a pixel mark.
+- No flat surface renders as a checkerboard. An ordered dither is licensed to a
+  falloff and a flat tone snaps to a ramp step, in the world as well as the book
+  (`levelIndex` in `src/art/pixel.ts`).
 - Page text is readable at 390x844 and at 295px wide.
 - The book still opens, leafs, tears and closes exactly as it does now.
 - A tree pictogram is distinguishable from every other at its drawn size.

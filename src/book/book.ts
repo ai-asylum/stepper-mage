@@ -11,6 +11,9 @@ import { mergeColored, box, cyl, shellGeometry, darken } from '../style/toon';
 import { gradientMap } from '../style/toon';
 import { pageMaterial, pageGeometry, type PageMaterial, PAGE_W, PAGE_H } from './pageMaterial';
 import { pageArt, blankPageTexture } from './pageTexture';
+// LOCAL: the body's pixel-art atlas. Upstream shades these parts with flat
+// vertex colours; see the file header for why that had to change here.
+import { coverAtlas, uvNormalise, uvRegion, UNTINTED, type CoverRegion } from './coverTexture';
 import { SPELLS, CHAPTERS, type SpellDef, type SpellSchool } from '../spells/pages';
 import { sfx } from './bridge';
 import { Spring, haptic, easeOutCubic, easeOutBack, clamp01, lerp } from '../core/juice';
@@ -149,51 +152,57 @@ export class Book {
     const cw = 0.178;
     const ch = 0.232;
     const ct = 0.012;
-    const gold = bookPal.trim;
     const parts: { geo: THREE.BufferGeometry; color: number }[] = [];
+    /**
+     * LOCAL: every part is the primitive upstream builds, with its 0..1 UVs
+     * pointed at a region of one pixel-art atlas (`coverTexture.ts`) instead of
+     * carrying a flat vertex colour. Geometry, placement and the merge are
+     * unchanged — this is a texture change.
+     */
+    const skin = (geo: THREE.BufferGeometry, region: CoverRegion) => ({
+      geo: uvRegion(geo, region), color: UNTINTED,
+    });
     for (const side of [1, -1]) {
       const cx = side * (cw / 2 + 0.001);
       // leather board
-      parts.push({ geo: box(cw, ch, ct, cx, 0, -ct / 2 - 0.0005), color: bookPal.leather });
+      parts.push(skin(box(cw, ch, ct, cx, 0, -ct / 2 - 0.0005), 'board'));
       // gold corner caps on the outer corners
       const ox = side * (cw - 0.012);
       for (const sy of [1, -1]) {
-        parts.push({
-          geo: box(0.024, 0.024, ct + 0.002, side * 0.001 + ox, sy * (ch / 2 - 0.012), -ct / 2 - 0.0005),
-          color: gold,
-        });
+        parts.push(skin(
+          box(0.024, 0.024, ct + 0.002, side * 0.001 + ox, sy * (ch / 2 - 0.012), -ct / 2 - 0.0005),
+          'gold',
+        ));
       }
       // gold edge line along the outer edge
-      parts.push({
-        geo: box(0.006, ch - 0.02, ct + 0.001, side * (cw - 0.004), 0, -ct / 2 - 0.0005),
-        color: darken(gold, 0.9),
-      });
+      parts.push(skin(box(0.006, ch - 0.02, ct + 0.001, side * (cw - 0.004), 0, -ct / 2 - 0.0005), 'goldDark'));
       // page stack
       const stackN = 3;
       for (let i = 0; i < stackN; i++) {
         const w = PAGE_W - 0.002 - i * 0.004;
-        parts.push({
-          geo: box(w, PAGE_H - i * 0.006, 0.0038, side * (w / 2 + 0.0015), 0, 0.002 + i * 0.0038),
-          color: i === stackN - 1 ? bookPal.pageFace : bookPal.pageEdge,
-        });
+        parts.push(skin(
+          box(w, PAGE_H - i * 0.006, 0.0038, side * (w / 2 + 0.0015), 0, 0.002 + i * 0.0038),
+          i === stackN - 1 ? 'pageFace' : 'pageEdge',
+        ));
       }
     }
     // spine roll (CylinderGeometry is already y-aligned = along the spine)
-    parts.push({ geo: cyl(0.016, 0.016, ch, 10, 0, 0, -ct / 2), color: bookPal.spine });
+    parts.push(skin(cyl(0.016, 0.016, ch, 10, 0, 0, -ct / 2), 'spine'));
     // spine gold bands
     for (const sy of [0.08, -0.08]) {
-      parts.push({ geo: cyl(0.0175, 0.0175, 0.014, 10, 0, sy, -ct / 2), color: gold });
+      parts.push(skin(cyl(0.0175, 0.0175, 0.014, 10, 0, sy, -ct / 2), 'gold'));
     }
     // bookmark ribbon
-    parts.push({
-      geo: box(0.02, 0.075, 0.0024, 0.012, -ch / 2 - 0.026, -0.002, new THREE.Euler(0, 0, 0.1)),
-      color: bookPal.ribbon,
-    });
+    parts.push(skin(
+      box(0.02, 0.075, 0.0024, 0.012, -ch / 2 - 0.026, -0.002, new THREE.Euler(0, 0, 0.1)),
+      'ribbon',
+    ));
 
     const geo = mergeColored(parts);
     const mat = new THREE.MeshToonMaterial({
       color: 0xffffff,
       vertexColors: true,
+      map: coverAtlas(),
       gradientMap: gradientMap([0.5, 0.78, 1]),
     });
     const mesh = new THREE.Mesh(geo, mat);
@@ -240,10 +249,15 @@ export class Book {
     shape.lineTo(0, h / 2);
     shape.closePath();
     const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.0034, bevelEnabled: false });
+    // LOCAL: the woven-cloth region, which is greyscale so the school tint below
+    // still does the colouring (`coverTexture.ts`).
+    uvRegion(uvNormalise(geo, 0, -h / 2, len, h), 'cloth');
 
     CHAPTERS.forEach((chapter, i) => {
       const color = chapterPal[chapter.school];
-      const mat = new THREE.MeshToonMaterial({ color, gradientMap: gradientMap([0.5, 0.78, 1]) });
+      const mat = new THREE.MeshToonMaterial({
+        color, map: coverAtlas(), gradientMap: gradientMap([0.5, 0.78, 1]),
+      });
       const mesh = new THREE.Mesh(geo, mat);
       const outline = new THREE.Mesh(
         shellGeometry(geo, 0.0016),
@@ -253,8 +267,10 @@ export class Book {
       mesh.add(outline);
       // a paler stitched mid-band so the tabs read as sewn cloth
       const band = new THREE.Mesh(
-        new THREE.BoxGeometry(0.007, h * 0.86, 0.0046),
-        new THREE.MeshToonMaterial({ color: darken(color, 0.72), gradientMap: gradientMap([0.5, 0.78, 1]) })
+        uvRegion(new THREE.BoxGeometry(0.007, h * 0.86, 0.0046), 'cloth'),
+        new THREE.MeshToonMaterial({
+          color: darken(color, 0.72), map: coverAtlas(), gradientMap: gradientMap([0.5, 0.78, 1]),
+        })
       );
       band.position.set(len - 0.022, 0, 0.0017);
       mesh.add(band);

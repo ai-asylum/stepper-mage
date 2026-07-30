@@ -2,10 +2,29 @@
  * The twelve star-tree pictograms, and the three disc shapes they sit in.
  *
  * Its own file because this is ART, not layout: `ui/tree.ts` decides where a node
- * goes and what state it is in, and asks here for the drawing. Every glyph is a
- * Canvas 2D path — no image assets, same as the rest of this game's art — and every
- * one is authored in NORMALISED units so one number (`s`, the icon's half-extent)
- * scales the whole set from a 38px disc to a 52px one without re-tuning anything.
+ * goes and what state it is in, and asks here for the drawing.
+ *
+ * THE MARKS ARE PIXEL ART. Every one is authored through `art/pixel.ts`'s `Pix` on a
+ * fixed 16x16 grid and blitted at an INTEGER device-pixel scale with smoothing off,
+ * the same "draw small, hit big" rule the world follows at 144px per unit. They used
+ * to be bezier paths rendered crisp at device resolution, which put smooth vector
+ * curves on the same screen as a quantised pixel-art dungeon — one decision applied
+ * where it did not belong, since the reason the overlay is crisp is PAGE TEXT and an
+ * icon is not text. The disc, its rim, the gauge arc and the nickname are still
+ * drawn by `tree.ts` as vectors; those are chrome and state, not art.
+ *
+ * Why 16x16. The disc measures ~49px across at 390x844 and ~36px at a 295px stage,
+ * so the mark wants ~1.3x the disc radius: 16px source lands on a 4x blit on the wide
+ * stage and 3x on the narrow one at dpr 2, which keeps the drawn size within 2% of
+ * the same fraction of the disc at both. A smaller grid could not hold six countable
+ * belt loops; a larger one would make the scale step coarser, not finer.
+ *
+ * The mask is authored in WHITE at two alpha levels and colourised on the way into
+ * the cache, so `tree.ts` keeps handing in one CSS colour and the three channels stay
+ * orthogonal — shape is kind, colour is chain, ring geometry is state, and the mark
+ * inside the disc never touches any of them. The second alpha level is the only
+ * shading a monochrome mark can have and still be one hue, which is this game's
+ * ramp discipline applied to a one-colour sprite.
  *
  * Two rules the whole set follows, and both come from Loop Hero's camp being
  * criticised as "a muddy blur" of small similar icons:
@@ -13,8 +32,8 @@
  *  1. **Nothing is distinguished by fine detail alone.** Where two nodes are in the
  *     same chain the difference is a COUNT you can take in at a glance — two
  *     fingers against three, three belt loops against six, one servant against two,
- *     one blessing star against three. Counting survives being drawn at 19px;
- *     texture does not.
+ *     one blessing star against three. A pixel grid makes that rule sharper, not
+ *     looser: at 16px a count is the only detail that survives at all.
  *  2. **Every glyph has a fallback.** `MONOGRAM` is drawn instead below ~16px of
  *     radius, which no supported stage width reaches today but a 240px one would.
  *
@@ -23,8 +42,8 @@
  * persistence only." So the sky is sortable by category before any colour is
  * decoded, which is the channel ESO's constellations were missing.
  */
+import { Pix, TRANSPARENT, rgba, type Col } from '../art/pixel';
 import type { NodeId } from '../meta/tree';
-import { rr } from './hud';
 
 const TAU = Math.PI * 2;
 
@@ -128,252 +147,244 @@ export function shapePath(ctx: CanvasRenderingContext2D, kind: NodeKind, r: numb
   roundPoly(ctx, [[0, -R], [R, 0], [0, R], [-R, 0]], R * 0.26);
 }
 
-// ------------------------------------------------------------------ the glyphs
+// ------------------------------------------------------------------ the marks
+
+/** The grid every mark is authored on. See the file header for why it is 16. */
+const SRC = 16;
 
 /**
- * One pictogram, centred on the origin and bounded by `[-s, s]` on both axes.
- * The caller has already set `fillStyle`, `strokeStyle`, `lineCap` and `lineJoin`.
+ * The two tones. `SOLID` is the mark; `SHADE` is the part of it that is context —
+ * a palm behind its fingers, a strap behind its loops, the slab under the pages.
+ * Alpha rather than a second hue, so the FAMILY colour stays the only colour.
  */
-export type Icon = (ctx: CanvasRenderingContext2D, s: number) => void;
+const SOLID: Col = rgba(255, 255, 255, 255);
+const SHADE: Col = rgba(255, 255, 255, 165);
 
-const line = (
-  ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number,
-): void => {
-  ctx.beginPath();
-  ctx.moveTo(x0, y0);
-  ctx.lineTo(x1, y1);
-  ctx.stroke();
+/**
+ * Every write is `mode: 'set'`, never 'over'.
+ *
+ * The mask is white-on-white and differs only in alpha, so alpha-blending a shade
+ * over a solid would produce the solid again. Painting order, not compositing, is
+ * what layers these marks — and it is what lets a hole be punched through a filled
+ * silhouette, which is how the skull gets its sockets and the golem its core.
+ */
+const SET = { mode: 'set' } as const;
+
+const box = (p: Pix, x: number, y: number, w: number, h: number, c: Col): void => {
+  p.rect(x, y, w, h, c, SET);
 };
 
-/** A four-pointed star, the currency's own mark, used wherever a blessing is. */
-function star4(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number): void {
-  const w = r * 0.30;
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - r);
-  ctx.quadraticCurveTo(cx + w, cy - w, cx + r, cy);
-  ctx.quadraticCurveTo(cx + w, cy + w, cx, cy + r);
-  ctx.quadraticCurveTo(cx - w, cy + w, cx - r, cy);
-  ctx.quadraticCurveTo(cx - w, cy - w, cx, cy - r);
-  ctx.closePath();
-  ctx.fill();
+/** Punch back to transparent — the disc behind shows through. */
+const cut = (p: Pix, x: number, y: number, w: number, h: number): void => {
+  p.rect(x, y, w, h, TRANSPARENT, SET);
+};
+
+/** Spans, as inclusive `[x0, x1]` pairs per row — for a silhouette with no rectangle
+ *  in it, where a row table is easier to read and to correct than nested shapes. */
+type Rows = readonly (readonly [number, readonly [number, number][]])[];
+const rows = (p: Pix, r: Rows, c: Col): void => {
+  for (const [y, spans] of r) for (const [a, b] of spans) box(p, a, y, b - a + 1, 1, c);
+};
+
+/**
+ * A four-pointed sparkle, the currency's own mark, used wherever a blessing is.
+ *
+ * Concave on purpose: `r - |dy|` would draw a diamond, and this set already has a
+ * diamond (the golem's core). The 1.9 exponent is the flattest curve that still
+ * pinches the waist — a linear taper is a diamond and a halved one is a thin plus,
+ * and a plus is a crucifix, which is the wrong word entirely on a screen that also
+ * carries a skull. Below r = 3 there is no sparkle to be had at any exponent, which
+ * is why the three-blessing mark uses r = 3 and not something smaller.
+ */
+function star(p: Pix, cx: number, cy: number, r: number, c: Col): void {
+  for (let dy = -r; dy <= r; dy++) {
+    const t = 1 - Math.abs(dy) / r;
+    const half = dy === 0 ? r : Math.max(0, Math.floor(r * Math.pow(t, 1.9)));
+    box(p, cx - half, cy + dy, half * 2 + 1, 1, c);
+  }
 }
 
+/** One pictogram, drawn into a fresh `SRC x SRC` buffer. */
+type Mark = (p: Pix) => void;
+
 /**
- * A hand of `n`, as a filled palm with `n` round-capped fingers standing off it.
+ * A hand of `n`, as a shaded palm with `n` solid fingers standing off it.
  *
  * The FINGER COUNT is the whole glyph — the palm is only there to make the count
- * read as a hand rather than as tally marks — so the fingers get the thicker line
- * and the middle one is drawn tallest, which is what makes two-versus-three legible
- * at a glance instead of requiring a count.
+ * read as a hand rather than as tally marks — so the fingers get the solid tone and
+ * the tallest one is picked out, which is what makes two-versus-three legible at a
+ * glance instead of requiring a count. Two fingers leave a two-pixel gutter up the
+ * middle of the palm and three fill it, so the pair differs in silhouette and not
+ * only in arithmetic.
  */
-const hand = (n: number): Icon => (ctx, s) => {
-  const lw = Math.max(1.4, s * 0.20);
-  const pw = s * 1.26;
-  // palm
-  rr(ctx, -pw / 2, s * 0.24, pw, s * 0.70, s * 0.24);
-  ctx.fill();
-  // thumb, off the palm's left shoulder — it is what fixes the drawing as a HAND
-  ctx.lineWidth = lw * 0.9;
-  line(ctx, -pw / 2 + lw * 0.2, s * 0.62, -pw / 2 - s * 0.40, s * 0.14);
-  // fingers
-  ctx.lineWidth = lw * 1.25;
-  const gap = (pw * 0.80) / n;
-  for (let i = 0; i < n; i++) {
-    const x = (i - (n - 1) / 2) * gap;
-    const tall = n === 2 ? (i === 0 ? 0.95 : 0.84) : i === 1 ? 0.95 : 0.82;
-    line(ctx, x, s * 0.36, x, -s * tall);
+const hand = (n: number): Mark => (p) => {
+  box(p, 4, 9, 8, 6, SHADE);          // palm
+  cut(p, 4, 14, 1, 1); cut(p, 11, 14, 1, 1);
+  // the thumb, off the palm's left shoulder — it is what fixes the drawing as a HAND
+  box(p, 2, 10, 2, 2, SOLID);
+  box(p, 1, 11, 2, 2, SOLID);
+  const xs = n === 2 ? [5, 9] : [4, 7, 10];
+  const tops = n === 2 ? [2, 4] : [3, 2, 4];
+  xs.forEach((x, i) => box(p, x, tops[i], 2, 10 - tops[i], SOLID));
+};
+
+/**
+ * A strap with loops on it. `straps` lanes of three loops each, so the belt upgrade
+ * is literally 3 loops against 6 rather than a subtly different buckle.
+ *
+ * The strap is shaded and the loops solid, because the loops are what the player is
+ * buying and a same-tone loop crossing a same-tone strap is one blob. The buckle end
+ * gives the strap a direction so it is not read as a ladder.
+ */
+const belt = (straps: number): Mark => (p) => {
+  const lanes = straps === 1
+    ? [{ sy: 6, sh: 4, ly: 3, lh: 10, bh: 8 }]
+    : [{ sy: 3, sh: 3, ly: 1, lh: 7, bh: 7 }, { sy: 11, sh: 3, ly: 9, lh: 7, bh: 7 }];
+  for (const l of lanes) {
+    box(p, 0, l.sy, 16, l.sh, SHADE);
+    for (const x of [6, 9, 12]) box(p, x, l.ly, 2, l.lh, SOLID);
+    // the buckle, as a frame so the strap threads through it
+    const by = l.sy + l.sh / 2 - l.bh / 2;
+    box(p, 0, by, 5, l.bh, SOLID);
+    cut(p, 1, by + 1, 3, l.bh - 2);
+    box(p, 2, by + 1, 1, l.bh - 2, SOLID);   // the pin
   }
 };
 
 /**
- * A strap with loops on it. `rows` straps of three loops each, so the belt
- * upgrade is literally 3 loops against 6 rather than a subtly different buckle.
- */
-const belt = (rows: number): Icon => (ctx, s) => {
-  ctx.lineWidth = Math.max(1.1, s * 0.13);
-  const w = s * 1.90;
-  const ys = rows === 1 ? [0] : [-s * 0.52, s * 0.52];
-  const strapH = rows === 1 ? s * 0.26 : s * 0.22;
-  const loopH = rows === 1 ? s * 0.92 : s * 0.64;
-  for (const y of ys) {
-    rr(ctx, -w / 2, y - strapH / 2, w, strapH, strapH / 2);
-    ctx.stroke();
-    // Three loops, laid out clear of the buckle and clear of each other, and squarer
-    // than the strap so they read as leather rather than as beads. The loops are what
-    // the player is buying, so they have to be COUNTABLE — three against six is the
-    // whole difference between this glyph and the deep belt's.
-    for (let i = 0; i < 3; i++) {
-      const x = -s * 0.14 + i * s * 0.44;
-      rr(ctx, x - s * 0.13, y - loopH / 2, s * 0.26, loopH, s * 0.05);
-      ctx.stroke();
-    }
-    // the buckle end, so a strap has a direction and is not a ladder
-    const bs = strapH * 1.6;
-    rr(ctx, -w / 2, y - bs / 2, bs, bs, s * 0.06);
-    ctx.stroke();
-  }
-};
-
-/**
- * A skull.
+ * A skull, drawn as a filled silhouette with its sockets PUNCHED OUT.
  *
  * This started as a literal coffin and read as a coffee cup at 30px — the silhouette
- * of a coffin is a tapered box, and a tapered box is every other tapered box. A skull
- * has two filled eye sockets, which nothing else in this set has, so it survives
- * being small in a way an outline never does.
+ * of a coffin is a tapered box, and a tapered box is every other tapered box. Two
+ * holes in a filled dome is a mark nothing else in this set has, and a hole survives
+ * being small in a way an outline never does: the sockets are 3x2 source pixels, so
+ * they are 9x6 real ones even on the narrow stage.
  */
-const skull: Icon = (ctx, s) => {
-  ctx.lineWidth = Math.max(1.2, s * 0.14);
-  // cranium
-  rr(ctx, -s * 0.54, -s * 0.78, s * 1.08, s * 0.98, s * 0.46);
-  ctx.stroke();
-  // jaw
-  rr(ctx, -s * 0.30, s * 0.14, s * 0.60, s * 0.50, s * 0.12);
-  ctx.stroke();
-  // the sockets, filled — the mark that makes it a skull and not a helmet
-  for (const x of [-s * 0.24, s * 0.24]) {
-    ctx.beginPath();
-    ctx.arc(x, -s * 0.28, s * 0.155, 0, TAU);
-    ctx.fill();
-  }
-  // nose
-  ctx.beginPath();
-  ctx.moveTo(0, -s * 0.06);
-  ctx.lineTo(s * 0.09, s * 0.08);
-  ctx.lineTo(-s * 0.09, s * 0.08);
-  ctx.closePath();
-  ctx.fill();
-  // two teeth, so the jaw is a jaw
-  ctx.lineWidth = Math.max(1, s * 0.09);
-  for (const x of [-s * 0.10, s * 0.10]) line(ctx, x, s * 0.18, x, s * 0.60);
+const skull: Mark = (p) => {
+  rows(p, [
+    [2, [[5, 10]]], [3, [[4, 11]]],
+    [4, [[3, 12]]], [5, [[3, 12]]], [6, [[3, 12]]], [7, [[3, 12]]], [8, [[3, 12]]],
+    [9, [[4, 11]]],
+    [10, [[5, 10]]], [11, [[5, 10]]], [12, [[6, 9]]],
+  ], SOLID);
+  cut(p, 4, 5, 3, 2); cut(p, 9, 5, 3, 2);   // the sockets
+  cut(p, 7, 8, 2, 1);                        // the nose
+  cut(p, 6, 10, 1, 2); cut(p, 8, 10, 1, 2);  // and the teeth between them
 };
 
-/**
- * A blocky servant. `cx` offsets it so two can stand side by side, `k` scales it
- * so that pair still fits the same box.
- */
-function figure(ctx: CanvasRenderingContext2D, s: number, cx: number, k: number): void {
-  const u = s * k;
-  rr(ctx, cx - u * 0.25, -u * 0.92, u * 0.50, u * 0.44, u * 0.12);
-  ctx.stroke();
-  rr(ctx, cx - u * 0.34, -u * 0.36, u * 0.68, u * 0.74, u * 0.14);
-  ctx.stroke();
-  line(ctx, cx - u * 0.36, -u * 0.22, cx - u * 0.66, u * 0.22);
-  line(ctx, cx + u * 0.36, -u * 0.22, cx + u * 0.66, u * 0.22);
-  line(ctx, cx - u * 0.17, u * 0.40, cx - u * 0.22, u * 0.92);
-  line(ctx, cx + u * 0.17, u * 0.40, cx + u * 0.22, u * 0.92);
+/** The blocky servant every persistence mark is built from. */
+function figure(p: Pix, c: Col): void {
+  box(p, 6, 1, 4, 3, c);      // head
+  box(p, 7, 4, 2, 1, SHADE);  // neck
+  box(p, 4, 5, 8, 7, c);      // body
+  box(p, 2, 6, 2, 5, c); box(p, 12, 6, 2, 5, c);   // arms
+  box(p, 5, 12, 2, 3, c); box(p, 9, 12, 2, 3, c);  // legs
 }
 
 /** One servant, with the binding across its chest. */
-const servant: Icon = (ctx, s) => {
-  ctx.lineWidth = Math.max(1.2, s * 0.13);
-  figure(ctx, s, 0, 1);
-  // the binding: a band across the chest with two links on it, kept INSIDE the
-  // body so it cannot be misread as a pair of folded arms
-  ctx.lineWidth = Math.max(1, s * 0.10);
-  line(ctx, -s * 0.34, s * 0.02, s * 0.34, s * 0.02);
-  for (const x of [-s * 0.15, s * 0.15]) {
-    ctx.beginPath();
-    ctx.arc(x, s * 0.02, s * 0.09, 0, TAU);
-    ctx.stroke();
-  }
-};
-
-/** A servant with something burning in it that does not go out. */
-const infusion: Icon = (ctx, s) => {
-  ctx.lineWidth = Math.max(1.2, s * 0.13);
-  figure(ctx, s, 0, 1);
-  // the core, filled — the only solid mark in the golem set
-  const c = s * 0.24;
-  ctx.beginPath();
-  ctx.moveTo(0, -c);
-  ctx.lineTo(c * 0.78, 0);
-  ctx.lineTo(0, c);
-  ctx.lineTo(-c * 0.78, 0);
-  ctx.closePath();
-  ctx.fill();
-  // and its rays
-  ctx.lineWidth = Math.max(1, s * 0.09);
-  for (let i = 0; i < 4; i++) {
-    const a = Math.PI / 4 + (i * Math.PI) / 2;
-    const dx = Math.cos(a), dy = Math.sin(a);
-    line(ctx, dx * s * 0.30, dy * s * 0.30, dx * s * 0.52, dy * s * 0.52);
-  }
-};
-
-/** Two servants: the near one solid-lined, the far one behind and thinner. */
-const servants2: Icon = (ctx, s) => {
-  ctx.lineWidth = Math.max(1, s * 0.10);
-  ctx.globalAlpha *= 0.62;
-  figure(ctx, s, s * 0.40, 0.80);
-  ctx.globalAlpha /= 0.62;
-  ctx.lineWidth = Math.max(1.2, s * 0.13);
-  figure(ctx, s, -s * 0.26, 0.86);
+const servant: Mark = (p) => {
+  figure(p, SOLID);
+  // The binding: a band across the chest with two links picked out of it, kept
+  // INSIDE the body so it cannot be misread as a pair of folded arms.
+  box(p, 4, 7, 8, 2, SHADE);
+  box(p, 6, 7, 1, 2, SOLID); box(p, 9, 7, 1, 2, SOLID);
 };
 
 /**
- * An altar slab with three pages standing on it, fanned.
+ * A servant with something burning in it that does not go out.
  *
- * The pages are rotated about the point where they MEET THE SLAB, which is what
- * makes it read as a fan of offers rather than as a crown — an earlier version
- * rotated them about their centres and the result was a five-point coronet.
+ * The core is a diamond HOLE with a lit block inside it, which is the only isolated
+ * island in the whole set — nothing else reads as a thing sitting in a socket.
  */
-const altar: Icon = (ctx, s) => {
-  // the slab, solid: it is the ground the offers stand on
-  rr(ctx, -s * 0.86, s * 0.42, s * 1.72, s * 0.28, s * 0.07);
-  ctx.fill();
-  ctx.lineWidth = Math.max(1, s * 0.11);
-  // Wide enough to be pages. Narrower and they read as candles, which is the wrong
-  // altar entirely — this node widens the POOL OF PAGES an altar offers from.
-  for (const [dx, a] of [[-0.32, -0.30], [0, 0], [0.32, 0.30]] as const) {
-    ctx.save();
-    ctx.translate(s * dx, s * 0.40);
-    ctx.rotate(a);
-    rr(ctx, -s * 0.18, -s * 1.18, s * 0.36, s * 1.18, s * 0.04);
-    ctx.stroke();
-    ctx.restore();
-  }
+const infusion: Mark = (p) => {
+  figure(p, SOLID);
+  rows(p, [[6, [[7, 8]]], [7, [[6, 9]]], [8, [[5, 10]]], [9, [[6, 9]]], [10, [[7, 8]]]],
+    TRANSPARENT);
+  box(p, 7, 7, 2, 2, SOLID);
 };
 
 /**
- * The dungeon mouth, with the blessings you are offered in it. `n` stars, so one
- * blessing and three read apart by counting.
+ * Two servants, the second standing behind in the shaded tone. TWO HEADS is the
+ * whole difference from `servant`, and it is a count, not a detail.
  */
-const mouth = (n: number): Icon => (ctx, s) => {
-  ctx.lineWidth = Math.max(1.2, s * 0.14);
-  const half = n === 1 ? s * 0.52 : s * 0.70;
-  ctx.beginPath();
-  ctx.moveTo(-half, s * 0.94);
-  ctx.lineTo(-half, -s * 0.16);
-  ctx.arc(0, -s * 0.16, half, Math.PI, 0);
-  ctx.lineTo(half, s * 0.94);
-  ctx.stroke();
-  // the threshold, so the arch is a doorway and not a horseshoe
-  line(ctx, -half - s * 0.16, s * 0.94, half + s * 0.16, s * 0.94);
-  if (n === 1) star4(ctx, 0, -s * 0.14, s * 0.34);
-  else {
-    star4(ctx, 0, -s * 0.34, s * 0.24);
-    star4(ctx, -s * 0.36, s * 0.20, s * 0.21);
-    star4(ctx, s * 0.36, s * 0.20, s * 0.21);
-  }
+const servants2: Mark = (p) => {
+  // behind, and half a step back so the pair does not read as one wide figure
+  box(p, 10, 2, 3, 2, SHADE);
+  box(p, 9, 5, 5, 5, SHADE);
+  box(p, 8, 6, 1, 3, SHADE); box(p, 14, 6, 1, 3, SHADE);
+  box(p, 9, 10, 2, 3, SHADE); box(p, 12, 10, 2, 3, SHADE);
+  // in front
+  box(p, 2, 3, 3, 2, SOLID);
+  box(p, 1, 6, 5, 5, SOLID);
+  box(p, 0, 7, 1, 3, SOLID); box(p, 6, 7, 1, 3, SOLID);
+  box(p, 1, 11, 2, 3, SOLID); box(p, 4, 11, 2, 3, SOLID);
 };
 
-/** The starting book, bound with four bands — the fourth one picked out. */
-const binding: Icon = (ctx, s) => {
-  ctx.lineWidth = Math.max(1.2, s * 0.13);
-  rr(ctx, -s * 0.56, -s * 0.88, s * 1.12, s * 1.76, s * 0.12);
-  ctx.stroke();
-  // the spine
-  line(ctx, -s * 0.24, -s * 0.88, -s * 0.24, s * 0.88);
-  ctx.lineWidth = Math.max(1, s * 0.11);
-  const ys = [-s * 0.54, -s * 0.18, s * 0.18, s * 0.54];
-  ys.forEach((y, i) => {
-    // The fourth band is the one this node buys, so it is the solid one and the
-    // other three are the book you already have.
-    if (i === 3) {
-      ctx.fillRect(-s * 0.58, y - s * 0.09, s * 0.42, s * 0.18);
-    } else line(ctx, -s * 0.56, y, -s * 0.18, y);
-  });
+/**
+ * A slab with three pages FANNED across it, offset up and to the right.
+ *
+ * Third attempt, and the two failures are worth keeping written down because both
+ * were the same mistake — building the mark out of three separate uprights:
+ *
+ *  - Three bars rooted in a slab with their tops splayed outward is a CROWN, which is
+ *    what the vector version was accused of and what the first pixel version
+ *    reproduced. Anchoring them at the slab does not help; the air between them is
+ *    the coronet.
+ *  - Overlapping them and clipping their corners removed the crown and produced a
+ *    SUITCASE: three lidded boxes sharing a base plate is a case with a handle.
+ *
+ * What works is one offset direction. A stepped fan is the motif every card game
+ * uses for "a hand of several", the front page is drawn whole and the two behind show
+ * three pixels of edge each, and no arrangement of a briefcase is diagonal. Ruled
+ * lines on the front page, because this node widens the POOL OF PAGES an altar offers
+ * from and the thing being counted has to look like something with writing on it.
+ */
+const altar: Mark = (p) => {
+  const page = (x: number, y: number): void => {
+    box(p, x, y, 8, 9, SHADE);
+    p.frame(x, y, 8, 9, SOLID, SET);
+  };
+  page(7, 1); page(4, 3); page(1, 5);
+  box(p, 2, 8, 6, 1, SOLID); box(p, 2, 10, 6, 1, SOLID);
+  box(p, 0, 14, 16, 2, SOLID);   // the slab, solid: it is what the offers lie on
+};
+
+/**
+ * The blessings you are offered at the dungeon mouth: `n` sparkles over a threshold.
+ *
+ * NO CONTAINER, and that is the whole finding. The vector version drew an arch with
+ * the stars inside it, and quantised, an arch over a plinth is a GRAVESTONE — with a
+ * skull two nodes away, the sky was telling the same lie in two colours. Rebuilding
+ * the arch as a flat-lintel gateway killed the gravestone and produced a framed plus
+ * sign instead, because the walls left a ten-pixel opening and a sparkle needs
+ * thirteen before its waist pinches. There is no room for both a frame and a star at
+ * 16px, so the frame lost: the disc is already a container, and the two-pixel
+ * threshold is all the dungeon mouth this mark needs to stand on.
+ *
+ * One thirteen-pixel sparkle against three seven-pixel ones. Both the count and the
+ * size carry the pair, so it reads before it is counted.
+ */
+const mouth = (n: number): Mark => (p) => {
+  box(p, 0, 14, 16, 2, SHADE);   // the threshold you cross to be offered them
+  if (n === 1) { star(p, 7, 7, 6, SOLID); return; }
+  star(p, 7, 3, 3, SOLID);
+  star(p, 3, 10, 3, SOLID);
+  star(p, 11, 10, 3, SOLID);
+};
+
+/**
+ * The starting book, bound with four bands — the fourth one picked out.
+ *
+ * The bands run PAST the cover's edge, so they are hardware on the spine rather than
+ * lines ruled on the front, and the fourth is twice as thick because it is the one
+ * this node buys. Four countable bands, and the count is the mark.
+ */
+const binding: Mark = (p) => {
+  box(p, 4, 1, 9, 14, SHADE);
+  p.frame(4, 1, 9, 14, SOLID, SET);
+  box(p, 6, 2, 1, 12, SOLID);                      // the spine
+  for (const y of [3, 6, 9]) box(p, 2, y, 7, 1, SOLID);
+  box(p, 2, 11, 8, 2, SOLID);                      // the fourth
 };
 
 /**
@@ -381,7 +392,7 @@ const binding: Icon = (ctx, s) => {
  * only ever as good as its worst icon, and a missing one would silently fall back
  * to a monogram nobody reviewed.
  */
-export const ICON: Readonly<Record<NodeId, Icon>> = {
+const MARK: Readonly<Record<NodeId, Mark>> = {
   hand2: hand(2),
   hand3: hand(3),
   belt3: belt(1),
@@ -396,31 +407,103 @@ export const ICON: Readonly<Record<NodeId, Icon>> = {
   slots4: binding,
 };
 
+// ------------------------------------------------------------------- the cache
+
+/**
+ * Rasterised marks, keyed by node and CSS colour.
+ *
+ * Twelve `Pix` renders a frame would be absurd — this screen redraws every frame for
+ * the breath and the route spark. The mask is built once per node and the colourised
+ * copy once per (node, colour); `tree.ts` picks its colour from twelve families times
+ * four states, so the map tops out at 48 sixteen-pixel canvases and then never grows.
+ */
+const MASKS = new Map<NodeId, HTMLCanvasElement>();
+const TINTED = new Map<string, HTMLCanvasElement>();
+
+function mask(id: NodeId): HTMLCanvasElement {
+  let cv = MASKS.get(id);
+  if (!cv) {
+    const p = new Pix(SRC, SRC);
+    MARK[id](p);
+    cv = p.toCanvas();
+    MASKS.set(id, cv);
+  }
+  return cv;
+}
+
+/**
+ * The mark in `colour`, alpha included.
+ *
+ * `source-in` multiplies the fill's alpha by the mask's, which is exactly what the
+ * two-tone mask wants: a shaded pixel stays proportionally shaded at every state's
+ * opacity, so a locked node's palm does not go opaque while its fingers fade.
+ */
+function tinted(id: NodeId, colour: string): HTMLCanvasElement {
+  const key = `${id}|${colour}`;
+  let cv = TINTED.get(key);
+  if (!cv) {
+    cv = document.createElement('canvas');
+    cv.width = SRC; cv.height = SRC;
+    const c = cv.getContext('2d')!;
+    c.drawImage(mask(id), 0, 0);
+    c.globalCompositeOperation = 'source-in';
+    c.fillStyle = colour;
+    c.fillRect(0, 0, SRC, SRC);
+    TINTED.set(key, cv);
+  }
+  return cv;
+}
+
+/**
+ * How much of the disc the mark covers, as a multiple of the disc RADIUS.
+ *
+ * 1.3 rather than the 1.2 the vector set used, because a pixel mark has no
+ * antialiased taper to soften its edge and reads slightly smaller than its bounding
+ * box. Still inside the diamond's inscribed square (0.85r half-extent at a 1.2r
+ * circumradius), so the persistence chain does not clip.
+ */
+const SPAN = 1.3;
+
+/** Below this radius a drawing is worse than a word. */
+const MIN_R = 16;
+
 /**
  * Draw node `id`'s pictogram at `(cx, cy)`, sized to a disc of radius `r`.
  *
- * Below `r = 16` the glyph is replaced by its monogram — a bad drawing is worse
- * than a word, and at that size every one of these becomes a smudge. No stage the
- * engine's aspect clamp can produce gets there today.
+ * The blit deliberately drops out of the canvas transform and works in DEVICE
+ * pixels: the source is placed on a whole-pixel origin at a whole-number scale, so
+ * every source pixel becomes an exact k-by-k block whatever the stage width or the
+ * device ratio. Drawing it through the dpr transform instead would land the mark on
+ * a fractional boundary and the browser would blend the edges — which is the vector
+ * softness this whole pass exists to remove. `globalAlpha` is part of the context
+ * state and survives, so `tree.ts`'s route dimming still applies.
+ *
+ * Below `r = 16` the mark is replaced by its monogram — at that size every one of
+ * these becomes a smudge, and no stage the engine's aspect clamp can produce gets
+ * there today.
  */
 export function drawIcon(
   ctx: CanvasRenderingContext2D, id: NodeId, cx: number, cy: number, r: number, colour: string,
 ): void {
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.fillStyle = colour;
-  ctx.strokeStyle = colour;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  if (r < 16) {
+  if (r < MIN_R) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.fillStyle = colour;
     ctx.font = `bold ${Math.round(r * 0.92)}px ui-monospace, monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(MONOGRAM[id], 0, r * 0.06);
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-  } else {
-    ICON[id](ctx, r * 0.60);
+    ctx.restore();
+    return;
   }
+  const m = ctx.getTransform();
+  const k = Math.max(1, Math.round((r * SPAN * (m.a || 1)) / SRC));
+  const size = SRC * k;
+  const dx = Math.round(m.a * cx + m.c * cy + m.e - size / 2);
+  const dy = Math.round(m.b * cx + m.d * cy + m.f - size / 2);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(tinted(id, colour), dx, dy, size, size);
   ctx.restore();
 }

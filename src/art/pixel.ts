@@ -5,8 +5,11 @@
  * Design rules (docs/ARTSTYLE.md):
  *  - Authored, not random. Noise is a *detail pass* over deliberate shapes,
  *    never the shape itself. Silhouette first, shading second, detail last.
- *  - Ramps, not gradients. Every surface picks from a 4-6 step `Ramp`; blends
- *    between steps are ordered dithers, so the result stays quantised.
+ *  - Ramps, not gradients. Every surface picks from a 4-6 step `Ramp`, and a
+ *    FALLOFF between two steps is an ordered dither so the result stays
+ *    quantised. A flat tone is not a falloff: it lands on a step and is written
+ *    solid (`levelIndex`), because dithering one flips every other texel across
+ *    the whole surface, which is a checkerboard and not a material.
  *  - Everything gets an outline. A sprite without a dark keyline dissolves
  *    against a torch-lit wall.
  *
@@ -141,6 +144,104 @@ const BAYER8 = (() => {
 
 export function bayer(x: number, y: number, fine = false): number {
   return fine ? BAYER8[(y & 7) * 8 + (x & 7)] : BAYER4[(y & 3) * 4 + (x & 3)];
+}
+
+// ------------------------------------------------------------- quantising
+
+/**
+ * How far the jitter may move a level, in ramp steps. Under half a step, so it
+ * can never carry a value past the pair of steps it belongs between.
+ */
+const JITTER_STEPS = 0.42;
+
+/**
+ * A deterministic per-texel jitter in [-0.5, 0.5).
+ *
+ * Hashed from the coordinate and a seed rather than drawn from an Rng, because
+ * every texture is built at boot and has to come out byte-identical on every
+ * run — a screenshot comparison between two builds is worthless otherwise.
+ */
+export function jitter(x: number, y: number, seed = 0): number {
+  let h = (Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul(y | 0, 0x85ebca6b) ^ Math.imul(seed | 0, 0x165667b1)) | 0;
+  h = Math.imul(h ^ (h >>> 15), 0x2545f491);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0x27d4eb2d);
+  h ^= h >>> 16;
+  return ((h >>> 0) % 4096) / 4096 - 0.5;
+}
+
+/**
+ * One brightness level, in RAMP STEPS, resolved to a ramp index.
+ *
+ * ORDERED DITHER IS A GRADIENT TECHNIQUE. A flat tone that lands between two
+ * steps flips every other texel across the whole surface, which is a
+ * checkerboard, not a material — and at 144 texels per world unit, magnified by
+ * the low-res target and then again by the nearest upscale, it is a block grid
+ * on the screen. So dithering is a LICENCE that a falloff has to hold:
+ *
+ *  - `soft` 0 — the field is flat here. The level snaps to its nearest step and
+ *    is written solid, with no threshold compare at all.
+ *  - `soft` 1 — a real falloff. Full ordered dither, over the value plus a
+ *    seeded jitter, because a gradient shallow enough to sit at half a step
+ *    across a whole region re-aligns the Bayer matrix into that same grid.
+ *  - in between the threshold slides from a hard round toward the Bayer value,
+ *    so the dither appears only as a band either side of each step boundary and
+ *    widens with the licence. There is no cliff between flat and not-flat.
+ */
+export function levelIndex(
+  v: number, x: number, y: number, soft: number, steps: number,
+  fine = false, seed = 0,
+): number {
+  const c = v < 0 ? 0 : v > steps ? steps : v;
+  const w = soft < 0 ? 0 : soft > 1 ? 1 : soft;
+  if (w <= 0) return Math.round(c);
+  const j = c + jitter(x, y, seed) * JITTER_STEPS * w;
+  const lo = Math.floor(j);
+  // w scales the threshold about 0.5: at w=0 this is exactly Math.round(j)
+  const thr = 0.5 + w * (bayer(x, y, fine) - 0.5);
+  const idx = j - lo > thr ? lo + 1 : lo;
+  return idx < 0 ? 0 : idx > steps ? steps : idx;
+}
+
+/**
+ * Quantise a float LEVEL FIELD (in ramp steps) into a Pix.
+ *
+ * `soft` is the per-texel dither licence, written by whichever authoring pass
+ * knows it is drawing a falloff — an AO edge, baked light, a vignette. Passing
+ * `null` declares the whole field flat, which is the right answer for a field
+ * built out of authored shapes and noise: those want to land on a step and stay
+ * there. `src/art/tiles.ts` and `src/book/pageTexture.ts` both resolve here, so
+ * the world and the book cannot drift apart on this.
+ */
+export function resolveLevels(
+  lvl: Float32Array, soft: Float32Array | null, w: number, h: number, ramp: Ramp,
+  opts?: { fine?: boolean; seed?: number },
+): Pix {
+  const p = new Pix(w, h);
+  const steps = ramp.length - 1;
+  const fine = opts?.fine ?? true;
+  const seed = opts?.seed ?? 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      p.set(x, y, ramp.at(levelIndex(lvl[i], x, y, soft ? soft[i] : 0, steps, fine, seed)), { mode: 'set' });
+    }
+  }
+  return p;
+}
+
+/**
+ * The dither licence a ramp of `span` steps spread over `px` texels earns.
+ *
+ * A dither can only stand in for a gradient if the field crosses a step
+ * boundary inside one Bayer tile; a slower ramp than that repeats the tile
+ * coherently, which is the grid. So the licence is the slope measured against
+ * the matrix's own period, and a flat run (span 0) earns nothing.
+ */
+export function slopeSoft(span: number, px: number, fine = false): number {
+  if (px <= 1) return 0;
+  const perTexel = Math.abs(span) / (px - 1);
+  return Math.min(1, perTexel * (fine ? 8 : 4));
 }
 
 export interface DrawOpts {
@@ -331,14 +432,14 @@ export class Pix {
    * rather than a smooth gradient.
    */
   rampV(x: number, y: number, w: number, h: number, ramp: Ramp, t0 = 0, t1 = 1, fine = false): this {
+    const steps = ramp.length - 1;
+    // The gradient is known in closed form here, so the licence is too: a run
+    // with t0 === t1 is flat and snaps.
+    const soft = slopeSoft((t1 - t0) * steps, h, fine);
     for (let j = 0; j < h; j++) {
       const t = h <= 1 ? t0 : t0 + (t1 - t0) * (j / (h - 1));
       for (let i = 0; i < w; i++) {
-        const lvl = t * (ramp.length - 1);
-        const lo = Math.floor(lvl);
-        const frac = lvl - lo;
-        const idx = frac > bayer(x + i, y + j, fine) ? lo + 1 : lo;
-        this.set(x + i, y + j, ramp.at(idx));
+        this.set(x + i, y + j, ramp.at(levelIndex(t * steps, x + i, y + j, soft, steps, fine)));
       }
     }
     return this;
@@ -346,13 +447,12 @@ export class Pix {
 
   /** Same, horizontally — for lit/shadowed wall sides. */
   rampH(x: number, y: number, w: number, h: number, ramp: Ramp, t0 = 0, t1 = 1, fine = false): this {
+    const steps = ramp.length - 1;
+    const soft = slopeSoft((t1 - t0) * steps, w, fine);
     for (let i = 0; i < w; i++) {
       const t = w <= 1 ? t0 : t0 + (t1 - t0) * (i / (w - 1));
       for (let j = 0; j < h; j++) {
-        const lvl = t * (ramp.length - 1);
-        const lo = Math.floor(lvl);
-        const idx = lvl - lo > bayer(x + i, y + j, fine) ? lo + 1 : lo;
-        this.set(x + i, y + j, ramp.at(idx));
+        this.set(x + i, y + j, ramp.at(levelIndex(t * steps, x + i, y + j, soft, steps, fine)));
       }
     }
     return this;
@@ -373,10 +473,11 @@ export class Pix {
         const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / radius;
         if (d >= 1) continue;
         let f = (1 - d) * (1 - d) * strength;
-        // quantise + dither the band edges
-        const lvl = f * bands;
-        const lo = Math.floor(lvl);
-        f = (lvl - lo > bayer(x, y) ? lo + 1 : lo) / bands;
+        // Quantise into bands. The falloff's slope is known in closed form, so
+        // the band edges dither and the slack outer ring — where the falloff has
+        // gone flat — snaps instead of speckling.
+        const slope = (2 * (1 - d) * strength * bands) / radius;
+        f = levelIndex(f * bands, x, y, Math.min(1, slope * 4), bands) / bands;
         if (f <= 0) continue;
         this.set(x, y, rgba(r, g, b, Math.min(255, Math.round(255 * f))), { mode: 'add' });
       }

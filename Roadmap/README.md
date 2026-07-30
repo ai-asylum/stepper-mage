@@ -15,7 +15,7 @@ Status values: `planned` · `in progress` · `shipped` · `paused`. Only one pha
 | 4 | [Star_Tree](Star_Tree.md) | yes | shipped |
 | 5 | [Ingredient_Belt](Ingredient_Belt.md) | yes | shipped, flagged off |
 | 6 | [Casting_And_Movement](Casting_And_Movement.md) | yes | shipped |
-| 7 | [Pixel_Art_Overlay](Pixel_Art_Overlay.md) | yes | planned |
+| 7 | [Pixel_Art_Overlay](Pixel_Art_Overlay.md) | yes | shipped |
 | 8 | [Enemy_Identity](Enemy_Identity.md) | yes | planned |
 | 9 | [Corpse_Raising_And_Golem_Persistence](Corpse_Raising_And_Golem_Persistence.md) | yes | paused |
 | 10 | [Guidance_And_Blessings](Guidance_And_Blessings.md) | yes | planned |
