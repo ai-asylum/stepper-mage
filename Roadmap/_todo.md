@@ -146,6 +146,8 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Fix golems stalling instead of following.
 - [ ] Break the monochrome orange cast; make each floor read as its own palette.
 - [ ] Add a chest golem sprite and let Animate target chests.
-- [ ] Untangle the HUD text layer: log lines, captions and name plates overdraw each other.
-- [ ] Give the sixth belt loop and the fourth loadout slot something they can hold.
+- [ ] Untangle the HUD text layer: log lines, captions, name plates and cards overdraw each other.
+- [ ] Re-check free-turn attrition; the turn rule change may already have dissolved it.
+- [ ] Stop the resting reticle preferring furniture over the creature in the room.
+- [ ] Give the sixth belt loop and the fourth loadout slot something to hold, or remove them.
 - [ ] Commit changes.
