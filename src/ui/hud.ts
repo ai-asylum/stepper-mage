@@ -99,7 +99,6 @@ export type UiAction =
   | { kind: 'clear' }
   | { kind: 'target'; entity: Entity }
   | { kind: 'cycle' }
-  | { kind: 'bookToggle' }
   | { kind: 'offer'; offer: AltarOffer }
   /** Spend a banked charge to re-roll the open altar's three offers. */
   | { kind: 'reroll' }
@@ -207,6 +206,14 @@ const LAP = 5;
 const PULSE_S = 1.9;
 const SAID_S = 3.2;
 
+/**
+ * Depth as a numeral. Spelled out rather than repeated: `'I'.repeat(depth)` printed
+ * DEPTH IIII on floor 4, which is not how the game names its floors anywhere else
+ * (`Roadmap/Casting_And_Movement.md` writes DEPTH IV) and was survivable only while
+ * the label faded after a second and a half.
+ */
+const ROMAN = ['I', 'II', 'III', 'IV', 'V'];
+
 /** Rounded rect path helper — the UI's one shape. */
 export function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   ctx.beginPath();
@@ -233,8 +240,24 @@ export class Hud {
   private hits: { rect: [number, number, number, number]; action: UiAction }[] = [];
   private hurtFlash = 0;
   private descendReady = false;
-  /** Mirrors Book.closed so the toggle can draw the right affordance. */
+  /**
+   * Mirrors `Book.closed`, for LAYOUT only — everything in the bottom band is placed
+   * against the book's edge and there is no edge when there is no book.
+   *
+   * It is a mirror and never a source: the answer is derived in `bookOnScreen`
+   * (`main.ts`) and written here in the same breath it is written to the book. The
+   * control that used to toggle it is gone, on purpose — see `Roadmap/Casting_And_Movement.md`.
+   */
   bookClosed = false;
+
+  /**
+   * This floor's name, beside the depth in the top-left.
+   *
+   * Permanent, because the two places it used to be said — a shout across the middle
+   * of the screen and a log line — both faded, and then nothing on screen answered
+   * "where am I" at all.
+   */
+  floorName = '';
 
   /** The three offers an altar is presenting, or null when none is open. */
   offers: AltarOffer[] | null = null;
@@ -284,16 +307,11 @@ export class Hud {
   harvestInReach: Entity | null = null;
 
   /**
-   * Turns the hand currently held has cost. A readout, not a control: the price
-   * of a fusion is paid before you press CAST, so it has to be visible NEXT to
-   * CAST or the player never connects the two.
-   */
-  assemblyTurns = 0;
-
-  /**
    * The fusion ceiling and what is held against it, set by the game each frame.
-   * A readout for the same reason: the cost of everything is priced per component,
-   * so how many components you may hold is the first thing the player has to know.
+   *
+   * The one readout in this band that the rebase made MORE important, not less: a
+   * cast costs one turn whatever it holds, so how many components you may hold is
+   * exactly how much a turn is worth to you.
    */
   handSize = 1;
   handHeld = 0;
@@ -430,15 +448,25 @@ export class Hud {
     if (this.runEnd) { this.drawRunEnd(ctx, W, H); return; }
     this.drawShout(ctx, W, H);
 
-    // The grimoire occupies roughly the bottom third of the screen.
-    this.bookTop = this.bookClosed || this.measuredBookTop === null
-      ? Math.round(H * 0.90)
-      : Math.round(this.measuredBookTop);
+    /**
+     * The top of whatever is covering the bottom of the screen — the grimoire's own
+     * measured edge, and when the book is away the thing that replaced it.
+     *
+     * The large CAST is that thing (see `drawBigCast`), so it becomes the anchor the
+     * rest of the band lays out above, exactly as the cover was. Without that the band
+     * dropped to 0.90H the instant the book left and the cycle-target button landed on
+     * top of the button that had taken the book's place.
+     */
+    this.bookTop = !this.bookClosed && this.measuredBookTop !== null
+      ? Math.round(this.measuredBookTop)
+      : this.handFull() ? Math.round(H * 0.80)
+      : Math.round(H * 0.90);
     this.drawBelt(ctx, W);
     // Before the CAST bar, so that where a card's box and the bar's touch, CAST wins:
     // `hit` scans backwards, so whatever is pushed last is on top.
     this.drawFanCards(ctx, W);
     this.drawCastBar(ctx, W);
+    this.drawBigCast(ctx, W);
     this.drawLog(ctx, W);
     this.drawVitals(ctx, W);
     this.drawHand(ctx);
@@ -447,7 +475,6 @@ export class Hud {
     this.drawSealedNote(ctx, W);
     this.drawHarvest(ctx, W);
     this.drawAltarPrompt(ctx, W);
-    this.drawBookToggle(ctx, W, H);
     if (this.candidates.length > 1) this.drawCycle(ctx, W);
     if (this.descendReady) this.drawDescend(ctx, W);
     if (this.offers) this.drawOffers(ctx, W, H);
@@ -667,22 +694,34 @@ export class Hud {
   private drawTopBar(ctx: CanvasRenderingContext2D, W: number): void {
     ctx.font = '9px ui-monospace, monospace';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = 'rgba(232,217,176,0.55)';
-    ctx.fillText(`DEPTH ${'I'.repeat(Math.min(5, this.state.depth))}`, 12, 12);
+    /**
+     * Outlined, because this row sits straight on the world and the world is not a
+     * background: a lit wall at close range is nearly white, and the floor name at
+     * 0.55 parchment simply vanished into it. The same trick the damage floaters use.
+     */
+    const ink = (text: string, x: number, y: number, fill: string) => {
+      ctx.lineWidth = 2.6;
+      ctx.strokeStyle = 'rgba(8,5,10,0.72)';
+      ctx.strokeText(text, x, y);
+      ctx.fillStyle = fill;
+      ctx.fillText(text, x, y);
+    };
+    // Depth AND the floor's name, permanently. A name that only ever appeared as a
+    // fading shout is a name you cannot go back and read.
+    const depth = `DEPTH ${ROMAN[Math.min(ROMAN.length, Math.max(1, this.state.depth)) - 1]}`;
+    ink(this.floorName ? `${depth} — ${this.floorName}` : depth, 12, 12,
+      'rgba(240,228,196,0.82)');
 
     ctx.textAlign = 'right';
-    ctx.fillStyle = GOLD;
     // Run total plus the bank. Showing only the run made banked stars look lost.
     const total = this.bankedStars + this.state.stars;
-    ctx.fillText(`✦ ${total}`, W - 12, 12);
+    ink(`✦ ${total}`, W - 12, 12, GOLD);
     if (this.state.stars > 0) {
       ctx.font = '8px ui-monospace, monospace';
-      ctx.fillStyle = 'rgba(255,207,92,0.6)';
-      ctx.fillText(`+${this.state.stars} this run`, W - 12, 23);
+      ink(`+${this.state.stars} this run`, W - 12, 23, 'rgba(255,207,92,0.7)');
       ctx.font = '9px ui-monospace, monospace';
     }
     ctx.textAlign = 'left';
-    void 0;
   }
 
   /**
@@ -831,11 +870,30 @@ export class Hud {
   }
 
   /**
+   * Is every hand slot full?
+   *
+   * The one condition behind three things that must never disagree: the grimoire
+   * slides away (`bookOnScreen` in `main.ts` asks the same question of the same two
+   * numbers), the small CAST pill stands down, and the large one takes the book's
+   * place. An empty hand is not full at any ceiling, which is what keeps "no CAST
+   * with nothing to cast" separate from "one CAST or the other".
+   */
+  private handFull(): boolean {
+    return this.handHeld > 0 && this.handHeld >= Math.max(this.handSize, 1);
+  }
+
+  /**
    * The resolved fusion name, with CAST. The torn pages themselves are
    * real 3D objects fanned above the book, so this bar only has to name the
    * result — which is the one thing you cannot read off the pages.
+   *
+   * The SMALL one, for a hand that is not yet full — at hand size 3 a player may want
+   * to release one page, and this is what lets them. Stands down the moment the hand
+   * fills, because then `drawBigCast` is on screen and two CAST buttons is worse than
+   * either.
    */
   private drawCastBar(ctx: CanvasRenderingContext2D, W: number): void {
+    if (this.handFull()) return;
     const cast = this.currentCast();
     if (!cast) return;
     const ok = !cast.refusal;
@@ -875,28 +933,85 @@ export class Hud {
     ctx.fillText(label, W / 2, by + 16.5);
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     if (ok) this.hits.push({ rect: [bx, by, tw, 32], action: { kind: 'cast' } });
+  }
 
-    // What this hand cost. Its own pill, in the gap between the CAST bar and the log's
-    // newest line — the log grows upward from above it now, so this row is the one
-    // thing in the band that never moves.
-    // Left-aligned rather than right, which is where the cycle-target button lives
-    // once there is more than one thing to shoot at.
-    if (this.assemblyTurns > 0) {
-      const cost = `${this.assemblyTurns} turn${this.assemblyTurns > 1 ? 's' : ''} spent`;
-      ctx.font = '9px ui-monospace, monospace';
-      const pw = ctx.measureText(cost).width + 16;
-      const py = by - 26;
-      rr(ctx, bx, py, pw, 16, 8);
-      ctx.fillStyle = 'rgba(14,9,16,0.82)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,207,92,0.45)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = GOLD;
-      ctx.fillText(cost, bx + 8, py + 8.5);
-      ctx.textBaseline = 'top';
+  /**
+   * The LARGE CAST, in the space the grimoire just left.
+   *
+   * A full hand can do exactly two things — release it or put a card back — so the
+   * book has nothing left to offer and the one remaining verb gets the whole of its
+   * footprint. Placed against the screen rather than against `bookTop`, deliberately:
+   * `bookTop` collapses to 0.90H while the book is away, and a button laid out off it
+   * would sit in the last few pixels of the frame instead of where the cover was.
+   *
+   * It NAMES what it will cast, from the same `currentCast()` the small pill reads, and
+   * when the hand cannot legally cast it says so instead and takes no hit region at
+   * all — a button this size that swallows a tap is worse than one that is not there.
+   * The ✕ line under it is the other half of that: at hand size 1 the book is away
+   * after every single tear, so putting the page back is the commonest thing a player
+   * needs from this state and it must not be a badge they have to find.
+   */
+  private drawBigCast(ctx: CanvasRenderingContext2D, W: number): void {
+    if (!this.handFull() || this.offers) return;
+    const cast = this.currentCast();
+    if (!cast) return;
+    const ok = !cast.refusal;
+
+    // `bookTop` IS this button's top while the hand is full — see `draw`. One number,
+    // so the band above cannot be laid out against a different edge than this occupies.
+    const bw = Math.min(W - 32, 420), bh = 76;
+    const bx = (W - bw) / 2, by = this.bookTop;
+    const pulse = 0.72 + Math.sin(this.engine.time * 3.2) * 0.22;
+
+    ctx.save();
+    if (ok) {
+      ctx.shadowColor = hexCss(cast.colour, 0.35 + pulse * 0.3);
+      ctx.shadowBlur = 10 + pulse * 12;
     }
+    rr(ctx, bx, by, bw, bh, 20);
+    ctx.fillStyle = ok ? 'rgba(28,18,12,0.94)' : 'rgba(64,24,24,0.92)';
+    ctx.fill();
+    ctx.restore();
+    rr(ctx, bx, by, bw, bh, 20);
+    ctx.strokeStyle = ok ? hexCss(cast.colour, 0.95) : 'rgba(255,120,120,0.7)';
+    ctx.lineWidth = ok ? 2.2 : 1.6;
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if (ok) {
+      ctx.font = 'bold 26px ui-monospace, monospace';
+      ctx.fillStyle = '#fff6df';
+      ctx.fillText('CAST', W / 2, by + 30);
+      ctx.font = '10px ui-monospace, monospace';
+      ctx.fillStyle = hexCss(cast.colour);
+      ctx.fillText(cast.name.toUpperCase(), W / 2, by + 56);
+      this.hits.push({ rect: [bx, by, bw, bh], action: { kind: 'cast' } });
+    } else {
+      ctx.font = 'bold 13px ui-monospace, monospace';
+      ctx.fillStyle = '#ffb0a0';
+      ctx.fillText('CANNOT CAST', W / 2, by + 22);
+      ctx.font = '9.5px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(255,200,190,0.86)';
+      const lines = wrapLines(ctx, cast.refusal!, bw - 36).slice(0, 3);
+      lines.forEach((ln, i) => ctx.fillText(ln, W / 2, by + 44 + i * 13));
+    }
+
+    // On its own plate, because it lands on the floor of the room rather than on any
+    // panel and 8px parchment over a lit tile is not text.
+    const note = '✕  ON A CARD PUTS IT BACK';
+    ctx.font = '8px ui-monospace, monospace';
+    const nw = ctx.measureText(note).width + 18;
+    rr(ctx, (W - nw) / 2, by + bh + 4, nw, 14, 7);
+    ctx.fillStyle = 'rgba(14,9,16,0.86)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(198,50,34,0.7)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,168,142,0.95)';
+    ctx.fillText(note, W / 2, by + bh + 11.5);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
   }
 
   /**
@@ -947,6 +1062,14 @@ export class Hud {
    */
   private drawFanCards(ctx: CanvasRenderingContext2D, W: number): void {
     if (this.offers) return;            // the modal owns every tap; see drawBelt
+    /**
+     * Bigger once the hand is FULL, which is the state the book is away in. At hand
+     * size 1 that is after every single tear, so leafing to a different page means
+     * cancelling first — the quietest control in the band becomes the only way back
+     * into the grimoire, and a quiet control is the wrong answer to that.
+     */
+    const full = this.handFull();
+    const r = full ? 11 : 8;
     for (const c of this.handCards) {
       /**
        * Pushed in FAN ORDER, which is what resolves an overlap: `slot()` steps each
@@ -994,18 +1117,27 @@ export class Hud {
       // affordance on screen is gold or parchment. It reads as remove at a glance
       // without having to be big — and it is the one mark here that must never be
       // mistaken for "cast".
+      ctx.save();
+      if (full) {
+        ctx.shadowColor = 'rgba(255,146,116,0.7)';
+        ctx.shadowBlur = 7;
+      }
       ctx.beginPath();
-      ctx.arc(bx, by, 8, 0, Math.PI * 2);
+      ctx.arc(bx, by, r, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(198,50,34,0.95)';
       ctx.fill();
+      ctx.restore();
       ctx.strokeStyle = 'rgba(255,146,116,0.85)';
       ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(bx, by, r, 0, Math.PI * 2);
       ctx.stroke();
       ctx.strokeStyle = '#fff0e6';
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = full ? 2 : 1.6;
+      const k = r * 0.38;
       ctx.beginPath();
-      ctx.moveTo(bx - 3, by - 3); ctx.lineTo(bx + 3, by + 3);
-      ctx.moveTo(bx + 3, by - 3); ctx.lineTo(bx - 3, by + 3);
+      ctx.moveTo(bx - k, by - k); ctx.lineTo(bx + k, by + k);
+      ctx.moveTo(bx + k, by - k); ctx.lineTo(bx - k, by + k);
       ctx.stroke();
     }
   }
@@ -1217,20 +1349,21 @@ export class Hud {
 
     // ---- the one caption row -------------------------------------------
     /**
-     * One line, three jobs, and never more than one of them at a time: the refusal the
-     * belt just recorded, else the sand's remaining free components, else the fact that
-     * the strap has no loops. An always-on label would be permanent noise on the one
-     * band of this screen that has no pixels to spare, and all three of these are
-     * things the player cannot find out any other way.
+     * One line, two jobs, and never both at once: the refusal the belt just recorded,
+     * else the fact that the strap has no loops. An always-on label would be permanent
+     * noise on the one band of this screen that has no pixels to spare, and both of
+     * these are things the player cannot find out any other way.
+     *
+     * There was a third — TimeSand's remaining free components — and it is gone with
+     * the thing it read. Under cast = 1 turn every component is free to take, so
+     * `BeltState.free` is 0 for every hand ever held and a caption gated on `> 0`
+     * could never draw. A readout of a constant is noise even when the constant is 0.
      *
      * The refusal COPY is `belt.refusal.why` verbatim. The belt owns the wording of its
      * own rules; the strip only decides that it appears here, next to the strap that is
      * pulsing for it, rather than only in a log line that scrolls.
      */
-    const free = belt.free;
-    const caption = said
-      ?? (free > 0 ? `⏳ NEXT ${free} COMPONENT${free > 1 ? 'S' : ''} FREE` : null)
-      ?? (locked ? 'BELT · LOCKED' : null);
+    const caption = said ?? (locked ? 'BELT · LOCKED' : null);
     if (!caption) return;
 
     let size = 8.5;
@@ -1253,14 +1386,12 @@ export class Hud {
     rr(ctx, cx0, cy0, tw, 14, 7);
     ctx.fillStyle = 'rgba(14,9,16,0.88)';
     ctx.fill();
-    ctx.strokeStyle = said ? hexCss(0xff6a3c, 0.5 + pulse * 0.5)
-      : free > 0 ? hexCss(0xf0d79a, 0.6)
-      : 'rgba(178,166,148,0.42)';
+    ctx.strokeStyle = said ? hexCss(0xff6a3c, 0.5 + pulse * 0.5) : 'rgba(178,166,148,0.42)';
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = said ? '#ffb0a0' : free > 0 ? hexCss(0xf0d79a) : 'rgba(214,204,186,0.78)';
+    ctx.fillStyle = said ? '#ffb0a0' : 'rgba(214,204,186,0.78)';
     ctx.fillText(caption, W / 2, cy0 + 7.5);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -1652,31 +1783,6 @@ export class Hud {
       rect: [bx, by, tw, 28],
       action: chest ? { kind: 'chest', entity: e } : { kind: 'altar', entity: e },
     });
-  }
-
-  /**
-   * The grimoire tab — always the same pill, dead centre at the bottom, so it is
-   * one consistent target that toggles rather than a control that moves and
-   * changes shape depending on state.
-   */
-  private drawBookToggle(ctx: CanvasRenderingContext2D, W: number, H: number): void {
-    const closed = this.bookClosed;
-    const label = closed ? 'OPEN SPELLBOOK' : 'CLOSE SPELLBOOK';
-    ctx.font = 'bold 10px ui-monospace, monospace';
-    const w = ctx.measureText(label).width + 34;
-    const h = 26;
-    const bx = (W - w) / 2, by = H - h - 8;
-    rr(ctx, bx, by, w, h, 13);
-    ctx.fillStyle = closed ? 'rgba(124,59,82,0.94)' : 'rgba(30,18,26,0.94)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,194,62,0.85)';
-    ctx.lineWidth = 1.3;
-    ctx.stroke();
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#ffe6b0';
-    ctx.fillText(label, W / 2, by + h / 2 + 0.5);
-    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    this.hits.push({ rect: [bx - 10, by - 10, w + 20, h + 20], action: { kind: 'bookToggle' } });
   }
 
   /** Cycle-target button — sits clear of the swipe area. */

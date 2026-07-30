@@ -35,7 +35,7 @@ export interface Placed {
  * can afford to reach.
  *
  * See `tuning.ts`: the count is a tempo number, not a difficulty knob. Every body
- * in here acts once per page you tear.
+ * in here acts once per cast you release.
  */
 function enemyCount(rng: Rng, depth: number, room: Room): number {
   if (room.kind === 'boss' || room.kind === 'entrance') return 0;

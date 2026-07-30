@@ -3,7 +3,7 @@ import { Engine } from './core/engine';
 import { Floor, type Entity } from './game/floor';
 import { Stepper, PITCH } from './game/stepper';
 import {
-  Combat, targetsInView, MAX_RANK, type PlayerState, type TurnCause,
+  Combat, targetsInView, MAX_RANK, type PlayerState,
 } from './game/combat';
 import { CastFx } from './spells/vfx';
 import { Hud, type AltarOffer, type HandCard } from './ui/hud';
@@ -17,7 +17,7 @@ import {
 import { PAGE_H, PAGE_W } from './book/pageMaterial';
 import { SPELLS as BOOK_PAGES, setBookPages, type SpellDef } from './spells/pages';
 import {
-  ELEMENT_SPELLS, INGREDIENT_IDS, SPELL_BY_ID, displayName, harvestOf, isFreeToTake,
+  ELEMENT_SPELLS, INGREDIENT_IDS, SPELL_BY_ID, displayName, harvestOf,
   isIngredient, isPageElement, wantsCorpse, wantsObject,
   type ResolvedCast,
 } from './spells/spells';
@@ -277,7 +277,16 @@ async function boot(): Promise<void> {
   engine.overlayScene = bookScene;
   engine.overlayCamera = bookCam;
   resizeBook(engine.sw, engine.sh);
-  engine.onResize = () => resizeBook(engine.sw, engine.sh);
+  /**
+   * The book's settled top edge in screen px, and the camera's one framing anchor —
+   * see the `frameAbove` call in the loop. 0 means "not measured yet"; a resize is the
+   * only thing that can invalidate it, because it is the only thing that moves where
+   * the resting book projects to.
+   */
+  let restTop = 0;
+  /** Last frame's projected top, so "settled" can be told from "still gliding". */
+  let lastTop = 0;
+  engine.onResize = () => { resizeBook(engine.sw, engine.sh); restTop = 0; };
 
   // The book contains only what the player has learned.
   setBookPages(state.pages);
@@ -303,9 +312,10 @@ async function boot(): Promise<void> {
    * unlearned page is a property of the page instead, so it is shown on the page
    * (`book.isSealed`, and the HUD's sealed note) rather than said again per swipe.
    *
-   * Note what is NOT here: the tear's real price is a TURN, and that is charged on
-   * the way out (see `spendComponentTurn`) rather than gating the gesture — you can
-   * always afford a turn, you just may not like what it buys the room.
+   * Note what is NOT here, and no longer is anywhere: a price. Tearing a page is
+   * free — the turn is charged on the CAST (`Combat.cast`) — so a full hand is the
+   * only thing a tear can ever be refused for, and refusing it is the game saying
+   * "cast what you are holding first" rather than the game taking a round off you.
    */
   const ripRefusal = (spell: SpellDef): string | null => {
     if (!state.pages.includes(spell.gameId)) return `${spell.name} is not yours yet.`;
@@ -353,9 +363,9 @@ async function boot(): Promise<void> {
 
   book.onRip = (spell, worldPos, worldQuat) => {
     fan.add(spell, worldPos, worldQuat);
-    // What you just tore out may change what is targetable.
+    // What you just tore out may change what is targetable. That is the WHOLE
+    // follow-up now: a tear buys the room nothing, so there is no round to run.
     refreshTargets();
-    spendComponentTurn('tear');
   };
 
   const tearPage = (index: number): boolean => {
@@ -413,12 +423,12 @@ async function boot(): Promise<void> {
   /**
    * Take the room's element off a fixture.
    *
-   * Priced exactly like a tear, through the same two gates, because it IS a tear as
-   * far as the economy is concerned: one hand slot and one turn (`spendComponentTurn`
-   * charges the turn on the way out). What it is not is a withdrawal — nothing is
-   * taken from the object, which is why the candelabra is still lit afterwards and
-   * why this can be done twice. `docs/DESIGN.md` rejects depleting fixtures outright,
-   * and that rule is only safe because harvests are also non-storable.
+   * Priced exactly like a tear, through the same gate, because it IS a tear as far
+   * as the economy is concerned: one hand slot and nothing else. What it is not is a
+   * withdrawal — nothing is taken from the object, which is why the candelabra is
+   * still lit afterwards and why this can be done twice. `docs/DESIGN.md` rejects
+   * depleting fixtures outright, and that rule is only safe because harvests are
+   * also non-storable.
    *
    * Adjacent and facing, like every other interaction (`inReach`). Line of sight
    * was the earlier rule — "it is magic" — and it made the whole room a shelf you
@@ -451,7 +461,6 @@ async function boot(): Promise<void> {
     );
     // What is in the hand decides what is targetable, exactly as after a tear.
     refreshTargets();
-    spendComponentTurn('harvest');
     return true;
   };
 
@@ -478,16 +487,6 @@ async function boot(): Promise<void> {
   };
 
   // -------------------------------------------------------------------- the belt
-
-  /**
-   * How many components the sand pays for BESIDES its own draw.
-   *
-   * Two, from `docs/DESIGN.md`. Implemented as "the sand grants three and is itself
-   * the first", which is what makes "free to take" and "the next two are free" one
-   * rule rather than two — and what makes a second vial compose without a special
-   * case.
-   */
-  const SAND_FREE_COMPONENTS = 2;
 
   /**
    * How many of this ingredient could still be drawn.
@@ -524,10 +523,11 @@ async function boot(): Promise<void> {
   /**
    * Draw one off the belt — a single tap, where the book is flip-and-tear.
    *
-   * Priced exactly like a tear and a harvest, through the same two gates: one hand
-   * slot, one turn. TimeSand is the one exception and it is not special-cased here —
-   * it grants the free components and `spendComponentTurn` is what declines to charge
-   * for them, including for this draw.
+   * Priced exactly like a tear and a harvest, through the same gate: one hand slot
+   * and nothing else. TimeSand used to be the exception here — it zeroed the turn
+   * cost of the next two components — and under cast = 1 turn there is no component
+   * turn left for it to zero, so there is no exception and no special case. See its
+   * entry in `spells.ts`: the ingredient is inert and says so.
    *
    * Nothing is removed from the belt. That is the settled rule and it is what makes
    * returning a hand free: the stack is only spent when the cast actually goes off
@@ -570,12 +570,10 @@ async function boot(): Promise<void> {
       return false;
     }
     addIngredientCard(id);
-    if (isFreeToTake(id)) state.belt.free += SAND_FREE_COMPONENTS + 1;
     hud.addLog(`You draw ${name} off your belt.`, SPELL_BY_ID[id]?.colour);
     // What is in the hand decides what is targetable — and for an animating
-    // ingredient it decides it completely, so this cannot wait for the round.
+    // ingredient it decides it completely.
     refreshTargets();
-    spendComponentTurn('belt');
     return true;
   };
 
@@ -623,43 +621,26 @@ async function boot(): Promise<void> {
   };
 
   /**
-   * The hand is empty, however it emptied — cast, returned, or dropped by a refund.
-   *
-   * The assembly's bill and the sand's remaining charges both belong to the hand
-   * being assembled, so both are cleared by the same event. Watching the count is the
-   * only place that catches all of them with one rule: the merge animation empties
-   * the fan from inside itself.
-   */
-  const resetAssembly = (): void => {
-    assemblyTurns = 0;
-    state.belt.free = 0;
-  };
-
-  /**
    * Put the whole hand back. Free, and it consumes nothing.
    *
-   * One helper rather than three copies of `fan.clear(); refreshTargets()`, because
-   * the sand made the pair incomplete: returning a hand that holds TimeSand has to
-   * give up its remaining free components too, or you keep the vial AND keep the
-   * discount — a return that pays you is not a return. The per-frame check on an
-   * empty fan catches this eventually; doing it here makes it true immediately,
-   * which is what a caller that returns and re-assembles in one breath needs.
+   * One helper rather than three copies of `fan.clear(); refreshTargets()`, so that
+   * every route out of a loaded hand ends in the same two facts: nothing is spent
+   * and what is targetable is recomputed. There is no bill to clear any more — a
+   * hand costs nothing to assemble, so putting it back cannot owe anything.
    */
   const returnHand = (): void => {
     fan.clear();
-    resetAssembly();
     refreshTargets();
   };
 
   /**
    * Put ONE component back — the tap on its card in the fan.
    *
-   * Free, because `docs/DESIGN.md` settles that returning a component is free. What it
-   * is NOT is a refund: `assemblyTurns` is untouched here on purpose. The readout says
-   * how many turns this assembly has cost, and taking a page back does not un-live the
-   * enemy round it bought — a decrementing counter would advertise a rewind the room
-   * never got. (It still zeroes when the hand reaches empty, which is the existing rule
-   * for a hand that has emptied *however* it emptied, and an empty hand has no bill.)
+   * Free, and now free in the strongest sense the game can offer: taking the
+   * component cost nothing either, so a draw-and-cancel loop is exactly a no-op. That
+   * is the whole point of the rebase — under the old rule the draw bought the room a
+   * round and the cancel bought nothing back, so leafing indecisively through the book
+   * could kill you.
    *
    * Where the component goes is the only thing that differs by source, and all three
    * answers were already settled by something else:
@@ -672,7 +653,7 @@ async function boot(): Promise<void> {
    *    the hand — `beltAvailable` and the pouch badge both subtract what the hand holds.
    *  - a HARVESTED element is DISCARDED. Fixtures are non-storable and `docs/DESIGN.md`
    *    rejects banking one outright, so there is nowhere to put it; the candelabra is
-   *    still lit, and the way to get it back is to walk over and pay another turn.
+   *    still lit, and the way to get it back is to be standing at it and take it again.
    */
   const returnComponent = (index: number): boolean => {
     if (dead || fan.busy) return false;
@@ -683,9 +664,6 @@ async function boot(): Promise<void> {
     const name = def?.name ?? spell.name;
     if (def?.source === 'belt') {
       hud.addLog(`${name} goes back in its pouch.`, def.colour);
-      // The sand's unspent free components leave with the vial. Keeping them would be
-      // a return that pays you — the same reason `returnHand` clears them.
-      if (isFreeToTake(id)) state.belt.free = 0;
     } else if (def?.source === 'fixture') {
       hud.addLog(`The ${name} slips away — harvest it again when you need it.`, def.colour);
     } else {
@@ -744,6 +722,16 @@ async function boot(): Promise<void> {
   let hud!: Hud;
   let busy = false;
   let dead = false;
+  /**
+   * A floor swap is in progress, so `floor`, `combat`, `stepper` and `hud` are all
+   * about to be replaced.
+   *
+   * Its own flag rather than a second reading of `busy`, because the two now mean
+   * different things: `busy` means "a round or a merge is resolving", which no longer
+   * blocks a component, and this means "the objects a component would touch do not
+   * exist yet", which always must.
+   */
+  let loading = false;
   /** Altars already claimed, so a floor grants exactly one page. */
   const claimedAltars = new Set<Entity>();
   /**
@@ -766,78 +754,23 @@ async function boot(): Promise<void> {
   /** Skips the golden page's rarity roll, so a harness can drive it. Debug only. */
   let goldenForced = false;
 
-  /** Turns this hand has cost so far. Purely a readout; see the HUD. */
-  let assemblyTurns = 0;
-  /** The component turn currently resolving, for anything that must wait it out. */
-  let componentTurn: Promise<void> = Promise.resolve();
-
   // ------------------------------------------------------------------ helpers
 
   /**
    * May a component be taken right now?
    *
-   * A "no" here is BLOCKED, never refused: the round a previous component bought
-   * is still animating, and the book must not scold you for the game's own
-   * animation. Refusals (unlearned page, full hand) live in `book.canRip`.
-   */
-  const canTakeComponent = (): boolean => !busy && !dead && !fan.busy;
-
-  /**
-   * Every component you take costs a turn, and "costs a turn" means the room
-   * gets to act — so this is the one place the price is paid. Harvesting from a
-   * fixture and drawing off the belt are later phases; they call this and are
-   * done, rather than re-deriving what a component costs.
+   * A "no" here is BLOCKED, never refused: nothing the player did was against the
+   * rules, the game is simply mid-animation. Refusals (unlearned page, full hand)
+   * live in `book.canRip` and speak.
    *
-   * Out of combat it is free by construction: an empty room's round does nothing
-   * but tick timers, so leafing through the book at rest costs nothing you can
-   * see.
+   * Note what this deliberately does NOT test: `busy`. A component costs nothing, so
+   * a round already in flight is not a reason to refuse one — you may tear, harvest
+   * and draw while the room is still answering your last cast, and the merge is what
+   * has to wait, not the hand. `fan.busy` is still here because a hand already flying
+   * into a cast cannot be added to, and `loading` is because a floor swap is
+   * replacing `floor`, `combat` and `hud` underneath everything a tear touches.
    */
-  const spendComponentTurn = (cause: TurnCause): void => {
-    /**
-     * TimeSand already paid for this one.
-     *
-     * Here rather than at each of the three call sites, because the sand is not a
-     * cheaper TEAR — it is a component that costs no turn, whichever source it came
-     * from, and a rule stated once is a rule that cannot disagree with itself. Note
-     * what a free component is NOT: a fast round. The room does not act at all, so
-     * nothing steps, nothing swings and no status ticks — which is the whole of what
-     * `docs/DESIGN.md` means by turning a 3-slot cast into a 0-turn cast.
-     *
-     * `busy` is deliberately never raised, so the next component can be taken in the
-     * same breath: three free components in three frames is the point of the vial.
-     */
-    if (state.belt.free > 0) {
-      state.belt.free--;
-      componentTurn = Promise.resolve();
-      hud.addLog(
-        `The sand holds — no turn spent. ${state.belt.free > 0
-          ? `${state.belt.free} more free.` : 'The last of it.'}`,
-        SPELL_BY_ID.sand.colour,
-      );
-      refreshTargets();
-      return;
-    }
-    busy = true;
-    componentTurn = (async () => {
-      try {
-        // Bill the hand only for a round something ACTED in. Counting every
-        // component taken advertised a price in an empty room, which is the exact
-        // inverse of the rule — so the readout can legitimately show fewer turns
-        // than pages held, and that gap IS the reward for assembling out of combat.
-        if (await combat.takeTurn(cause)) assemblyTurns++;
-      } finally {
-        // In `finally` because a throw in the round must not leave input locked:
-        // `busy` never clearing soft-locks every gesture in the game, and skipping
-        // the follow-ups leaves the reticle and the death check stale.
-        busy = false;
-        refreshTargets();
-        checkDeath();
-      }
-    })();
-    // Nothing on the input path awaits this, so without a handler a throw inside
-    // the round is an unhandled rejection that the player never hears about.
-    componentTurn.catch((err) => hud.addLog(`The round falters: ${String(err)}`, 0xff6a6a));
-  };
+  const canTakeComponent = (): boolean => !loading && !dead && !fan.busy;
 
   /** World position of an entity's centre of mass, for aiming VFX at it. */
   const entityPos = (e: Entity, out: THREE.Vector3): THREE.Vector3 =>
@@ -885,6 +818,21 @@ async function boot(): Promise<void> {
     return e.hostile || animatable;
   };
 
+  /**
+   * Is this thing straight in front of the player, at any distance?
+   *
+   * `inReach`'s rule — the ONE tile the facing points at — extended down the ray it
+   * points along, and read off the same `DIR_VEC` so the two cannot disagree about
+   * what "ahead" means. Nothing lateral counts at any facing, which is what keeps
+   * auto-selection a statement about where the player is looking rather than a
+   * second, softer version of `targetsInView`'s cone.
+   */
+  const directlyAhead = (e: Entity): boolean => {
+    const dx = e.sprite.tx - stepper.x, dy = e.sprite.ty - stepper.y;
+    const [fx, fy] = DIR_VEC[stepper.dir];
+    return dx * fy - dy * fx === 0 && dx * fx + dy * fy > 0;
+  };
+
   const refreshTargets = (): void => {
     hud.candidates = targetsInView(floor.grid, floor, stepper.x, stepper.y, stepper.dir);
     hud.tornIds = fan.gameIds;
@@ -899,14 +847,54 @@ async function boot(): Promise<void> {
     hud.setDescendReady(combat.bossDead && !!st && inReach(st));
 
     const ids = fan.gameIds;
+    // A target you can no longer SEE is dropped — out of the cone, out of reach, or
+    // behind a wall, all three of which `targetsInView` now answers in one place.
     if (hud.target && !hud.candidates.includes(hud.target)) hud.target = null;
 
-    // If what you have torn out cannot be aimed at the current target, move the
-    // reticle to something it CAN hit. Tearing Animate with a skeleton selected
-    // used to just refuse the cast, which read as the game being broken.
+    // If what you have torn out cannot be aimed at the current target, drop the
+    // reticle. Tearing Animate with a skeleton selected used to just refuse the cast,
+    // which read as the game being broken.
     if (hud.target && !isLegal(hud.target, ids)) hud.target = null;
-    if (!hud.target) hud.target = hud.candidates.find((e) => isLegal(e, ids)) ?? null;
+
+    /**
+     * AUTO-SELECT, and only for the one case that must not need a tap: an enemy that
+     * is directly ahead and alerted — coming for you or already hitting you.
+     *
+     * Narrow on purpose. It used to select the nearest legal candidate unconditionally,
+     * which since the grimoire became a function of having a target would mean the book
+     * opened for the bookshelf you happened to walk past; and props hug walls while
+     * bodies hold the open middle, so "nearest" reliably picked the furniture. Tapping
+     * is how everything else is chosen, and nothing here overrides a live target —
+     * the two clauses above are the only things that ever take one away.
+     */
+    if (!hud.target) {
+      hud.target = hud.candidates.find(
+        (e) => e.hostile && combat.isAlerted(e) && directlyAhead(e) && isLegal(e, ids)) ?? null;
+    }
   };
+
+  /**
+   * Is the grimoire on screen? **The one place this is answered.**
+   *
+   * Visibility is DERIVED and there is no control that sets it, which is the whole
+   * point of the rule: a book you could hide by hand is a book that can disagree
+   * with the state that is supposed to govern it. Three clauses:
+   *
+   *  - SOMETHING TO AIM AT, or the book is a lit control in the sightline of a room
+   *    you are only walking through. A target OR a fixture in reach — harvesting is
+   *    the tile you are facing and needs no reticle, so "no target, no book" alone
+   *    would lock a player out of taking a candelabra's fire and fusing a page with
+   *    it in an empty room. The HARVEST pill draws itself either way; what the book
+   *    adds there is the page.
+   *  - ROOM IN THE HAND. A full hand cannot take another component, so the book has
+   *    nothing left to offer and the large CAST takes its place (`Hud.drawBigCast`).
+   *    Cancelling a card with the red ✕ falls straight out of this: the hand is no
+   *    longer full, so the book comes back with no path of its own.
+   *  - A LIVE RUN. The run-end card owns the frame, and an open book under it is the
+   *    brightest thing on a screen that says the run is over.
+   */
+  const bookOnScreen = (): boolean =>
+    !dead && fan.count < handSize() && (!!hud.target || !!hud.harvestInReach);
 
   /** Step the reticle to the next legal target — the mobile equivalent of Tab. */
   const cycleTarget = (): void => {
@@ -1261,7 +1249,7 @@ async function boot(): Promise<void> {
    * and back through `setBookPages` / `book.refresh` or the grimoire keeps showing
    * a page whose rank no longer exists. A hand holding it is returned, because
    * nothing else would drop it and casting a page that is no longer yours is worse
-   * than losing the turns it cost.
+   * than dropping it — and dropping it costs nothing, because holding it cost nothing.
    */
   const burnPage = (id: string): void => {
     state.pages = state.pages.filter((p) => p !== id);
@@ -1532,6 +1520,10 @@ async function boot(): Promise<void> {
   // ------------------------------------------------------------- floor loading
 
   const enterFloor = async (depth: number): Promise<void> => {
+    // `loading` and not only `busy`: a component may now be taken while a round is
+    // in flight, and the one state in which it may not is this one, where the floor
+    // a tear would refresh its targets against is being replaced.
+    loading = true;
     busy = true;
     document.getElementById('boot')?.classList.remove('gone');
     if (floor) { engine.scene.remove(floor.group); floor.dispose(); }
@@ -1545,6 +1537,11 @@ async function boot(): Promise<void> {
     combat = new Combat(floor, state, `${runSeed}-floor-${depth}`);
     hud = new Hud(engine, state, combat, () => fan.gameIds, returnHand);
     hud.bookClosed = book.closed;
+    // The floor's name, permanently in the top-left beside the depth. It used to
+    // arrive as a shout across the middle of the screen and a log line, both of which
+    // faded — so a player who looked away for two seconds could not find out where
+    // they were at all.
+    hud.floorName = theme.name;
     hud.bankedStars = meta.stars;
     hud.pinGoal = pinReadout();
     hud.bindMap(() => ({ floor, x: stepper.x, y: stepper.y, dir: stepper.dir }));
@@ -1561,12 +1558,30 @@ async function boot(): Promise<void> {
       return e && e.alive && e.animated && !e.hostile ? e : null;
     };
     stepper.blocked = (x, y) => floor.solidAt(x, y) && !friendlyAt(x, y);
+    /**
+     * What a two-finger W/S will trade tiles with: a BODY. Enemies, the boss and
+     * your own golems. Bosses included on purpose — a rule with exceptions cannot
+     * be learned. An altar, a chest, the stairs and an un-animated prop are not
+     * bodies: they have nowhere to walk to, and shoving a bookshelf a tile down
+     * the corridor is not a move, it is a glitch.
+     */
+    const bodyAt = (x: number, y: number): Entity | null => {
+      const e = floor.entityAt(x, y);
+      if (!e || !e.alive) return null;
+      const body = e.kind === 'enemy' || e.kind === 'boss' || (e.kind === 'prop' && e.animated);
+      return body ? e : null;
+    };
+    stepper.swappable = (x, y) => bodyAt(x, y) !== null;
     stepper.onDepart = (fx, fy, tx, ty) => {
-      const ally = friendlyAt(tx, ty);
-      if (!ally) return;
-      ally.sprite.tx = fx; ally.sprite.ty = fy;
-      ally.sprite.setTileLight(floor.grid.lightAt(fx, fy));
-      ally.sprite.play('walk');
+      // The golem shuffle and the two-finger swap are the same move, so they are
+      // the same code: whoever is standing in the destination takes the tile you
+      // left. A plain step can only ever get here with a friendly golem there —
+      // `blocked` refuses everything else — so no test for which move this was.
+      const other = bodyAt(tx, ty);
+      if (!other) return;
+      other.sprite.tx = fx; other.sprite.ty = fy;
+      other.sprite.setTileLight(floor.grid.lightAt(fx, fy));
+      other.sprite.play('walk');
     };
     stepper.onArrive = async (x, y) => {
       floor.cull(x, y);
@@ -1583,8 +1598,6 @@ async function boot(): Promise<void> {
     floor.cull(stepper.x, stepper.y);
     refreshTargets();
 
-    hud.addLog(theme.name, theme.accent);
-    hud.setShout(`DEPTH ${'I'.repeat(Math.min(5, depth))}`, theme.accent);
     // The gift has to be SAID on the floor it arrives on. It was claimed at an
     // altar in a run that has already ended, so a page silently appearing in the
     // book is the player finding a spell they cannot account for.
@@ -1595,6 +1608,7 @@ async function boot(): Promise<void> {
       );
     }
     busy = false;
+    loading = false;
     document.getElementById('boot')?.classList.add('gone');
   };
 
@@ -1610,10 +1624,9 @@ async function boot(): Promise<void> {
     meta.stars += earned;
     meta.best = Math.max(meta.best, state.depth);
     saveMeta(meta);
-    // The grimoire shuts. An open book under the run-end card is a lit, legible
-    // control on a screen that has none, and it is the brightest thing on the frame.
-    book.closed = true;
-    hud.bookClosed = true;
+    // The grimoire shuts, and it does so through `bookOnScreen` — `dead` is one of
+    // its clauses — rather than by being closed from here. Two writers would be two
+    // answers, and this is the one that used to be the second.
     hud.runEnd = { kind, depth: state.depth, earned };
   };
 
@@ -1889,20 +1902,45 @@ async function boot(): Promise<void> {
 
     floor.update(wdt, engine.time, eye);
     fx.update(dt, engine.camera.quaternion);
+    /**
+     * The grimoire's visibility, applied. `Book.closed` is a plain field and the book
+     * animates its own glide from it (`closeT`), so driving it from derived state gets
+     * the slide for free — and reading it back into the HUD in the same breath is what
+     * stops the layout and the geometry from ever describing different books.
+     *
+     * Held while the book is BUSY, which covers the intro: the rise-and-cascade is the
+     * game's opening beat and it also gives `frameAbove` below its one settled
+     * measurement to latch onto, after which the book may come and go without the world
+     * moving under it.
+     */
+    if (!book.busy) book.closed = !bookOnScreen();
+    hud.bookClosed = book.closed;
     tickBook(dt, engine.time);
     // Lay the HUD out against the book's real edge too, so the cast bar and the
     // swipe boundary never disagree.
     const top = book.screenTop();
     hud.setBookTop(top);
-    // Frame the world for the strip above the book — but only off a settled book.
-    // `screenTop` projects live geometry, so during the intro glide and mid-flip it
-    // reports an edge the book never actually rests at.
-    if (!book.closed && !book.busy && Number.isFinite(top)) engine.frameAbove(top);
-    // The assembly's bill is cleared by the hand emptying, however it emptied —
-    // and the merge animation empties the fan from inside itself, so watching the
-    // count is the only place that catches a cast and a return with one rule.
-    if (fan.count === 0) resetAssembly();
-    hud.assemblyTurns = assemblyTurns;
+    /**
+     * Frame the world for the strip above the book, off the book's RESTING edge and
+     * measured exactly once.
+     *
+     * `screenTop` projects live geometry, so it reports an edge the book never actually
+     * rests at during the intro, mid-flip and — now that visibility is derived — on
+     * every open and close. Re-reading it live was survivable while the book opened
+     * once a run; with the book coming and going on every tear it latched the
+     * mid-glide edge instead, and the world sat a pixel and a half off for the rest of
+     * the floor. One measurement, from the settled book the intro leaves behind, held
+     * until the viewport itself changes.
+     */
+    if (!restTop && !book.closed && !book.busy && Number.isFinite(top)) {
+      // SETTLED means two frames agree. The glide moves tens of px a frame and the
+      // idle breath moves a fraction of one, so half a pixel tells them apart — and
+      // without that test the first finite sample of a book still sliding UP gets
+      // latched, which is a frame built for a book that is not there yet.
+      if (Math.abs(top - lastTop) < 0.5) restTop = top;
+      lastTop = top;
+    }
+    if (restTop) engine.frameAbove(restTop);
     // The fusion ceiling, on screen. Nothing else in the game states it, and at a
     // hand of one the player would otherwise only ever meet it as a refusal.
     hud.handSize = handSize();
@@ -1962,9 +2000,11 @@ async function boot(): Promise<void> {
       // The torn pages converge and merge in a burst of gold, THEN the spell fires.
       await new Promise<void>((resolve) => fan.mergeAndCast(resolve));
       sfx.cast(dry ? 200 + (dry.colour & 255) : 300);
-      // Free: assembling the hand already paid, one turn per component. A false
-      // here means the check above missed something and the hand is already gone —
-      // it must not be swallowed, or the two ends of the contract drift apart again.
+      // THE price. `Combat.cast` runs the enemy round itself, so this await is the
+      // turn — and a false here means the check above missed something and the hand
+      // is already gone, which must not be swallowed or the two ends of the contract
+      // drift apart again. A false also means no round ran, which is correct: a
+      // refused cast is not a spent turn.
       if (!await combat.cast(ids, hud.target)) {
         hud.addLog('The cast comes apart in your hands.', 0xff9a6a);
       } else {
@@ -1974,9 +2014,6 @@ async function boot(): Promise<void> {
         consumeIngredients(ids);
       }
     } finally {
-      // The hand is gone either way — a merge cannot be un-merged — so the sand's
-      // remaining charges go with it rather than surviving into the next assembly.
-      resetAssembly();
       // A throw anywhere above used to leave `busy` true forever, which locks every
       // gesture in the game — including the ones that would let you walk away.
       busy = false;
@@ -2012,11 +2049,6 @@ async function boot(): Promise<void> {
       case 'offer': chooseOffer(a.offer); break;
       case 'reroll': rerollOffers(); break;
       case 'chest': openChest(a.entity); break;
-      case 'bookToggle':
-        book.closed = !book.closed;
-        hud.bookClosed = book.closed;
-        sfx.pageFlip();
-        break;
       case 'move': stepper.press({ kind: 'move', m: a.m }); break;
       case 'turn': stepper.press({ kind: 'turn', d: a.d }); break;
       case 'descend': void descend(); break;
@@ -2050,6 +2082,57 @@ async function boot(): Promise<void> {
   /** Latch so one refused tear makes one sound, not one per pointermove. */
   let deniedThisDrag = false;
 
+  /**
+   * The second movement hand: two fingers, mirroring WASD.
+   *
+   * Two is the only channel left. One finger above the book turns and steps, one
+   * finger on the book leafs and tears, and the book is most of the bottom of the
+   * screen — so a second hand that worked anywhere had to be a second FINGER. The
+   * pair is therefore read before `overBook` gets a look in, and a first finger
+   * that had already started leafing gives the page back when the second lands.
+   */
+  const touches = new Map<number, { x: number; y: number }>();
+  let two: { ids: [number, number]; cx0: number; cy0: number; spread0: number } | null = null;
+  /** Latched while a two-finger contact is live, so its releases fire nothing else. */
+  let twoClaimed = false;
+  /** Centroid travel a two-finger drag needs before it is a drag and not a tap. */
+  const TWO_MIN = 26;
+
+  const twoBegin = (): void => {
+    const ids = [...touches.keys()];
+    if (ids.length !== 2) { two = null; return; }
+    const a = touches.get(ids[0])!, b = touches.get(ids[1])!;
+    two = {
+      ids: [ids[0], ids[1]],
+      cx0: (a.x + b.x) / 2, cy0: (a.y + b.y) / 2,
+      spread0: Math.hypot(a.x - b.x, a.y - b.y),
+    };
+  };
+
+  /**
+   * Resolve the pair on the first release. The fingers rarely agree, so the
+   * gesture is their average — and a pinch is rejected by comparing how far they
+   * moved relative to EACH OTHER against how far they moved together. That has to
+   * be the test rather than a centroid-only one, because two fingers pinching
+   * never keep their midpoint perfectly still.
+   */
+  const twoEnd = (): void => {
+    const g = two;
+    two = null;
+    if (!g) return;
+    const a = touches.get(g.ids[0]), b = touches.get(g.ids[1]);
+    if (!a || !b) return;
+    const dx = (a.x + b.x) / 2 - g.cx0, dy = (a.y + b.y) / 2 - g.cy0;
+    const dist = Math.hypot(dx, dy);
+    if (dist < TWO_MIN) return;
+    if (Math.abs(Math.hypot(a.x - b.x, a.y - b.y) - g.spread0) > dist) return;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      stepper.press({ kind: 'move', m: dx < 0 ? 'left' : 'right' });
+    } else {
+      stepper.press({ kind: 'move', m: dy < 0 ? 'forward' : 'back', compound: true });
+    }
+  };
+
   const local = (e: PointerEvent): { x: number; y: number } => {
     const r = stage.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -2067,7 +2150,7 @@ async function boot(): Promise<void> {
    * band plus the jitter in a real tap is exactly how a cancel becomes a page flip.
    */
   const UI_CONTROLS: ReadonlySet<string> = new Set([
-    'cast', 'clear', 'descend', 'bookToggle', 'cycle', 'altar', 'chest', 'harvest',
+    'cast', 'clear', 'descend', 'cycle', 'altar', 'chest', 'harvest',
     'belt', 'card', 'tree',
   ]);
 
@@ -2090,8 +2173,17 @@ async function boot(): Promise<void> {
   stage.addEventListener('pointerdown', (e) => {
     sfx.unlock();                       // browsers gate audio behind a gesture
     const { x, y } = local(e);
+    touches.set(e.pointerId, { x, y });
     if (treeOpen) {
       treeDown = true; treeY0 = y; treeScroll0 = treeScreen.scroll; treeMoved = 0;
+      return;
+    }
+    if (touches.size >= 2) {
+      twoClaimed = true;
+      // The first finger may already be mid-leaf. Two fingers means it was never a
+      // page gesture, so the page is put back rather than committed.
+      if (onBook) { book.dragEnd(0); onBook = false; }
+      if (touches.size === 2) twoBegin(); else two = null;
       return;
     }
     st = performance.now();
@@ -2102,6 +2194,7 @@ async function boot(): Promise<void> {
   });
 
   stage.addEventListener('pointermove', (e) => {
+    if (touches.has(e.pointerId)) touches.set(e.pointerId, local(e));
     if (treeOpen) {
       if (!treeDown) return;
       const dy = local(e).y - treeY0;
@@ -2109,6 +2202,7 @@ async function boot(): Promise<void> {
       treeScreen.scrollTo(treeScroll0 - dy);
       return;
     }
+    if (twoClaimed) return;
     if (!onBook || dead) return;
     const { x, y } = local(e);
     const now = performance.now();
@@ -2117,8 +2211,8 @@ async function boot(): Promise<void> {
     // Commit to an axis: horizontal leafs, upward tears.
     if (Math.abs(dx) > Math.abs(dy)) book.flipDrag(dx);
     else if (dy < 0) {
-      // A round bought by the last component is still resolving: blocked, not
-      // refused, so it stays silent.
+      // Mid-merge or mid-floor-swap: blocked, not refused, so it stays silent. A
+      // round in flight is no longer a reason to block — see `canTakeComponent`.
       if (!canTakeComponent()) return;
       // pointermove fires dozens of times per swipe; the refusal must sound ONCE
       const r = book.ripDrag(dy);
@@ -2132,12 +2226,20 @@ async function boot(): Promise<void> {
 
   stage.addEventListener('pointerup', (e) => {
     const { x, y } = local(e);
+    if (touches.has(e.pointerId)) touches.set(e.pointerId, { x, y });
+    if (two?.ids.includes(e.pointerId)) twoEnd();
+    touches.delete(e.pointerId);
+    const claimed = twoClaimed;
+    // Both fingers have to leave before single-pointer gestures resume, or the
+    // trailing release reads as a swipe of its own.
+    if (touches.size === 0) { twoClaimed = false; two = null; }
     if (treeOpen) {
       treeDown = false;
       // A scroll that happens to end over a card must not buy it.
       if (treeMoved < 10) actTree(treeScreen.hit(x, y));
       return;
     }
+    if (claimed) return;
     // A finished run resolves its tap through the HUD, so the run-end card's door to
     // the tree is a real control — and `act` sends every other tap the same way.
     if (dead) { act(hud.hit(x, y)); return; }
@@ -2166,7 +2268,9 @@ async function boot(): Promise<void> {
       else stepper.press({ kind: 'turn', d: dx < 0 ? -1 : 1 });
     }
   });
-  stage.addEventListener('pointercancel', () => {
+  stage.addEventListener('pointercancel', (e) => {
+    touches.delete(e.pointerId);
+    if (touches.size === 0) { twoClaimed = false; two = null; }
     onBook = false; treeDown = false; book.dragEnd(0);
   });
   // Desktop's scroll, since the tree is taller than any window it will be read in.
@@ -2181,8 +2285,12 @@ async function boot(): Promise<void> {
     ArrowDown: () => stepper.press({ kind: 'move', m: 'back' }),
     ArrowLeft: () => stepper.press({ kind: 'turn', d: -1 }),
     ArrowRight: () => stepper.press({ kind: 'turn', d: 1 }),
-    KeyW: () => stepper.press({ kind: 'move', m: 'forward' }),
-    KeyS: () => stepper.press({ kind: 'move', m: 'back' }),
+    // WASD is the keyboard's two-finger hand, so W/S are the compound moves and
+    // the arrows are left as the only plain forward/back. They used to duplicate
+    // the arrows, which spent the two most-pressed keys on a binding you already
+    // had.
+    KeyW: () => stepper.press({ kind: 'move', m: 'forward', compound: true }),
+    KeyS: () => stepper.press({ kind: 'move', m: 'back', compound: true }),
     KeyA: () => stepper.press({ kind: 'move', m: 'left' }),
     KeyD: () => stepper.press({ kind: 'move', m: 'right' }),
     KeyQ: () => stepper.press({ kind: 'turn', d: -1 }),
@@ -2198,7 +2306,6 @@ async function boot(): Promise<void> {
   // Same path the HUD's own clear takes: returning the hand changes what is
   // targetable, so the reticle and `hud.tornIds` have to be rebuilt with it.
   keys.KeyR = () => returnHand();
-  keys.KeyB = () => { book.closed = !book.closed; hud.bookClosed = book.closed; };
   // Harvest what you are facing — the keyboard mirror of the HARVEST pill. Falls
   // back to the reticle so pressing it at something across the room still SAYS why
   // nothing happened; the pill itself is only ever drawn for a fixture in reach.
@@ -2273,8 +2380,9 @@ async function boot(): Promise<void> {
     book, fan,
     bookPages: () => BOOK_PAGES.map((pg) => pg.gameId),
     /**
-     * Assemble a hand outright. Async now: each tear buys the room a round, and
-     * the next tear is blocked until that round has finished animating. The hand
+     * Assemble a hand outright. Still async, and now trivially so: a tear buys the
+     * room nothing, so nothing has to be waited out and the whole hand lands in one
+     * turn of the loop. Kept `async` because every harness awaits it. The hand
      * size is lifted FOR THE DURATION so a scripted three-page fusion still works
      * at the real starting hand size of one — and dropped again in `finally`,
      * because leaving it lifted raised the real tear ceiling for the rest of the
@@ -2292,11 +2400,12 @@ async function boot(): Promise<void> {
       try {
         for (const id of ids) {
           const i = BOOK_PAGES.findIndex((pg) => pg.gameId === id);
-          if (i >= 0 && tearPage(i)) await componentTurn;
+          if (i >= 0) tearPage(i);
         }
       } finally {
         handSizeBonus = 0;
       }
+      await Promise.resolve();
     },
     /**
      * Assemble a hand out of ANY sources, in the order given, appending to whatever
@@ -2306,7 +2415,8 @@ async function boot(): Promise<void> {
      * point of the belt is that a cast is an ingredient PLUS an element, so a helper
      * that can only reach one of the two sources cannot express the core verb. Each
      * component goes through its own real gesture — `tearPage` for a page,
-     * `takeIngredient` for a vial — so each pays its own slot and its own turn.
+     * `takeIngredient` for a vial — so each pays its own slot, which is now the whole
+     * of what a component costs.
      *
      * The ceiling is lifted only as far as the requested TOTAL needs, so a hand that
      * already fits (animate + fire at hand size 2, which is what the tree sells) is
@@ -2316,16 +2426,14 @@ async function boot(): Promise<void> {
       handSizeBonus = Math.max(0, fan.count + ids.length - meta.handSize);
       try {
         for (const id of ids) {
-          if (isIngredient(id)) {
-            if (takeIngredient(id)) await componentTurn;
-            continue;
-          }
+          if (isIngredient(id)) { takeIngredient(id); continue; }
           const i = BOOK_PAGES.findIndex((pg) => pg.gameId === id);
-          if (i >= 0 && tearPage(i)) await componentTurn;
+          if (i >= 0) tearPage(i);
         }
       } finally {
         handSizeBonus = 0;
       }
+      await Promise.resolve();
       return fan.gameIds;
     },
     /**
@@ -2341,19 +2449,19 @@ async function boot(): Promise<void> {
       .map((e) => ({ e, spriteId: e.spriteId, yields: harvestOf(e.spriteId) })),
     /**
      * Harvest the fixture in reach, or a given one. Same path as the pill, so it
-     * pays the same slot and the same turn AND meets the same reach rule; await
-     * `componentTurn` for the round.
+     * spends the same slot AND meets the same reach rule. There is no round to wait
+     * out any more; still `async` because every harness awaits it.
      */
     harvest: async (e?: Entity) => {
       const t = e ?? hud.harvestInReach;
       if (!t || !harvestFrom(t)) return false;
-      await componentTurn;
+      await Promise.resolve();
       return true;
     },
     /**
      * The belt, as the renderer sees it: the pouches in strip order, how many loops
-     * the strap has, the sand's remaining free components, and the last refusal with
-     * its timestamp (which is what a strap pulse reads).
+     * the strap has, and the last refusal with its timestamp (which is what a strap
+     * pulse reads).
      */
     belt: () => ({
       slots: state.belt.slots.map((s) => ({ ...s })),
@@ -2367,15 +2475,26 @@ async function boot(): Promise<void> {
        */
       enabled: BELT_ENABLED,
       total: beltTotal(state.belt),
+      /**
+       * Always 0 now, and reported anyway so it is visibly zero. It counted the free
+       * components TimeSand had left, and cast = 1 turn leaves no component turn for
+       * the sand to zero — `BeltState.free` and the strip caption that reads it are
+       * both dead. See the sand's entry in `spells.ts`.
+       */
       free: state.belt.free,
       refusal: state.belt.refusal,
       /** What is left to draw, which is the stack minus what the hand already holds. */
       available: Object.fromEntries(INGREDIENT_IDS.map((id) => [id, beltAvailable(id)])),
     }),
-    /** Every ingredient that exists, with the id the hand holds it by. */
+    /**
+     * Every ingredient that exists, with the id the hand holds it by.
+     *
+     * No `free` field any more: every component is free to take, so the question the
+     * flag answered no longer distinguishes anything.
+     */
     ingredients: () => INGREDIENT_IDS.map((id) => ({
       id, name: SPELL_BY_ID[id].name, role: SPELL_BY_ID[id].role,
-      effect: SPELL_BY_ID[id].effect, free: isFreeToTake(id),
+      effect: SPELL_BY_ID[id].effect,
     })),
     /**
      * Put ingredients on the belt through the real grant path, refusals included —
@@ -2388,19 +2507,20 @@ async function boot(): Promise<void> {
       return got;
     },
     /**
-     * Draw one into the hand. The same path the pouch tap takes, so it pays the same
-     * slot and the same turn — and `await`s the round, like `harvest` does. TimeSand
-     * resolves instantly because its round is never bought.
+     * Draw one into the hand. The same path the pouch tap takes, so it spends the
+     * same slot and nothing else. Still `async` to match `harvest`, and because every
+     * harness awaits it.
      */
     takeIngredient: async (id: string) => {
       if (!takeIngredient(id)) return false;
-      await componentTurn;
+      await Promise.resolve();
       return true;
     },
     /**
      * Put the hand back. The one return gesture the game has (the CLEAR pill and
      * `R`), here so a harness can prove the half of the rule that matters: returning
-     * an ingredient neither consumes it nor costs a turn.
+     * an ingredient neither consumes it nor moves the room. Nor does taking it, since
+     * the rebase — so the round trip is now provably a no-op rather than half of one.
      */
     returnHand: () => {
       returnHand();
@@ -2417,14 +2537,18 @@ async function boot(): Promise<void> {
       source: SPELL_BY_ID[fan.gameIds[c.index]]?.source,
     })),
     /**
-     * Cancel ONE component. The same path the card tap takes, so it proves the three
-     * things this has to be: free (no turn bought), no refund (`turns` does not move),
-     * and non-destructive to the belt.
+     * Cancel ONE component. The same path the card tap takes, so it proves the two
+     * things this has to be: free, and non-destructive to the belt.
+     *
+     * `turns` is the RUN's turn counter (`combat.turns`) rather than a per-assembly
+     * bill, because there is no longer any such thing as a per-assembly bill. It is
+     * reported so a harness can assert the strongest form of the rule: take a
+     * component, put it back, and this number has not moved.
      */
     returnComponent: (index: number) => {
       const ok = returnComponent(index);
       return {
-        ok, held: fan.gameIds, turns: assemblyTurns, free: state.belt.free,
+        ok, held: fan.gameIds, turns: combat.turns, free: state.belt.free,
         belt: state.belt.slots.map((s) => ({ ...s })),
       };
     },

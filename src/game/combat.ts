@@ -6,19 +6,23 @@
  * punished for looking around, and on a phone that would make the camera
  * controls feel like a resource.
  *
- * There is NO mana. The cost of a spell is paid in turns while you ASSEMBLE it:
- * every component you take (tearing a page, and later harvesting or drawing off
- * the belt) hands the room a free action, and releasing the cast is free. That
- * puts the price on the decision rather than on the trigger — a fusion is an
- * investment of rounds you spent standing there, so it can be strictly stronger
- * than a single page without being strictly better.
+ * There is NO mana. **A cast costs one turn. Moving costs one turn. Nothing else
+ * costs anything** — tearing a page, harvesting a fixture and drawing off the belt
+ * are all free, and so is putting any of them back. The price sits on the trigger
+ * rather than on the decision, which is what stops the game punishing a change of
+ * mind: the previous rule charged for taking a component and refunded nothing for
+ * returning one, so drawing and cancelling in a loop handed the room free rounds.
  *
- * Every number that governs the TEMPO is in `tuning.ts`, sized for that loop at a
- * hand of one — the engage radius, the interaction multipliers, the SHATTER
- * threshold, the denial cap and the round pacing all live there. If a fight feels
- * wrong it is a tuning number that is wrong. (The BFS expansion cap in
- * `stepToward` is the one bare number left, and it bounds an algorithm rather
- * than a fight.)
+ * The consequence that everything downstream is balanced against: a cast holding
+ * three elements costs exactly what a cast holding one costs, so a fusion is not
+ * priced in turns at all. It is priced in HAND SLOTS, which come from the star
+ * tree. `tuning.ts` is sized against a hand of ONE, the floor of that ladder.
+ *
+ * Every number that governs the TEMPO is in `tuning.ts` — the engage radius, the
+ * interaction multipliers, the SHATTER threshold, the denial cap and the round
+ * pacing all live there. If a fight feels wrong it is a tuning number that is
+ * wrong. (The BFS expansion cap in `stepToward` is the one bare number left, and
+ * it bounds an algorithm rather than a fight.)
  */
 import { Rng } from '../core/rng';
 import { DIR_VEC, type Grid } from '../dungeon/grid';
@@ -46,6 +50,20 @@ export interface Combatant {
   /** Melee statuses this body applies (golem infusions). */
   infuse: StatusId[];
   damage: number;
+  /**
+   * Is this body IN the fight — did it decide to act on the last round?
+   *
+   * Written where `enemyRound` makes that decision and nowhere else, because that is
+   * the only place the answer exists: a body is engaged when the player is close
+   * enough for it to answer, and idle when the round walked past it. The HUD reads it
+   * to auto-select the thing directly ahead, so "alerted" and "allowed to hit you"
+   * are one fact rather than two that can drift.
+   *
+   * A body that lost its round to a freeze stays alerted. It is still in the fight —
+   * `engaged` counts it — and dropping the reticle off something the moment you
+   * denied it would take the target away exactly when the play worked.
+   */
+  alerted: boolean;
   /**
    * Rounds left during which round-denial cannot make this body skip. See
    * `DENIAL_BRACE` — it is what stops a 2-turn freeze from being permanent
@@ -107,13 +125,6 @@ export interface PlayerState {
  * belongs over the body that lost it.
  */
 export type LogKind = 'cast' | 'hit' | 'status' | 'death' | 'info' | 'deny' | 'discover';
-
-/**
- * What a component-turn was spent on. All three are live: a page torn out of the
- * book, an element taken off a fixture, an ingredient drawn off the belt. They cost
- * the same — one slot, one turn — which is why the cause is a label and not a price.
- */
-export type TurnCause = 'tear' | 'harvest' | 'belt';
 
 export interface GameEvent {
   kind: LogKind;
@@ -240,9 +251,15 @@ export class Combat {
   private engaged = new Set<number>();
   bossDead = false;
   /**
-   * Rounds spent this run. Nothing in the game reads it — every price is paid
-   * through `takeTurn`, so this is simply the one honest count of "the player
-   * did something", which the playable ad paces its CTA against.
+   * Turns spent this run, incremented inside `enemyRound` because that is what a
+   * turn IS — every price in the game is paid by handing the room one round, and
+   * there are exactly two things that pay it: releasing a cast and stepping. So
+   * this is the one honest count of "the player spent a turn", which the playable
+   * ad paces its CTA against.
+   *
+   * Counting it in the round rather than at the two call sites is deliberate: a
+   * third thing that ever costs a turn cannot be added without going through
+   * `enemyRound`, so it cannot be added without being counted.
    */
   turns = 0;
   /** Fusion names already announced this run. */
@@ -278,7 +295,7 @@ export class Combat {
   private register(e: Entity): void {
     if (!['enemy', 'boss'].includes(e.kind) && !e.animated) return;
     this.combatants.set(e, {
-      e, statuses: [], infuse: [], braced: 0,
+      e, statuses: [], infuse: [], braced: 0, alerted: false,
       damage: e.kind === 'boss' ? bossDamage(this.state.depth) : enemyDamage(this.state.depth),
     });
   }
@@ -301,6 +318,18 @@ export class Combat {
    */
   bracedFor(e: Entity): number {
     return this.combatants.get(e)?.braced ?? 0;
+  }
+
+  /**
+   * Is this body awake and in the fight — moving or attacking rather than idle?
+   *
+   * Exposed for the reticle. An enemy that is coming for you is the one thing the
+   * player must not have to tap to fight, and "coming for you" is a decision the
+   * ROUND makes (see `Combatant.alerted`); asking the entity would only ever be a
+   * guess about distance that the round could disagree with.
+   */
+  isAlerted(e: Entity): boolean {
+    return this.combatants.get(e)?.alerted === true;
   }
 
   // ------------------------------------------------------------------ casting
@@ -334,19 +363,25 @@ export class Combat {
   }
 
   /**
-   * Release the assembled cast. Returns true if the spell actually went off —
-   * false means it was refused and the hand is untouched, so the caller can keep
-   * the pages. It does NOT mean a turn was spent: the turns were already paid,
-   * one per component, when the hand was assembled.
+   * Release the assembled cast — **the one place a spell costs a turn.**
+   *
+   * Returns true if the spell actually went off, and true is therefore also "a
+   * round was run". False means the cast was refused: the hand is untouched, the
+   * room does not act, and the caller keeps the pages. Assembling cost nothing, so
+   * a refusal has to cost nothing either or changing your mind is punished again.
+   *
+   * The round runs AFTER the effect lands, which is not an implementation detail —
+   * it is worth roughly one round a fight, because a body killed by the cast never
+   * gets to answer it and a status lands in time to touch the very next round.
+   * `tuning.ts` is sized against that ordering.
    *
    * `targetEntity` is the tapped thing. A volley (`count > 1`) spreads across
    * DISTINCT bodies and stops when it runs out of them — extra projectiles are
    * lost rather than wrapping back onto the primary. That single rule is what
-   * keeps the rank ladder honest: rank counts a page as several copies, so a
-   * rank-3 page used to put three projectiles on one body for one turn, which
-   * matched a three-turn fusion at a third of the price. Now rank makes a cast
-   * WIDER and fusions are what make it deeper, so "better against a group, worse
-   * against one thing" is true of every volley in the game — Multishot's included.
+   * keeps the rank ladder honest now that rank and hand size are priced in the
+   * same unit: both make one turn's cast bigger, rank buys WIDTH plus 15% a copy
+   * for one slot, and an extra element buys a whole extra element. "Better against
+   * a group, worse against one thing" is true of every volley in the game.
    */
   async cast(pages: string[], targetEntity: Entity | null): Promise<boolean> {
     const target: CastTarget = targetEntity
@@ -393,6 +428,11 @@ export class Combat {
       c.damage = cast.damage;
       c.infuse = cast.infuse;
       this.onCastFx(cast, null, [targetEntity]);
+      // Waking something is a cast, so it is a turn, so the room answers. Charged
+      // here and not once at the bottom because the golem branch returns early —
+      // and a summon that bought the player a free round would be the one cast in
+      // the game worth spamming.
+      await this.enemyRound();
       return true;
     }
 
@@ -409,6 +449,7 @@ export class Combat {
       this.applyCast(cast, t);
     }
 
+    await this.enemyRound();
     return true;
   }
 
@@ -689,42 +730,22 @@ export class Combat {
   }
 
   /**
-   * Spend a turn on something that is not a step and not a cast — taking a
-   * spell component. "It costs a turn" and "the room gets a free action" are the
-   * same sentence, so this is deliberately a thin wrapper: there is exactly one
-   * round in the game and every price is paid through it.
-   *
-   * Returns whether the round actually cost anything — true when a hostile was
-   * engaged (whether or not it managed to act) or a golem fought. Out of combat
-   * it is false, and the HUD needs that: a readout that bills you for every page
-   * you leaf through in an empty room advertises the exact opposite of the rule
-   * this phase exists to establish.
-   *
-   * `_cause` is still unused, and that is the finding rather than an omission: all
-   * three sources now exist and a round is a round whichever of them bought it. It
-   * is carried so the caller's own bookkeeping can tell them apart — and so that a
-   * cause which ever DOES change the round has somewhere to be read.
-   *
-   * Note where the free component of TimeSand is handled: not here. A free component
-   * does not buy a cheap round, it buys no round at all, so `spendComponentTurn` in
-   * `main.ts` never reaches this.
-   */
-  async takeTurn(_cause: TurnCause): Promise<boolean> {
-    this.turns++;
-    return this.enemyRound();
-  }
-
-  /**
    * Every hostile and every allied golem takes its turn, then statuses tick.
    *
+   * **This is the turn.** There is exactly one round in the game and both prices
+   * are paid through it — a cast and a step — which is why the counter lives here
+   * rather than at the call sites. There is no third caller and adding one would be
+   * adding a third thing that costs a turn.
+   *
    * Paced with a real delay per acting body, because a round that resolves inside
-   * one microtask is a round nobody can see — and "a three-page fusion visibly
-   * costs three enemy rounds" is an acceptance criterion, not a figure of speech.
+   * one microtask is a round nobody can see, and now that an action buys exactly
+   * ONE round that round is the only beat the player has to read the room by.
    * Nothing acting means nothing to pace, so an empty room stays instant.
    *
    * Returns true if anything was engaged.
    */
   private async enemyRound(): Promise<boolean> {
+    this.turns++;
     const g = this.floor.grid;
     const px = this.playerTile.x, py = this.playerTile.y;
     let engaged = false;
@@ -736,11 +757,13 @@ export class Combat {
         const d = Math.abs(e.sprite.tx - px) + Math.abs(e.sprite.ty - py);
         // Act from anywhere the player could target from — see ENGAGE_RADIUS.
         const sameRoom = g.roomAt(px, py)?.id === e.roomId;
-        if (!sameRoom && d > ENGAGE_RADIUS) continue;
+        if (!sameRoom && d > ENGAGE_RADIUS) { c.alerted = false; continue; }
 
         // The round counts against the player from here: this body is in the
-        // fight even if a status is about to take its action away.
+        // fight even if a status is about to take its action away. Which is also
+        // exactly what the reticle means by ALERTED — see `Combatant.alerted`.
         engaged = true;
+        c.alerted = true;
         if (this.denied(c)) { this.announceDenial(c); continue; }
 
         if (d <= 1) {
@@ -935,43 +958,68 @@ function label(e: Entity): string {
 }
 
 /**
- * Tiles in front of the player, nearest first — the tap-target candidates.
+ * Is the straight line between two tiles free of wall?
  *
- * `reach` defaults to `ENGAGE_RADIUS` and everything outside the player's own room
- * is held to it, because the two rules have to agree: a body you can put a reticle
- * on has to be a body that is allowed to answer. Corridor tiles belong to no room,
- * so a player standing in one is never "in the same room" as anything — while the
- * reticle reached 7 and hostiles engaged at 4, a corridor was a firing position
- * from which a whole room, boss included, could be emptied for free.
+ * Endpoints excluded — the thing being looked at may stand anywhere, and the tile
+ * being looked FROM is the player's own. Sampled along the line and permissive at a
+ * corner (a line that grazes the join between two tiles passes if either is open),
+ * because the two failures are not symmetrical: sight leaking one tile round a
+ * doorframe is invisible, and a marker blinking off a creature you can plainly see
+ * reads as the targeting system being broken.
+ */
+function clearLine(grid: Grid, x0: number, y0: number, x1: number, y1: number): boolean {
+  const dx = x1 - x0, dy = y1 - y0;
+  const n = Math.max(Math.abs(dx), Math.abs(dy));
+  for (let i = 1; i < n; i++) {
+    const t = i / n;
+    const px = x0 + dx * t, py = y0 + dy * t;
+    if (grid.walkable(Math.round(px), Math.round(py))) continue;
+    if (grid.walkable(Math.floor(px), Math.floor(py))) continue;
+    if (grid.walkable(Math.ceil(px), Math.ceil(py))) continue;
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Everything the player can SEE, nearest first — the tap-target candidates.
+ *
+ * Visibility is the whole rule now, because the grimoire itself is gated on having
+ * something to aim at (`Roadmap/Casting_And_Movement.md`): a candidate the player
+ * cannot see is a book that opens for nothing. Three clauses, and each one is a hole
+ * that was open before:
+ *
+ *  - IN FRONT. A cone about as wide as it is deep, which is generous against the real
+ *    lens (90° vertical on a portrait frame is only ~50° across) and is what makes
+ *    "turning away drops the target" true. Everything in the room you stand in used
+ *    to qualify at any angle, so a body directly behind you kept its reticle.
+ *  - NOT THROUGH A WALL. The forward ray stopped at the first wall but then added
+ *    whole rooms it had reached the edge of, so a marker drew over anything in a room
+ *    the player could not see into — the `Stop target markers drawing through walls`
+ *    defect. `clearLine` is asked of every candidate, which closes it for the room
+ *    case as well as for the corridor one.
+ *  - WITHIN REACH unless you share a room with it, unchanged and for the unchanged
+ *    reason: a body you can put a reticle on has to be a body that is allowed to
+ *    answer, and `enemyRound` engages at `ENGAGE_RADIUS` outside its own room.
  */
 export function targetsInView(
   grid: Grid, floor: Floor, x: number, y: number, dir: 0 | 1 | 2 | 3,
   reach = ENGAGE_RADIUS,
 ): Entity[] {
-  const out: Entity[] = [];
-  const add = (e: Entity | null) => {
-    if (e && e.alive && e.kind !== 'stairs' && !out.includes(e)) out.push(e);
-  };
-  /** Only within reach — for anything the player does not share a room with. */
-  const addNear = (e: Entity | null) => {
-    if (e && Math.abs(e.sprite.tx - x) + Math.abs(e.sprite.ty - y) <= reach) add(e);
-  };
-
-  // Everything in the room you are standing in is targetable, at any distance —
-  // you share a room with it, so `enemyRound` lets it act whatever the reach says.
-  // Restricting to the forward ray meant a bookshelf two steps to your left could
-  // not be animated, which quietly broke the core verb depending on your facing.
   const room = grid.roomAt(x, y);
-  if (room) for (const [rx, ry] of room.tiles) add(floor.entityAt(rx, ry));
+  const [fx, fy] = DIR_VEC[dir];
+  const [rx, ry] = DIR_VEC[(dir + 1) % 4];
+  const out: Entity[] = [];
 
-  // Plus a forward cone down a corridor, with a one-tile lateral spread.
-  const [dx, dy] = DIR_VEC[dir];
-  for (let i = 1; i <= reach; i++) {
-    const tx = x + dx * i, ty = y + dy * i;
-    if (!grid.walkable(tx, ty)) break;
-    for (const [ox, oy] of [[0, 0], [dy, dx], [-dy, -dx]] as const) addNear(floor.entityAt(tx + ox, ty + oy));
-    const far = grid.roomAt(tx, ty);
-    if (far && far !== room) for (const [rx, ry] of far.tiles) addNear(floor.entityAt(rx, ry));
+  for (const e of floor.entities) {
+    if (!e.alive || e.kind === 'stairs') continue;
+    const dx = e.sprite.tx - x, dy = e.sprite.ty - y;
+    const ahead = dx * fx + dy * fy;
+    const side = Math.abs(dx * rx + dy * ry);
+    if (ahead < 1 || side > ahead) continue;
+    if ((!room || e.roomId !== room.id) && Math.abs(dx) + Math.abs(dy) > reach) continue;
+    if (!clearLine(grid, x, y, e.sprite.tx, e.sprite.ty)) continue;
+    out.push(e);
   }
 
   // nearest first, so auto-target picks the immediate threat

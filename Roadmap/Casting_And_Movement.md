@@ -1,8 +1,8 @@
 # Casting And Movement
 
 **Player-facing:** yes
-**Started:** —
-**Status:** planned
+**Started:** 2026-07-29 18:40
+**Status:** shipped
 
 Re-bases the turn rule to **cast = 1 turn**, makes the grimoire appear only when there
 is something to cast at, and gives movement a second hand.

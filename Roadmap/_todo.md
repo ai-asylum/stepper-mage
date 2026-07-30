@@ -78,17 +78,17 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 6 — Casting_And_Movement
 
-- [ ] Charge a turn on cast and on moving only; make taking a component free.
-- [ ] Retune the balance and the acceptance gate against the new rule.
-- [ ] Show the grimoire only while a target is selected.
-- [ ] Auto-select an alerted enemy directly ahead; drop a target that leaves sight.
-- [ ] Replace the grimoire with a large CAST when every hand slot is full.
-- [ ] Remove the manual show/hide control and its key binding.
-- [ ] Move the floor name into the top-left as `DEPTH <n> — <name>`.
-- [ ] Add two-finger swipes: left and right side-step, up and down move and turn 180.
-- [ ] Swap places with the creature ahead or behind, ending up facing its back.
-- [ ] Correct the design doc's turn economy section and everything it concluded.
-- [ ] Commit changes.
+- [x] Charge a turn on cast and on moving only; make taking a component free.
+- [x] Retune the balance and the acceptance gate against the new rule.
+- [x] Show the grimoire only while a target is selected.
+- [x] Auto-select an alerted enemy directly ahead; drop a target that leaves sight.
+- [x] Replace the grimoire with a large CAST when every hand slot is full.
+- [x] Remove the manual show/hide control and its key binding.
+- [x] Move the floor name into the top-left as `DEPTH <n> — <name>`.
+- [x] Add two-finger swipes: left and right side-step, up and down move and turn 180.
+- [x] Swap places with the creature ahead or behind, ending up facing its back.
+- [x] Correct the design doc's turn economy section and everything it concluded.
+- [x] Commit changes.
 
 ## Phase 7 — Pixel_Art_Overlay
 
@@ -142,7 +142,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 13 — Polish_Pass
 
-- [ ] Stop target markers drawing through walls.
+- [x] Stop target markers drawing through walls. (Closed early by Casting_And_Movement.)
 - [ ] Fix golems stalling instead of following.
 - [ ] Break the monochrome orange cast; make each floor read as its own palette.
 - [ ] Add a chest golem sprite and let Animate target chests.

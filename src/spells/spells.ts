@@ -25,8 +25,13 @@
  * props, corpse raising needs a kill first. They differ only in what they may be
  * aimed at, so the role is the difference — and `tempo` is the odd one out, the
  * role for an ingredient that changes what the cast COSTS and nothing about what it
- * is (TimeSand). A tempo component contributes no damage, no status and no element,
- * which is why it can be free.
+ * is (TimeSand). A tempo component contributes no damage, no status and no element.
+ *
+ * DEAD as of the cast = 1 turn rebase: components are free, so there is no
+ * per-component cost for a tempo component to change and TimeSand does nothing at
+ * all. The role is kept rather than deleted because it is the seam any future
+ * ingredient that touches the turn economy would use, and because deciding what the
+ * sand becomes instead is the designer's call — see its entry below.
  */
 export type SpellRole = 'bolt' | 'modifier' | 'animate' | 'raise' | 'tempo';
 export type StatusId =
@@ -207,16 +212,24 @@ export const SPELLS: SpellDef[] = [
   },
   {
     /**
-     * Owns: the PRICE of a cast. The only component in the game that touches the turn
-     * economy, and the only one that changes nothing about what the cast is — no
-     * damage, no status, no element, no target. `cost: 0` because it is free to take.
+     * INERT. It owned the PRICE of a cast: taking it was free and it made this cast's
+     * next two components free as well. Under cast = 1 turn every component is free
+     * already, so there is nothing left for it to discount and holding it does
+     * nothing but occupy a hand slot.
      *
-     * Not Fourth Finger, which was cut for duplicating the tree's hand-size node:
-     * this does not raise the ceiling on what you may hold, it lowers what holding it
-     * costs. A bigger hand and a cheaper hand are different purchases.
+     * Left in place rather than deleted, for two reasons and neither of them inertia.
+     * The belt is switched off behind `BELT_ENABLED`, so nothing can draw one and no
+     * player can be handed a dud; and what the sand should BECOME is a design
+     * decision (`docs/DESIGN.md` still lists it in the belt table with its old job),
+     * which cannot be filled in here by inference. What is not allowed is a
+     * definition that keeps advertising a job it no longer has, so the effect line
+     * says what is true.
+     *
+     * `cost: 0` is left alone: it is the mana-era field, every other ingredient
+     * carries one, and nothing reads it.
      */
     id: 'sand', name: 'TimeSand', glyph: '⏳', role: 'tempo', kind: 'ingredient', source: 'belt', element: 'none', cost: 0,
-    colour: 0xf0d79a, effect: 'Free to take. This cast\'s next two components are free too.',
+    colour: 0xf0d79a, effect: 'Runs out without spending anything. It has no work left.',
     flavor: '"Borrowed from the hour you were going to need later."',
   },
 ];
@@ -283,17 +296,13 @@ export function wantsCorpse(ids: string[]): boolean {
   return ids.some((id) => SPELL_BY_ID[id]?.role === 'raise');
 }
 
-/**
- * Is taking this component free?
- *
- * TimeSand only. It is the one ingredient whose whole job is the turn economy, and
- * `docs/DESIGN.md` is explicit about why it cannot cost one: pay a turn AND a hand
- * slot to save two and the trade is marginal, where free it turns a 3-slot cast into
- * a 0-turn cast.
+/*
+ * `isFreeToTake` used to live here and answered "does taking this component skip its
+ * turn", which was true of TimeSand and nothing else. Deleted rather than left
+ * returning a constant: under cast = 1 turn EVERY component is free to take, so the
+ * predicate no longer distinguishes anything and a helper that always agrees is a
+ * rule nobody can find. The `tempo` role above is what survives of the idea.
  */
-export function isFreeToTake(id: string): boolean {
-  return SPELL_BY_ID[id]?.role === 'tempo';
-}
 
 /** Can this be the root of a cast? True for harvested elements too. */
 export function isElement(id: string): boolean {
@@ -348,25 +357,37 @@ export function setKey(ids: string[]): string {
  * Authored fusion identities. Only sets that deserve a NAME live here; every
  * other combination is composed by `resolveCast`. Keys are sorted set keys.
  *
- * **These are priced in TURNS.** A set of N elements costs N turns to assemble,
- * so it has to beat N turns of the best single page — otherwise the fusion is a
- * worse Fireball that also costs hand size. The yardstick is a rank-1 Fireball:
- * 10 up front plus three ticks of 3, so ~19 on one body per turn spent.
+ * **These are priced in HAND SLOTS, not in turns.** A cast costs one turn whether
+ * it holds one element or three, so nothing in this table is paid for in tempo any
+ * more. What a fusion costs is the SLOTS it occupies, and slots come from the star
+ * tree — so the yardstick is ONE turn of the best single page rather than N of
+ * them: a rank-1 Fireball, 10 up front plus three ticks of 3, so ~19 on one body.
  *
  * The shape every row is tuned to, and the reason the table has two kinds of row:
  *  - `count > 1` is a SPREAD. Projectiles never double up on one body, so a
  *    3-count pair is worth three bodies' damage against a room and one body's
- *    against a boss. These win on groups and lose badly on one thing.
- *  - `count: 1` is a FOCUS, and has to out-damage N Fireballs on a single body or
- *    it has no niche at all — which is exactly what the old table got wrong.
- *    Steam Burst at 13 lost to two Fireballs' ~29, so nobody would ever hold two
- *    pages. It is now the single-target nuke, and overkills a mook on purpose.
+ *    against a boss. Measured against 19 × the bodies it reaches, which is why
+ *    Blizzard's 13 on a lone target is not a failure — it is 39 across three, and
+ *    these rows win on groups and lose badly on one thing.
+ *  - `count: 1` is a FOCUS, measured against 19 on a single body, and it has to
+ *    beat that by enough that the extra slot bought something real. Steam Burst is
+ *    30, so two slots buy 1.6× a Fireball turn; Soulfire's 46 over its ticks is
+ *    2.4×. These are the single-target nukes and they overkill a mook on purpose.
+ *
+ * What the rule NO LONGER asks, and the superseded one did: that a fusion beat the
+ * same elements cast one at a time. It cannot ask that, because the fusion is one
+ * turn and the sequence is N — measured, 10 of the 21 authored rows out-total their
+ * own sequence and every one of them should. Steam Burst lands 30 in one turn where
+ * frost-then-fire is 32 over two; the fusion wins the tempo and loses the total, and
+ * that is the trade a slot buys. The old rule ("out-damage N Fireballs") was the
+ * same sentence written when N slots cost N turns, and it is the only thing in this
+ * comment the rebase falsified — no row's numbers had to move, because a yardstick
+ * that fell from N × 19 to 19 is one every existing row already clears.
  *
  * A HARVEST is priced identically, because it costs identically: one hand slot and
- * one turn, exactly like tearing a page. So Stone + Fireball is a two-turn cast and
- * is measured against two turns of Fireball (10 + 10, with the burn refreshed once,
- * = ~32 on one body) and not against one. What a harvest saves is a page, not a
- * turn — and being locked to rank 1 is what it pays for that.
+ * nothing else, exactly like tearing a page. So Stone + Fireball is a two-SLOT cast
+ * measured against the same 19. What a harvest saves is a page, not a turn — and
+ * being locked to rank 1 is what it pays for that.
  */
 export const COMBOS: Record<string, ComboDef> = {
   // solo identities
@@ -455,22 +476,24 @@ export const COMBOS: Record<string, ComboDef> = {
   },
 
   /**
-   * Harvest + page. Two turns each, so each is measured against ~32.
+   * Harvest + page. Two SLOTS each, so each is measured against one Fireball turn's
+   * ~19 — not against two Fireballs, which is what it was measured against while
+   * taking the rock cost a turn of its own.
    *
    * These are the rows the whole harvest phase exists for. Note the shape: the
    * Stone half brings no status of its own, so a Stone fusion is whatever the PAGE
    * does with a rock behind it — which is why the four of them land in four
    * different slots of the table rather than being one row four times.
    */
-  // 26 + a 4-turn burn = 38 against two Fireballs' 32, and it shatters ice on the
-  // way in. The single-target rock.
+  // 26 plus a 4-turn burn is 38 against a Fireball turn's 19, and it shatters ice on
+  // the way in. The single-target rock, and the heaviest thing two slots buy.
   'fire+stone': {
     name: 'Meteor', colour: 0xff6a3a, damage: 26,
     statuses: [{ id: 'burning', power: 1.4 }],
   },
-  // Priced UNDER Aurora, which buys the same shape for the same two turns but
-  // spends two pages doing it: one less damage and one less round denied. Saving a
-  // page slot is the whole of what a harvest fusion is paid, so it must not also
+  // Priced UNDER Aurora, which buys the same shape for the same two slots but
+  // spends two PAGES doing it: one less damage and one less round denied. Saving a
+  // page is the whole of what a harvest fusion is paid, so it must not also
   // beat the page-only row it substitutes for. Still one or the other and never
   // both — 25 is over SHATTER_DAMAGE, so cast at something already frozen it bursts
   // the shell instead of extending it.
@@ -484,7 +507,7 @@ export const COMBOS: Record<string, ComboDef> = {
     name: 'Lodestone', colour: 0xffd76a, damage: 20, count: 2,
     statuses: [{ id: 'shocked', power: 1 }],
   },
-  // The widest thing two turns can buy, and the only shove of 2 in the game — the
+  // The widest thing two slots can buy, and the only shove of 2 in the game — the
   // floor moving is not a knock, it is a distance.
   'gust+stone': {
     name: 'Earthquake', colour: 0xbfae90, damage: 14, count: 3,
@@ -716,7 +739,7 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
   /**
    * Counted by ELEMENT and not by id, because two ids can now be the same element:
    * a torn Fireball beside a harvested candelabra is two of the same fire and has
-   * to empower like two Fireballs would, having cost the same two turns. Counting
+   * to empower like two Fireballs would, having cost the same two slots. Counting
    * ids would have paid the player nothing for the second component.
    */
   const elCount: Partial<Record<Element, number>> = {};
@@ -854,12 +877,18 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
      * The split between the two lines is the whole reason the rank ladder is not
      * strictly better than fusing. The extra projectiles are a spread and never
      * double up (`Combat.cast`), so a rank-3 page widens a cast to three bodies;
-     * the multiplier is what it buys against a single body. It used to be +8% and
-     * three wrapped projectiles, which meant one turn of rank-3 Fireball put 36 on
-     * one target — matching a three-turn Thunderhead at a third of the price and
-     * inverting the trade the turn economy exists to create. +15% per extra copy
-     * is what leaves a three-turn fusion strictly ahead of a one-turn rank-3 page
-     * on every count of bodies, measured.
+     * the multiplier is what it buys against a single body.
+     *
+     * Rank and hand size are priced in the SAME unit since the rebase — both make
+     * one turn's cast bigger — so the two are directly comparable for the first
+     * time, and +15% is what keeps the comparison honest: a rank-3 Fireball is one
+     * slot for 13×3 (22 on one body, 39 across three) against a three-slot
+     * Thunderhead's 24×3 (24 on one, 72 across three), so the slots stay strictly
+     * ahead on every count of bodies while the ladder stays worth climbing. They
+     * also COMPOSE — a rank-3 page inside a triple is Mighty Thunderhead, 31×5 — so
+     * the ladder is a multiplier on fusing and never a substitute for it. (At +8%
+     * and three WRAPPED projectiles, which is what this used to be, a rank-3
+     * Fireball put 36 on one target and beat the triple outright.)
      */
     count += extraBolt;
     damage = Math.round(damage * (1 + 0.15 * extraBolt));

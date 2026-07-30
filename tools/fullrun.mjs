@@ -2,6 +2,16 @@
  * Two passes over a run, because they answer different questions and only one of
  * them used to exist.
  *
+ * THE RULE THIS FILE IS WRITTEN AGAINST: a cast costs one turn, a step costs one
+ * turn, and taking a component is free. So at hand size 1 one iteration of the fight
+ * loop below is exactly one cast and exactly one enemy round, and `combat.turns`
+ * counts casts. That is not the coincidence it was under the superseded rule, where a
+ * loop iteration cost one round because it TORE one page and the cast itself was free
+ * — the two arithmetics agreed at hand size 1 and nowhere else. Every policy's clock
+ * is re-derived on the new rule below, and the ORDER matters as much as the count: the
+ * round now runs after the cast, so a freeze denies the very next round instead of the
+ * one after it, and the killing cast ends the fight before the boss answers it.
+ *
  *  --tour   GOD MODE floor sweep. Grants every page, refills the bar between
  *           floors and fuses three elements per cast. It answers "does every
  *           floor build, populate and let its boss die", and nothing about
@@ -48,9 +58,11 @@
  *    the enemies in the altar and treasure rooms are looted past rather than
  *    fought, and corridors cost nothing. This is the routed line `tuning.ts`
  *    sizes the attrition budget against, not a full clear.
- *  - Fixtures and object reactions. Neither exists yet (see
- *    `Harvest_And_Room_Elements`), so "elements alone" is the whole toolkit here
- *    and the criterion's other two sources are absent by construction.
+ *  - Fixtures and object reactions. Both exist now, and no policy uses either: a
+ *    line here chooses a PAGE, so "elements alone" is the whole toolkit and the
+ *    criterion's other two sources are absent by choice rather than by absence. They
+ *    got cheaper with the rebase (a harvest costs a hand slot and the walk, where it
+ *    used to cost a turn as well), so what they would add is understated here.
  *  - Positioning. A policy chooses a PAGE and nothing else: it casts from a fixed
  *    stand-off at the boss, never at the adds, and never kites with Gust's shove,
  *    steps out of reach, uses a prop as cover or animates anything (animation is
@@ -68,7 +80,7 @@ const DEPTHS = 5;
  *
  * `mixed` is the gated line because it is the one that answers the acceptance
  * criterion (see the header). The rest are measured every run and never gate:
- * `burn` and `lock` clearing 1/5 is the designed shape of the fight, so failing
+ * `burn` clearing 0/5 and `lock` 2/5 is the designed shape of the fight, so failing
  * them would ship a red gate that reports nothing.
  */
 const POLICIES = ['burn', 'lock', 'alt', 'mixed'];
@@ -122,11 +134,14 @@ const STAND_OFF = `
 /**
  * Assemble a hand, retrying while tears are BLOCKED.
  *
- * A tear is refused for exactly two reasons (unlearned, hand full) and blocked
- * for one: the round the previous component bought is still resolving. Blocked
- * looks identical to refused through `selectPages`, and not distinguishing them
- * is how a harness ends up firing an empty cast forty times and calling it a
- * boss fight. Returns false only when the hand never assembled.
+ * A tear is refused for exactly two reasons (unlearned, hand full) and blocked for
+ * one: the game is mid-animation — a hand still merging into a cast, or a floor being
+ * swapped. It is NO LONGER blocked by a round in flight, because a component costs
+ * nothing and so cannot be gated on the room being busy; the retry loop is therefore
+ * near-vestigial and kept as insurance rather than as the load-bearing thing it was.
+ * Blocked still looks identical to refused through `selectPages`, and not
+ * distinguishing them is how a harness ends up firing an empty cast forty times and
+ * calling it a boss fight. Returns false only when the hand never assembled.
  */
 const ASSEMBLE = `
   async (g, ids, tries = 12) => {
@@ -200,12 +215,25 @@ const BEST_PAGE = `
  * A policy: `(game, name) => (boss) => pageId`, one page per cast, asked fresh
  * every cast so it can read the boss's statuses rather than casting blind.
  *
+ * RE-DERIVED FOR CAST = 1 TURN. Every clock in here used to be justified by "one
+ * component, one round", and a cast now buys exactly one round on its own — so a line
+ * that counts CASTS is counting rounds directly rather than by coincidence, and the
+ * count is right at any hand size instead of only at one. The rules below came out of
+ * the re-derivation unchanged, which is the finding: at hand size 1 the two rules
+ * charge identically, so what the rebase moved is not the rhythm but the ORDER inside
+ * a turn. The cast now lands before the room answers, which means a freeze denies the
+ * NEXT round rather than the one after it, and the killing cast ends the fight before
+ * the boss gets its last swing — measured as roughly one enemy round a fight, and paid
+ * back in `tuning.ts` (bossHp 62+12d -> 70+14d, bossDamage 4+d -> 5+d).
+ *
  * The lines, and why each is worth a number:
  *
  *  burn   Fireball every turn. The max-damage line (see BEST_PAGE) and the baseline
- *         the others are read against. Measured: 1/5 — which is the finding, not a
- *         regression. The criterion asks whether the run can be completed, and a
- *         line that never looks at what its last cast left behind is the floor.
+ *         the others are read against. Losing is the finding, not a regression: the
+ *         criterion asks whether the run can be COMPLETED, and a line that never
+ *         looks at what its last cast left behind is the floor of that question.
+ *         Measured after the rebase: 0/5, dying on floor 4 in four seeds of five and
+ *         paying 4.63 HP a round there against `mixed`'s 0.93.
  *
  *  lock   Frostbolt every turn. The denial line: frozen costs a body its action,
  *         rate-limited by BOSS_DENIAL_BRACE, so it trades Fireball's 10-plus-burn
@@ -213,23 +241,26 @@ const BEST_PAGE = `
  *         to it — a rank-1 Frostbolt is exactly SHATTER_DAMAGE, so every second
  *         bolt lands on the freeze it just applied, deals 1.5x and STRIPS it
  *         (`Combat.applyCast` suppresses the incoming freeze on a shatter). The
- *         line therefore alternates freeze / shatter and cannot hold a lock.
- *         Measured: 1/5, the same as burn and for the opposite reason — it pays
- *         2.84 HP a round on floor 4 against burn's 4.51, and still loses, because
- *         the fight runs 9-11 rounds instead of 8 and three of the four deaths are
- *         the player's bar running out with the boss still on 22.
+ *         line therefore alternates freeze / shatter and cannot hold a lock. It
+ *         loses for the opposite reason to burn: it pays far less per round and
+ *         still runs out of bar, because the fight takes 11-12 casts instead of 9.
+ *         Measured: 2/5 at 2.75 HP a round on floor 4 — little more than half what
+ *         burn pays, and it still loses three seeds to the extra rounds.
  *
  *  alt    Frostbolt whenever the boss is not frozen, Fireball whenever it is. The
  *         line a player reaches from the DISCOVERABLE half of the knowledge alone:
  *         the SHATTER! caption teaches "fire into ice hits harder" and nothing
- *         teaches the brace. It is here to separate the two. Its steady state is
- *         [frost, fire] on repeat, which spends every second freeze on a braced
- *         round: 25% denial against `mixed`'s 33%, for slightly more damage.
- *         Measured: 4/5, and the miss is gate-a floor 5 with the boss on ONE hit
- *         point. So the discoverable half of the knowledge is worth almost the whole
- *         run, and the brace rhythm is worth the last seed. Read that as the
- *         criterion being met by skill and not by arcana — but also as the reason
- *         nothing in the HUD should stay silent about a body losing its round.
+ *         teaches the brace. It is here to separate the two. Traced on the new
+ *         ordering its steady state is a FOUR-cast cycle — frost (denied, brace 2),
+ *         fire (shatters, brace 2->1), frost (brace 1->0, so the freeze buys
+ *         nothing), fire (shatters, no denial) — so 25% of the boss's rounds against
+ *         `mixed`'s 33%, for slightly more damage. One freeze in two is spent inside
+ *         a brace, and that is the entire difference between the two skilled lines.
+ *         Measured: 4/5, missing only gate-c's floor 5, at 2.82 HP a round on floor 5
+ *         against `mixed`'s 1.69. So the discoverable half of the knowledge is worth
+ *         four fifths of the run and the brace rhythm is worth the last seed — which
+ *         is also the reason nothing in the HUD should stay silent about a body
+ *         losing its round.
  *
  *  mixed  What a player who has read the interaction table does, and THE GATED
  *         LINE — the acceptance criterion is met here or nowhere. The rule, exactly:
@@ -241,13 +272,19 @@ const BEST_PAGE = `
  *              cast Frostbolt. Two is BOSS_DENIAL_BRACE: a boss that loses a round
  *              braces for the next two, so a freeze spent inside those two rounds
  *              is wasted and a bolt landing exactly as the brace runs out denies
- *              one round in three — the cap, which `lock` never reaches.
+ *              one round in three — the cap, which `lock` never reaches. Counting
+ *              CASTS is what makes this exact now: a cast is a round, so "two casts
+ *              ago" and "two rounds ago" are the same sentence.
  *           3. Otherwise, cast Fireball.
- *         Steady state is [frost, fire, fire] on repeat: 33% of the boss's rounds
- *         denied at ~14 damage a round, against burn's 0% at ~13. Measured: 5/5,
- *         and it kills the floor-4 boss in the SAME 8 rounds burn needs while
- *         paying 1.38 HP a round against burn's 4.51 — the shatter is what pays for
- *         the bolt, so the denial is not bought with damage, it rides along free.
+ *         Steady state is a THREE-cast cycle, [frost, fire, fire] on repeat: frost
+ *         denies the next round and sets brace 2, the two fires spend the brace out,
+ *         and the next frost lands exactly as it expires. 33% of the boss's rounds
+ *         denied, against burn's 0%, for about the same damage a round — the shatter
+ *         is what pays for the bolt, so the denial rides along free. Measured: 5/5,
+ *         at 0.93 HP a round on floor 4 and 1.69 on floor 5 against burn's 4.63 and
+ *         6.43. Both figures came DOWN across the rebase (1.38 and 1.80 before it),
+ *         which is the reordering paying out to the line that was already reading the
+ *         room: the freeze it casts now denies the very next round.
  *
  * A line that needs a page the book does not hold degrades to `burn` rather than
  * casting nothing, so a non-default loadout produces a run instead of a stall.
@@ -261,8 +298,10 @@ const POLICY = `
       return (boss) => (g.combat.has(boss, 'frozen') ? 'fire' : 'frost');
     }
     if (name === 'mixed' && owns('frost') && owns('fire')) {
-      // Starts at the threshold so the line opens on the bolt, before the boss has
-      // closed any distance — a denied approach round is a free shooting-gallery round.
+      // Starts AT the threshold so the line opens on the bolt. Worth more under the
+      // new ordering than the old: the freeze now lands before the boss's first
+      // approach round, so the very first round of the fight is denied and the boss
+      // spends it standing at the far end of the room.
       let sinceFrost = 2;
       return (boss) => {
         if (g.combat.has(boss, 'frozen')) { sinceFrost++; return 'fire'; }
@@ -469,8 +508,9 @@ async function hand1Seed(seed, shoot, policy, gated) {
       let blocked = false;
       try {
         while (boss.alive && boss.hp > 0 && g.state.hp > 0 && casts < 40) {
-          // one page, one turn — and the policy is asked fresh, so it sees the
-          // statuses its last cast left behind
+          // One CAST, one turn. Assembling the page is free, so this loop's iteration
+          // count and `combat.turns` are the same number — asserted below. The policy
+          // is asked fresh, so it sees the statuses its last cast left behind.
           const page = nextPage(boss);
           if (!await assemble(g, [page])) { blocked = true; break; }
           g.hud.target = boss;
@@ -501,6 +541,11 @@ async function hand1Seed(seed, shoot, policy, gated) {
 
     claim(`${tag} floor ${depth} hand assembles at hand size 1`, !fight.blocked,
       fight.blocked ? 'a tear never landed' : `${fight.casts} single-page casts`);
+    // The rule, as a measurement, on every floor of every run: the fight spent exactly
+    // one turn per cast. Assembling cost nothing and nothing else in the loop moves —
+    // the stand-off is a teleport — so any drift here is the charge point moving.
+    claim(`${tag} floor ${depth} spends exactly one turn per cast`,
+      fight.turns === fight.casts, `${fight.turns} turns for ${fight.casts} casts`);
     if (fight.hp <= 0) {
       died = true;
       console.log(`  DIED on floor ${depth} after ${fight.casts} casts`);

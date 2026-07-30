@@ -163,11 +163,12 @@ check('turning away from it withdraws the offer', !!reach && reach.turnedAway ==
 check('line of sight alone is not reach', !!reach && reach.across === false && !!reach.stillVisible,
   JSON.stringify(reach));
 
-console.log('\n=== 4. one page, one turn: Fireball on the furniture ===');
+console.log('\n=== 4. one cast, one turn: Fireball on the furniture ===');
 const solo = await ev(async () => {
   const g = window.__game;
   const prop = g.floor.entities.find((e) => e.kind === 'prop' && !e.animated);
-  // `combat.turns` is the honest round counter — every price is paid through it.
+  // `combat.turns` is the honest round counter — every price is paid through it,
+  // and since the rebase there are exactly two things that pay: a cast and a step.
   const t0 = g.combat.turns;
   await g.selectPages(['fire']);
   const tornTurns = g.combat.turns - t0;
@@ -194,8 +195,11 @@ check('a single element page previews as a projectile',
 check('furniture takes the hit', solo.after < solo.before || !solo.alive,
   `${solo.before} -> ${solo.after}`);
 check('the cast spends the hand', solo.fanAfter === 0, `fan ${solo.fanAfter}`);
-check('one page costs one turn', solo.tornTurns === 1, `${solo.tornTurns} turns`);
-check('releasing the cast is free', solo.castTurns === 0, `${solo.castTurns} turns`);
+// INVERTED for cast = 1 turn. These two checks used to read "one page costs one turn"
+// and "releasing the cast is free"; they are the same two measurements with the
+// answers swapped, which is the whole of the rebase stated as a test.
+check('tearing a page costs no turn', solo.tornTurns === 0, `${solo.tornTurns} turns`);
+check('releasing the cast costs one turn', solo.castTurns === 1, `${solo.castTurns} turns`);
 await page.waitForTimeout(600);
 await shot('03-after-bolt');
 const golem = await ev(() => {
@@ -206,6 +210,49 @@ const golem = await ev(() => {
 // Not "no page can supply animate" any more — the honest reason is that this run
 // never held an ingredient, because its belt has no loops to keep one in.
 check('nothing animated — the hand held only elements', golem === null, String(golem));
+
+console.log('\n=== 4b. draw and cancel in a loop, standing in a fight ===');
+/**
+ * The rebase's whole reason for existing, as a measurement. Under the superseded rule
+ * a tear bought the room a round and putting the page back bought nothing back, so
+ * this loop handed a room twelve free rounds and could kill you for changing your mind.
+ * Run from a tile ADJACENT to a live hostile, because out of combat the old rule was
+ * free too — the trap only sprang where it mattered.
+ */
+const indecision = await ev(async () => {
+  const g = window.__game;
+  const foe = g.floor.entities.find((e) => e.alive && e.hostile);
+  if (!foe) return null;
+  const grid = g.floor.grid;
+  for (const [d, dx, dy] of [[0, 0, 1], [1, -1, 0], [2, 0, -1], [3, 1, 0]]) {
+    const px = foe.sprite.tx + dx, py = foe.sprite.ty + dy;
+    if (grid.walkable(px, py)) { g.place(px, py, d); break; }
+  }
+  g.returnHand();
+  const t0 = g.combat.turns;
+  const hp0 = g.state.hp;
+  const foeHp0 = foe.hp;
+  for (let i = 0; i < 6; i++) {
+    await g.selectPages(['fire']);
+    if (g.fan.count !== 1) return { held: g.fan.count, aborted: i };
+    g.returnComponent(0);
+  }
+  const out = {
+    turns: g.combat.turns - t0, hpLost: hp0 - g.state.hp,
+    foeHurt: foeHp0 - foe.hp, held: g.fan.count,
+    dist: Math.abs(foe.sprite.tx - g.stepper.x) + Math.abs(foe.sprite.ty - g.stepper.y),
+  };
+  g.returnHand();
+  return out;
+});
+console.log(indecision);
+check('six draw-and-cancel cycles beside a hostile spend no turn',
+  !!indecision && indecision.turns === 0, indecision ? `${indecision.turns} turns` : 'no hostile');
+check('and cost no HP', !!indecision && indecision.hpLost === 0,
+  indecision ? `${indecision.hpLost} HP` : '');
+check('and leave the hand empty and the hostile untouched',
+  !!indecision && indecision.held === 0 && indecision.foeHurt === 0,
+  indecision ? `held ${indecision.held}, foe took ${indecision.foeHurt}` : '');
 
 console.log('\n=== 5. fusion resolution table ===');
 const ELEMENT_SETS = [
@@ -224,8 +271,11 @@ const table = await ev(([elems, ingrs]) => {
     const c = g.combat.preview(s, { kind: 'enemy' });
     return {
       set: s.join('+'),
-      // The price is TURNS — one per component taken. There is no mana.
-      turns: s.length,
+      // The price is ONE TURN, whatever the set holds. There is no mana, and there is
+      // no per-component charge either: what a set costs is the hand SLOTS it fills,
+      // which is `s.length` and is not a turn count.
+      turns: 1,
+      slots: s.length,
       refusal: c.refusal ?? null,
       name: c.name, damage: c.damage, count: c.count, authored: c.authored,
     };
@@ -233,7 +283,7 @@ const table = await ev(([elems, ingrs]) => {
   return { elems: elems.map(row), ingrs: ingrs.map(row) };
 }, [ELEMENT_SETS, INGREDIENT_SETS]);
 for (const r of [...table.elems, ...table.ingrs]) {
-  console.log(`  ${r.set.padEnd(20)} ${String(r.turns) + 't'} -> ${
+  console.log(`  ${r.set.padEnd(20)} ${r.slots}sl/${r.turns}t -> ${
     r.refusal ? 'DENY: ' + r.refusal
       : `${r.name} | dmg ${r.damage} x${r.count}${r.authored ? ' [NEW]' : ''}`}`);
 }
@@ -260,15 +310,19 @@ const fight = await ev(async () => {
   const before = foe.hp;
   const t0 = g.combat.turns;
   await g.selectPages(['fire', 'frost']);        // Steam Burst -> soaked
-  const fusionTurns = g.combat.turns - t0;
+  const fusionAssembly = g.combat.turns - t0;
   g.hud.target = foe;
+  const t1 = g.combat.turns;
   await g.castNow();
+  const fusionCast = g.combat.turns - t1;
   const afterSoak = { hp: foe.hp, statuses: g.combat.statusesOf(foe).map((s) => s.id) };
   await g.selectPages(['spark']);                // shock on soaked -> CONDUCTION
   g.hud.target = foe;
+  const t2 = g.combat.turns;
   await g.castNow();
+  const soloCast = g.combat.turns - t2;
   return {
-    kind: foe.kind, before, afterSoak, fusionTurns,
+    kind: foe.kind, before, afterSoak, fusionAssembly, fusionCast, soloCast,
     afterShock: { hp: foe.hp, statuses: g.combat.statusesOf(foe).map((s) => s.id) },
     playerHp: g.state.hp,
   };
@@ -276,8 +330,16 @@ const fight = await ev(async () => {
 console.log(fight);
 check('a fusion lands on the target', !!fight && fight.afterSoak.hp < fight.before,
   fight ? `${fight.before} -> ${fight.afterSoak.hp}` : 'no body to fight');
-check('a two-page fusion costs two turns', !!fight && fight.fusionTurns === 2,
-  fight ? `${fight.fusionTurns} turns` : '');
+// INVERTED for cast = 1 turn. This check used to read "a two-page fusion costs two
+// turns"; it is now the acceptance criterion "a three-page fusion and a one-page cast
+// both cost exactly one turn", measured on a pair because a pair is what floor 1 can
+// assemble. Assembling it is free and releasing it costs exactly what a single page
+// costs, which is the whole of what fusion no longer being priced in turns means.
+check('assembling a two-page fusion costs nothing', !!fight && fight.fusionAssembly === 0,
+  fight ? `${fight.fusionAssembly} turns` : '');
+check('a two-page fusion and a one-page cast both cost one turn',
+  !!fight && fight.fusionCast === 1 && fight.soloCast === 1,
+  fight ? `fusion ${fight.fusionCast}, solo ${fight.soloCast}` : '');
 check('Steam Burst soaks', !!fight && fight.afterSoak.statuses.includes('soaked'),
   fight ? fight.afterSoak.statuses.join(',') : '');
 // Spark is 9 at rank 1; conduction is x1.5, so a conducted hit cannot be under 12.

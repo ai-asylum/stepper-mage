@@ -53,6 +53,19 @@ export const PITCH = -0.03;
 
 export type MoveKind = 'forward' | 'back' | 'left' | 'right';
 
+/**
+ * A move, optionally `compound`.
+ *
+ * A compound move is the two-finger up/down gesture: one action that both steps
+ * and turns, so it stays distinct from the one-finger swipe that only steps. It
+ * is also the only move allowed to trade tiles with a creature, and the turn is
+ * what makes that trade read as "get behind it": on a swap you end up facing the
+ * tile you left, which is where the creature now stands with its back to you.
+ * With nothing there there is no back to face, so it is a plain 180 either way.
+ */
+export type MoveInput = { kind: 'move'; m: MoveKind; compound?: boolean };
+export type StepInput = MoveInput | { kind: 'turn'; d: -1 | 1 };
+
 export interface Bump {
   /** 0..1 how far into the failed step we got before hitting the wall. */
   t: number;
@@ -84,9 +97,15 @@ export class Stepper {
   private fromYaw: number;
   private toYaw: number;
   private turnT = 1;
+  /**
+   * How far this turn rotates, signed. Carried explicitly because a 180 is
+   * ambiguous to `shortAngle` — both ways round are exactly PI — so the spin
+   * direction has to be chosen rather than fallen into.
+   */
+  private turnDelta = 0;
 
   /** A queued input, so a tap during a step still lands. */
-  private queued: { kind: 'move'; m: MoveKind } | { kind: 'turn'; d: -1 | 1 } | null = null;
+  private queued: StepInput | null = null;
 
   /** Wall-bump nudge, drives a small recoil + thud. */
   bump = 0;
@@ -112,6 +131,11 @@ export class Stepper {
    * collect a spell without ever seeing the thing you collected it from.
    */
   blocked: (x: number, y: number) => boolean = () => false;
+  /**
+   * Is the thing on this tile a body a compound move may trade places with? The
+   * wall grid still refuses, so this only ever loosens `blocked`, never the map.
+   */
+  swappable: (x: number, y: number) => boolean = () => false;
 
   constructor(private grid: Grid, x: number, y: number, dir: Dir) {
     this.x = x; this.y = y; this.dir = dir;
@@ -154,7 +178,7 @@ export class Stepper {
 
   yaw(): number {
     const t = easeTurn(Math.min(1, this.turnT));
-    return this.fromYaw + shortAngle(this.fromYaw, this.toYaw) * t;
+    return this.fromYaw + this.turnDelta * t;
   }
 
   /** Extra camera roll — sells the bump and the stride. */
@@ -163,18 +187,27 @@ export class Stepper {
     return (moving ? Math.sin(this.bobPhase * Math.PI * 2) * 0.006 : 0) - this.bump * 0.03;
   }
 
-  press(input: { kind: 'move'; m: MoveKind } | { kind: 'turn'; d: -1 | 1 }): void {
+  press(input: StepInput): void {
     if (!this.canAct()) return;
     if (this.busy) { this.queued = input; return; }
     if (input.kind === 'turn') this.startTurn(input.d);
-    else this.startMove(input.m);
+    else this.startMove(input.m, input.compound);
   }
 
-  private startTurn(d: -1 | 1): void {
-    this.dir = (((this.dir + d) % 4) + 4) % 4 as Dir;
+  private startTurn(d: -1 | 1, quarters: 1 | 2 = 1): void {
+    this.dir = (((this.dir + d * quarters) % 4) + 4) % 4 as Dir;
     this.fromYaw = this.yaw();
     this.toYaw = dirYaw(this.dir);
+    this.turnDelta = quarters === 2 ? d * Math.PI : shortAngle(this.fromYaw, this.toYaw);
     this.turnT = 0;
+  }
+
+  /** Turn to a facing by the shortest route, spinning clockwise for a 180. */
+  private turnTo(d: Dir): void {
+    const q = ((((d - this.dir) % 4) + 4) % 4);
+    if (q === 0) return;
+    if (q === 2) this.startTurn(1, 2);
+    else this.startTurn(q === 1 ? 1 : -1);
   }
 
   /** The direction a given move actually travels, given current facing. */
@@ -183,11 +216,16 @@ export class Stepper {
     return ((this.dir + off) % 4) as Dir;
   }
 
-  private startMove(m: MoveKind): void {
+  private startMove(m: MoveKind, compound = false): void {
     const d = this.moveDir(m);
     const [dx, dy] = DIR_VEC[d];
     const nx = this.x + dx, ny = this.y + dy;
-    if (!this.grid.walkable(nx, ny) || this.blocked(nx, ny)) {
+    const open = this.grid.walkable(nx, ny);
+    // A compound move trades tiles with a body, so `blocked` must not veto it.
+    // The wall grid is never loosened: nothing swaps you through a wall or off
+    // the map, only past something standing on a tile you could have walked to.
+    const swap = compound && open && this.swappable(nx, ny);
+    if (!open || (this.blocked(nx, ny) && !swap)) {
       this.bump = 1;
       this.bumpDir = d;
       this.onBump?.({ t: 0, dir: d });
@@ -198,6 +236,8 @@ export class Stepper {
     this.moveT = 0;
     this.moveKind = m;
     this.onDepart?.(this.fromX, this.fromY, nx, ny);
+    // The turn rides along with the step — one action, one round. See `MoveInput`.
+    if (compound) this.turnTo(swap ? (((d + 2) % 4) as Dir) : (((this.dir + 2) % 4) as Dir));
   }
 
   update(dt: number): void {
@@ -217,6 +257,7 @@ export class Stepper {
       this.turnT = Math.min(1, this.turnT + dt / TURN_TIME);
       if (this.turnT >= 1) {
         this.fromYaw = this.toYaw;
+        this.turnDelta = 0;
         this.onTurnDone?.();
       }
     }
@@ -227,7 +268,7 @@ export class Stepper {
       const q = this.queued;
       this.queued = null;
       if (q.kind === 'turn') this.startTurn(q.d);
-      else this.startMove(q.m);
+      else this.startMove(q.m, q.compound);
     }
     void this.moveKind;
   }
@@ -238,6 +279,7 @@ export class Stepper {
     this.y = this.fromY = y;
     this.dir = dir;
     this.fromYaw = this.toYaw = dirYaw(dir);
+    this.turnDelta = 0;
     this.moveT = 1; this.turnT = 1; this.bump = 0;
   }
 }

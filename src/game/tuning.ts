@@ -2,28 +2,47 @@
  * Combat tuning — every number that encodes the TURN ECONOMY, in one place
  * because the next phase that changes the tempo has to find them all.
  *
- * The tempo these are sized for: a hand of ONE. You tear one page (the room gets
- * a round), you release the cast for free. So the loop is one enemy round per
- * cast, and a room costs one round per cast it takes to empty it — where the old
- * numbers assumed a hand of three pages fused into a single turn. Against the old
- * stats a room that used to be two fusions was five to eight single casts, so the
- * rounds spent standing in it roughly tripled. Everything below is derived from
- * "how many rounds does a room last, and how many hits land in that time".
+ * The tempo these are sized for: **a cast is one turn, a step is one turn, and
+ * taking a component is free.** So the loop is one enemy round per CAST, the round
+ * runs AFTER the cast lands, and a room costs one round per cast it takes to empty
+ * it. Everything below is derived from "how many rounds does a fight last, and how
+ * many hits land in that time".
+ *
+ * The rebase that produced these numbers moved the turn off the components and onto
+ * the release, and that is worth about one enemy round per fight in the player's
+ * favour: a body killed by the cast never answers it, and a status lands in time to
+ * touch the very next round rather than the one after. Measured at hand size 1 over
+ * the five fixed gate seeds, moving the turn and changing nothing else took the naive
+ * Fireball line from clearing 1 seed in 5 to clearing 3, took the skilled line's
+ * depth-5 boss fight from 10 HP to 6, and took a depth-5 room from 20.2 HP to 13.9.
+ * Every curve below that moved, moved to charge for that round; the whole routed run
+ * went from being 111% funded by the bar and the heals to 180%, and is 112% again.
+ *
+ * Sized against a hand of ONE, deliberately, because that is the floor of the
+ * ladder and the acceptance criterion (`tools/fullrun.mjs --hand1`). A cast costs
+ * one turn whatever it holds, so hand size is now a straight multiplier on
+ * throughput — measured, a hand of two takes a depth-5 room from 16.4 HP to 3.3 —
+ * and that multiplier is bought with stars. Content is sized to the floor and the
+ * purchase is the power; it is not sized to the ceiling with the floor made to
+ * cope.
  *
  * The two invariants worth preserving when these move:
  *  - A cast is the unit of enemy HP. `enemyHp` is written as a number of
  *    Fireballs, not as a curve that looked nice.
  *  - The player bar is measured in HITS, not in HP. Enemy damage is set so a
- *    room lands a survivable fraction of the bar, because at hand size 1 the
+ *    fight lands a survivable fraction of the bar, because at hand size 1 the
  *    player cannot shorten a fight by spending more per turn.
  */
 
 /**
- * The bar has to absorb a whole fight at one cast per round rather than one
- * fusion per room, so it is a good deal deeper than it was — roughly eleven
- * depth-1 hits, falling to about seven by depth 5 (see `DAMAGE_JITTER`: the
- * average hit is half a point above `enemyDamage`, so the hit count is derived
- * from 3.5 and 5.5, not from 3 and 5).
+ * The bar has to absorb a whole fight at one cast per round — roughly nine depth-1
+ * mook hits falling to six by depth 5, or six depth-1 boss hits falling to four
+ * (see `DAMAGE_JITTER`: the average hit is half a point above the base, so the hit
+ * count is derived from 4.5 and 6.5, not from 4 and 6).
+ *
+ * Unchanged by the rebase. The bar is the unit everything else is quoted in, and
+ * moving it would have re-expressed every other number in this file rather than
+ * re-pricing the one thing that changed, which is what a round now costs.
  */
 export const PLAYER_MAX_HP = 40;
 
@@ -34,40 +53,75 @@ export const PLAYER_MAX_HP = 40;
  * two. Two is the ceiling on purpose — every extra cast per body multiplies
  * straight into rounds-in-the-room, and at hand size 1 a round in the room is a
  * round of standing there being hit.
+ *
+ * Deliberately NOT moved by the rebase, and it was the obvious lever. Raising it
+ * would have paid for the free round by making a body take more casts, which
+ * breaks the invariant above and breaks a promise the room reactions make on top of
+ * it (`REACTIONS` in `combat.ts` sizes the oil drum at 22 so an explosion kills a
+ * mook outright at every depth). The free round is bought back on `enemyDamage`
+ * instead, where it costs the player HP without costing the fight its shape.
  */
 export const enemyHp = (depth: number): number => 7 + depth * 3;
 
 /**
- * Boss HP, sized so the fight is 8-12 casts unranked and 4-7 with a rank-3 page
+ * Boss HP, sized so the fight is 9-11 casts unranked and 5-8 with a rank-3 page
  * (measured).
  *
  * A rank-3 page used to end a boss in 3-4 because its extra projectiles wrapped
  * back onto the only body in the room; they no longer do (see `spells.ts` — a
  * volley spreads and never doubles up), so rank buys a boss fight a damage
- * multiplier and nothing else. That is the ladder paying out at the rate the turn
- * economy prices it at, and this curve is sized against the new rate.
+ * multiplier and nothing else.
  *
- * The curve is deliberately flatter than the old one. A boss stands at the far
- * end of a big room and has to walk to you, so the first half of the fight is a
- * shooting gallery and only the back half costs anything; past about ten casts the
- * extra health lands entirely in the shooting-gallery half and reads as a grind
- * rather than as a fight.
+ * Raised by the rebase — 62 + 12d became 70 + 13d — because the boss lost a whole
+ * round to it. The killing cast now lands before the boss answers, so the last round
+ * of the fight stopped happening, and it was the round that cost the most: by then
+ * the boss is adjacent. Adding about one cast back is what restores the number of
+ * ROUNDS SPENT ADJACENT, which is the only part of a boss fight the player pays for.
+ *
+ * The SLOPE is the term that was cut back, and the depth-5 boss is why. At 70 + 14d it
+ * is 140, and 140 is a cliff: measured, the gated line's worst seed took 42 of a
+ * 40-point bar and the run ended two HP short, while at 135 the same seed takes 32 and
+ * clears with eight to spare. A boss fight that turns on one extra cast of health is a
+ * boss fight decided by the jitter, so the curve sits below the cliff on purpose.
+ *
+ * The curve is still deliberately flat. A boss stands at the far end of a big room
+ * and has to walk to you, so the first three casts are a shooting gallery and only
+ * the back half costs anything; past about eleven casts the extra health lands
+ * entirely in the shooting-gallery half and reads as a grind rather than a fight.
  */
-export const bossHp = (depth: number): number => 62 + depth * 12;
+export const bossHp = (depth: number): number => 70 + depth * 13;
 
 /**
  * Damage per attack, before the jitter in `Combat.enemyRound`.
  *
  * Set from hits-to-die rather than from a damage curve: clearing a room lands
  * about one hit at depth 1 and about two and a half by depth 5, so a flat-ish
- * per-hit number already produces a steep per-room curve (6% of the bar at depth
- * 1 rising to 33% at depth 5, measured). Making the per-hit number climb as fast as
+ * per-hit number already produces a steep per-room curve (3% of the bar at depth 1
+ * rising to 41% at depth 5, measured). Making the per-hit number climb as fast as
  * the round count does makes the last two floors arithmetically unwinnable.
+ *
+ * Raised by one across the board (2 + ⌈d/2⌉ became 3 + ⌈d/2⌉), and this is the ONLY
+ * enemy-side number the rebase moved. It is where the free round is charged for: a
+ * mook that dies to the cast never swings, so a room of two or three bodies gave two
+ * or three swings back, and a depth-5 room fell from 20.2 HP to 13.9. At 3 + ⌈d/2⌉ it
+ * is 16.4 — still a fifth under what it was, deliberately, because the two levers
+ * that would close the gap both cost more than the gap is worth (see `enemyHp` and
+ * `roomEnemyChance`) and rooms are the part of a floor the routed line skips.
+ *
+ * Kept flatter than `bossDamage` on purpose: at depth 5 a mook hits for 6 and a
+ * boss for 10, and a mook that hits like a boss makes the boss furniture.
  */
-export const enemyDamage = (depth: number): number => 2 + Math.ceil(depth / 2);
+export const enemyDamage = (depth: number): number => 3 + Math.ceil(depth / 2);
 
-/** A boss hits for a bit under two mooks, and never for a third of the bar. */
-export const bossDamage = (depth: number): number => 4 + depth;
+/**
+ * A boss hits for a bit under two mooks, and never for a third of the bar.
+ *
+ * 4 + d became 5 + d for the same reason `bossHp` moved: the fight lands one fewer
+ * hit than it used to, so each hit that does land has to be worth more. At depth 5
+ * this is 10, the average swing is 10.5 and the worst is 12 — 30% of the bar, which
+ * is the closest to a third this is allowed to come.
+ */
+export const bossDamage = (depth: number): number => 5 + depth;
 
 /**
  * Per-attack jitter, passed straight to `Rng.int`, which is INCLUSIVE at both
@@ -98,11 +152,20 @@ export const DECAY_DOT = 3;
 
 /**
  * Enemies per room. This is as much of the tempo as any single stat: every body
- * in the room gets a free action for each page you tear, so a fourth enemy is a
- * fourth of the incoming damage on every round of a fight that is now several
- * rounds long. Three is the ceiling, and the fourth body that used to arrive as
- * a hard step at depth 3 is now a roll that leans on with depth, so the curve
- * has no cliff in it.
+ * in the room gets an action for each CAST you release, so a third enemy is a
+ * third of the incoming damage on every round of a fight several rounds long.
+ * Three is the ceiling, and the third body arrives as a roll that leans on with
+ * depth rather than as a step at a fixed floor, so the curve has no cliff in it.
+ *
+ * NOT MOVED by the rebase, and it was the obvious second lever — a body that dies to
+ * the cast is a body that never swung, so the refund is per BODY and bodies are the
+ * natural answer. Two measurements talked it out of the file. Raised to 0.3 + 0.1d it
+ * overshot: a depth-5 room went to 24.6 HP against the 20.2 it used to cost, because
+ * the marginal third body lengthens the fight for the other two as well as adding its
+ * own swings, so the curve is far steeper in bodies than it looks. And this roll is
+ * drawn from `populate`'s own rng, so changing it reshuffles every placement on every
+ * floor — which would have regenerated the fixed seeds `tools/fullrun.mjs --hand1`
+ * gates on, and silently turned a re-tune into a new dungeon.
  */
 export const ROOM_ENEMIES_BASE = 2;
 export const ROOM_ENEMIES_MAX = 3;
@@ -167,7 +230,9 @@ export const DEEP_FREEZE_MULT = 1.6;
  * and this is that sentence. It is the largest interaction multiplier in the file
  * and it is allowed to be, because unlike the others it is not free: soaked and
  * frozen ride along on casts that were worth making anyway, while oil is a whole
- * turn and a whole hand slot spent on 3 damage and a promise.
+ * hand slot spent on 3 damage and a promise. Note that the rebase made it CHEAPER
+ * — harvesting the oil no longer costs a turn — so what it is paid for is the slot
+ * alone, and at hand size 1 the slot is the whole hand.
  */
 export const OIL_FIRE_MULT = 2;
 
@@ -176,15 +241,16 @@ export const OIL_FIRE_MULT = 2;
 /**
  * How long a round takes to read, in milliseconds.
  *
- * "A three-page fusion visibly costs three enemy rounds" needs a mechanism, and
- * this is it — without a real delay the whole round resolves inside one microtask
- * and three rounds look exactly like none. Only bodies that actually act are
- * paced, so assembling in an empty room is still instant and still free.
+ * An action now buys exactly ONE round, which makes this more load-bearing than it
+ * was and not less: where three rounds in a row could be read as "something is
+ * happening" even if each was instant, a single round resolving inside one
+ * microtask is a room that answered without appearing to. Only bodies that
+ * actually act are paced, so an empty room stays instant.
  *
- * Kept short on purpose. `main.ts` blocks input for the whole round, so every
- * millisecond here is also a millisecond the player cannot step — and retreating
- * mid-assembly is a tactic this phase wants to keep viable. A three-body room is
- * ~240ms of round, which staggers the bodies visibly without stalling the stepper.
+ * Kept short on purpose. `main.ts` blocks input for the round, so every
+ * millisecond here is also a millisecond the player cannot step, and stepping away
+ * is the answer to a fight going badly. A three-body room is ~240ms of round, which
+ * staggers the bodies visibly without stalling the stepper.
  */
 export const ACT_PACE_MS = 60;
 export const ROUND_PACE_MS = 60;
@@ -194,22 +260,29 @@ export const ROUND_PACE_MS = 60;
 /**
  * Attrition, scaled with depth because everything it is measured against is.
  *
- * Flat heals could not fund the run. 40 + 4x13 + ~5x8 was about 132 HP against a
- * measured cost of 236 for a routed floor-by-floor clear, and the shape was worse
- * than the total: a floor costs 9 HP at depth 1 and 43 at depth 5 (measured), so a
- * flat heal is a windfall on floor 1 and a rounding error on floor 5. Sized off
- * the floor's own cost instead, so `descendHeal` lands you on the next floor at
- * roughly full and the bar is the fight's budget rather than the run's.
+ * Flat heals could not fund the run. The shape is worse than the total: a routed
+ * floor costs 8 HP at depth 1 and 42 at depth 5 (measured), so a flat heal is a
+ * windfall on floor 1 and a rounding error on floor 5. Sized off the floor's own
+ * cost instead, so `descendHeal` lands you on the next floor at roughly full and
+ * the bar is the fight's budget rather than the run's.
  *
- * Together these come to about 131 HP of healing on a full route, which puts the
- * whole budget at ~170 against a ~107 measured cost with the altar rank ladder
- * taken — comfortable routed, tight for a full clear.
+ * Both curves came DOWN with the rebase (4 + 5d → 3 + 4d, 2 + 3d → 2 + 2d), and
+ * that is the same decision as raising the damage, taken from the other end. The
+ * measurement: a routed run cost 155 HP against a 171 HP budget before the rebase
+ * (111% funded); moving the turn onto the cast took the cost to 95 (180% funded), and
+ * the damage curves above bring it back to 126. Leaving the heals alone would have
+ * left the run funded at 136% — and a bar that cannot run out is not a budget, so
+ * every fight downstream would have been decided by nothing. At 3 + 4d and 2 + 2d the
+ * budget is 142 against 126: 112% funded, one point off what the pre-rebase economy
+ * actually shipped. The heals also start LANDING again, which is its own finding —
+ * before the trim the bar was so often full at the chest that the harness logged
+ * `chest +0` on all 25 floors of a five-seed run.
  *
  * Sized off the depth being LEFT, so the heal that funds floor 4 is the one you
  * take walking out of floor 3.
  */
-export const descendHeal = (depth: number): number => 4 + depth * 5;
-export const chestHealBase = (depth: number): number => 2 + depth * 3;
+export const descendHeal = (depth: number): number => 3 + depth * 4;
+export const chestHealBase = (depth: number): number => 2 + depth * 2;
 export const CHEST_HEAL_SPREAD = 4;
 
 /**

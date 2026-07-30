@@ -716,9 +716,9 @@ export function actionPage(spell: SpellDef, index: number): HTMLCanvasElement {
   wrapText(ctx, spell.effect, W / 2, 512, 380, 32);
 
   // LOCAL: upstream prints the spell's mana cost here. This game has no mana —
-  // a page costs a TURN to tear and the cast itself is free — so the pip row
-  // states that instead. One pip, because tearing is always one turn; the price
-  // of a fusion is the number of pages, which the hand already shows.
+  // tearing a page is free and the CAST costs one turn — so the pip row states that
+  // instead. One pip, because a cast is always one turn however many pages went into
+  // it; what a fusion costs is hand slots, which the hand already shows.
   ctx.save();
   ctx.translate(W / 2, 584);
   ctx.rotate(Math.PI / 4);
@@ -732,7 +732,7 @@ export function actionPage(spell: SpellDef, index: number): HTMLCanvasElement {
   ctx.restore();
   ctx.fillStyle = INK_SOFT;
   ctx.font = '16px Georgia, serif';
-  ctx.fillText('ONE TURN', W / 2, 620);
+  ctx.fillText('CAST · ONE TURN', W / 2, 620);
 
   return c;
 }

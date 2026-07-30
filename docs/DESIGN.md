@@ -44,31 +44,63 @@ works out combining for themselves. Nothing has to explain it, nothing has to pr
 it, and the discovery belongs to the player rather than to a tooltip. A game that
 opens at hand size 2 has to teach fusion; a game that opens at 1 sells it.
 
+Since **a cast costs one turn whatever it holds** (see **Turn economy**), each slot is
+also a straight multiplier on what a turn is worth. That makes hand size the most
+powerful thing on the star tree by a distance, and it is worth noticing that it is the
+one node whose payout is partly a number — the tree's own rule is *change behaviour,
+not a number*, and hand size now does both. It is not a violation to fix by nerfing:
+the number it changes is how much of the game you can express at once, which is the
+behaviour.
+
 ## Turn economy
 
-**Every component selected costs a turn. The cast itself is free.**
+**A cast costs one turn. Moving costs one turn. Nothing else costs anything.**
 
-- Tearing a page: 1 turn.
-- Harvesting from a fixture: 1 turn.
-- Taking an ingredient off the belt: 1 turn.
-- Releasing the cast: free.
+- Releasing the cast: 1 turn.
+- Stepping to a new tile: 1 turn.
+- Tearing a page, harvesting from a fixture, taking an ingredient off the belt: free.
+- Putting any of them back: free.
+- Turning in place: free.
 
-So a three-page fusion costs three turns of assembly. Consequences that make this
-the load-bearing rule of the whole game:
+The earlier rule was the exact opposite — every component cost a turn and the cast
+was free — and it had a trap in it. Taking a component charged a turn and *returning*
+one charged nothing, so leafing through the book and changing your mind handed the
+room free rounds and could kill you for it. Punishing a change of mind is the worst
+thing a turn economy can do, and no amount of tuning fixes a rule that does it.
 
-- **Hand size 1 is a complete game**, not a punishment — one page, one turn, free
-  cast is the same tempo as any other action.
-- **Fusions are investments, not free power.** Three Fireballs over three turns is
-  ~45 on one target once the burn finishes ticking; a three-turn Thunderhead is 24
-  on one body, 48 across two, 72 across three, plus soaked and shocked. Better
-  against a group, worse against one thing.
-- **Preparation is the reward.** Turns only cost you when something is acting, so
-  assembling out of combat is free. Walk in with a triple loaded and release it for
-  nothing. Assemble mid-fight and you eat three rounds standing there tearing paper.
-- **Retreating with a loaded hand becomes a real tactic.**
+Consequences, which are the rule and not decoration:
+
+- **The unit of the game is the cast.** One action, one round: the room answers what
+  you just did, once, and it answers *after* the spell lands — so a body killed by a
+  cast never gets to reply to it. Everything in `src/game/tuning.ts` is sized against
+  that ordering.
+- **Fusion is priced in hand size, not in turns.** Three elements cost exactly what
+  one costs, so a fusion is no longer an investment of rounds — it is capability, and
+  the price is the slots, which are bought with stars. A three-slot Thunderhead is 24
+  on one body, 48 across two and 72 across three against a Fireball turn's ~19 on
+  one; better against a group, still worse against a lone target, and now strictly
+  better per turn than casting the three separately.
+- **Hand size 1 is the baseline the content is sized to** — not a tempo-neutral
+  alternative to a bigger hand, which is what it was under the old rule. A hand of
+  one is the weakest configuration in the game and it is meant to be: it is the floor
+  of the star tree's ladder, the acceptance criterion (`tools/fullrun.mjs --hand1`)
+  is that it can complete a full run, and every slot above it is a multiplier the
+  player paid for. Measured, a hand of two takes a depth-5 room from 14.6 HP to 2.9.
+- **Indecision is free.** Draw a page, put it back, draw another, walk away holding
+  nothing — none of it moves the room. The only thing that costs you is committing.
+- **Position is the other half of the economy.** Movement is the only other thing
+  that spends a turn, so where you stand and what you can reach is priced against
+  what you can cast. See **Reaching**.
 
 Forgiving defaults, deliberately: **returning a component is free**, and **being
-hit mid-assembly never drops your hand** (you already paid in turns).
+hit mid-assembly never drops your hand**.
+
+What this rule gave up, and it is worth naming: assembling out of combat used to be
+free power, because the cast that released a pre-loaded triple cost nothing. It costs
+one turn now like every other cast, so walking into a room loaded saves you nothing
+and *preparation is no longer the reward*. What replaced it is that assembling inside
+combat costs nothing either — the tempo of a fight no longer depends on when you
+decided.
 
 ## Grimoire — 5 pages, elements only
 
@@ -91,8 +123,10 @@ page is the one exception, and only for the single run that follows it.
 ## Room fixtures — harvest
 
 **Adjacent, and facing it** — non-depleting (the candelabra stays lit), costs a hand
-slot and a turn, and **always rank 1 with no rank scaling** — so owning the page is
-strictly better and the fixture is a substitute plus an enabler.
+slot and nothing else, and **always rank 1 with no rank scaling** — so owning the page
+is strictly better and the fixture is a substitute plus an enabler. What a harvest
+costs is the walk: getting adjacent and facing it is turns of movement, and that is the
+whole of its price.
 
 Reaching a fixture is a move, not a glance. Line of sight was the earlier rule and
 it made the whole room a shelf you could take from without leaving the doorway; it
@@ -119,7 +153,8 @@ pile, fungus. Some props are components, some are bodies.
 
 ### Three uses per object, mutually exclusive
 
-1. **Harvest** its element — adjacent and facing, non-depleting, costs a slot and a turn.
+1. **Harvest** its element — adjacent and facing, non-depleting, costs a slot and the
+   walk to reach it.
 2. **Animate** it — costs an animation ingredient plus an element; it walks off as a
    golem, so it stops being a tap.
 3. **React** — hit it with the right element and it goes off. The object is the
@@ -165,10 +200,15 @@ means they are hoarded and never used.
 | **Coffin Moss** | a corpse rises as a golem |
 | **Growth** | bigger, harder |
 | **Multishot** | three targets |
-| **TimeSand** | free to take, and this cast's next two components are free too |
+| **TimeSand** | *nothing — see below* |
 
-TimeSand must be free to take. If the sand itself costs a turn, you pay a turn *and*
-a hand slot to save two — marginal. Free, it turns a 3-slot cast into a 0-turn cast.
+**TimeSand is inert and needs a new job or deleting.** Its whole function was the turn
+cost of components — free to take, and the next two components free too — and under
+*cast = 1 turn* components are free already, so there is nothing left for it to
+discount. Holding one is a wasted hand slot. It is still in `spells.ts` (marked inert,
+so its definition does not advertise a job it no longer has) and it is unreachable
+while the belt is flagged off, so nothing is broken; what to do with the fifth
+ingredient slot is an open decision and is deliberately not answered here.
 
 Coffin Moss is the **consumable form** of the corpse-raising tree node, the same
 relationship the belt itself has: the node unlocks the capability, the ingredient is

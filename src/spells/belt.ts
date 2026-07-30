@@ -35,11 +35,12 @@ export interface BeltState {
    */
   capacity: number;
   /**
-   * Components TimeSand has already paid for.
-   *
-   * On the belt rather than beside the turn counter because it is one ingredient's
-   * effect and nothing else in the game produces it. Spent by `spendComponentTurn`
-   * and cleared when the hand empties, so it is scoped to the cast being assembled.
+   * DEAD. It counted the components TimeSand had already paid for, and under
+   * cast = 1 turn no component costs a turn, so nothing writes it and nothing spends
+   * it — it is 0 for the whole run. Kept on the state rather than removed because the
+   * belt is switched off behind `BELT_ENABLED` and what the sand becomes instead is an
+   * open design decision; see its entry in `spells.ts`. The strip's
+   * "NEXT N COMPONENTS FREE" caption reads this, so that caption is dead with it.
    */
   free: number;
   /**
