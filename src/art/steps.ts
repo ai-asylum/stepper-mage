@@ -32,13 +32,18 @@ export type PixelStep = (typeof PIXEL_STEPS)[number];
 /**
  * Where a fresh save starts.
  *
- * Still 144 now that all four are authored, and deliberately: this is the density the
- * game shipped at and the one every screenshot of it was taken at, so changing what a
- * new player sees first is a product call and not an art one. The phase's own argument
- * that 144 undersamples at range is the case for moving it, and moving it is a
- * one-line follow-up.
+ * The coarsest of the four. This is the product call the phase argued for and then
+ * deferred: 144 undersamples badly into a 400px-tall buffer, so its "detail" arrives
+ * as shimmer, and 18 puts nearly everything on screen in magnification where a texel
+ * is a deliberate block rather than a contested screen pixel.
+ *
+ * It is also the least forgiving choice, which is the point — every step is now the
+ * first thing somebody sees, so 18 has to be art rather than a fallback. Three
+ * things underneath it are deliberately finer than the stone: creatures, which draw
+ * from the 36 roster (see `spritePpu`), the grimoire, which is argued in the phase
+ * doc, and the torch sconce, which is not argued but a loose end (see `sconce`).
  */
-export const DEFAULT_STEP: PixelStep = 144;
+export const DEFAULT_STEP: PixelStep = 18;
 
 export function isPixelStep(v: unknown): v is PixelStep {
   return (PIXEL_STEPS as readonly unknown[]).includes(v);
@@ -231,12 +236,23 @@ export interface StepArt {
   /**
    * The density the SPRITE PNGs shipped for this step were authored at.
    *
-   * Sprite world size is `pixels / spritePpu`, so this and only this is what keeps
-   * a creature the same size in world units at every step: halve the art and halve
-   * this, and the quad does not move. It is deliberately NOT `ppu` — one set of
-   * 144-authored PNGs ships today and is used at all four steps, so all four say
-   * 144. The follow-up that re-derives the roster per step changes this entry in
-   * the same commit as the art, and nothing else has to know.
+   * It picks the roster (`public/art/s<n>/`) AND divides the pixel size, so those
+   * two can never disagree: world size is `pixels / spritePpu`, and a creature stays
+   * the same size in world units precisely because both halve together.
+   *
+   * It is a separate field from `ppu` because the two genuinely diverge at the
+   * bottom, and that divergence is a finding rather than an oversight. **A texel
+   * density that works for tiling masonry does not work for a single object that
+   * has to be identified.** A wall gets to be vague — it repeats, and no one has to
+   * tell one brick from another. A creature standing one tile away fills half the
+   * screen and has to be recognisably a candle-moth and not a boss. At 18 the moth
+   * is nineteen texels across and the floor-1 boss loses its eye entirely, so it
+   * reads as a coloured blob with a keyline. That is not something better art fixes;
+   * nineteen pixels is nineteen pixels.
+   *
+   * So 18 draws its creatures from the 36 roster. They are twice the stone's density
+   * there and that is the deliberate trade: slightly finer than the wall, versus
+   * unidentifiable. The 18 roster was generated, looked at, and cut.
    */
   spritePpu: number;
   wall: WallArt;
@@ -244,9 +260,17 @@ export interface StepArt {
   ceil: CeilArt;
   crack: CrackArt;
   /**
-   * The torch sconce, in texels. It is BILLBOARDED at a fixed world size like a
-   * creature rather than being a tile face, so it follows `spritePpu` and not
-   * `ppu` — which is why all four steps say 26x40 today.
+   * The torch sconce, in texels. All four steps say 26x40, and that is a known
+   * loose end rather than a considered answer.
+   *
+   * Its quad is sized in WORLD units off `WALL_H` — a torch that does not scale
+   * with the ceiling hangs through it — so nothing here changes its size, only
+   * its resolution. Stepping that resolution needs `buildSconce` rewritten per
+   * step the way the wall generators were: it draws the bracket and the three
+   * flame layers at absolute 144-space texel offsets, so halving W and H alone
+   * puts the bracket below the frame. Until then the torch is the one thing in
+   * the world still drawn at 144, and at 18 it reads finer than the stone it is
+   * bolted to.
    */
   sconce: { w: number; h: number };
   detail: DetailArt;
@@ -363,7 +387,7 @@ const STEP_144: StepArt = {
  */
 const STEP_72: StepArt = {
   ppu: 72,
-  spritePpu: 144,
+  spritePpu: 72,
   wall: {
     base: 0.62,
     masonry: {
@@ -476,7 +500,7 @@ const STEP_72: StepArt = {
  */
 const STEP_36: StepArt = {
   ppu: 36,
-  spritePpu: 144,
+  spritePpu: 36,
   wall: {
     base: 0.62,
     masonry: {
@@ -614,7 +638,7 @@ const STEP_36: StepArt = {
  */
 const STEP_18: StepArt = {
   ppu: 18,
-  spritePpu: 144,
+  spritePpu: 36,
   wall: {
     base: 0.62,
     masonry: {

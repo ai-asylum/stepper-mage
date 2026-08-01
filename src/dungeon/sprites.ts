@@ -17,6 +17,8 @@
  */
 import * as THREE from 'three';
 import { assetUrl } from 'playable-kit/runtime';
+// Only `stepArt().spritePpu` — never `pixelStep()`. Nothing about a sprite is
+// decided by the density of the masonry behind it, and the two differ at 18.
 import { stepArt } from '../art/steps';
 import type { WorldUniforms } from './render';
 
@@ -145,40 +147,61 @@ const SHADOW_VERT = /* glsl */ `
 
 // ------------------------------------------------------------------- loading
 
+/**
+ * Keyed by STEP AND id, never by id alone.
+ *
+ * Three rosters of the same 65 names ship (144, 72, 36) and they differ only in how
+ * many pixels they have. A cache keyed on the name alone would hand the 144 moth back
+ * while the world is asking for 36 — and because world size is `pixels / spritePpu`,
+ * that is not a crisper moth, it is a moth four times too tall standing in a corridor
+ * one unit wide.
+ */
 const texCache = new Map<string, THREE.Texture>();
 
-/** Load one sprite PNG as a nearest-filtered texture (cached). */
-export function loadSprite(id: string): Promise<THREE.Texture> {
-  const hit = texCache.get(id);
+/**
+ * Where a step's art lives. 144 keeps the flat `art/<id>.png` it always had:
+ * it is the roster the playable-ad bundler embeds by name, and moving it would
+ * have been churn for nothing.
+ */
+export function spriteUrl(id: string, step = stepArt().spritePpu): string {
+  return step === 144 ? `art/${id}.png` : `art/s${step}/${id}.png`;
+}
+
+/** Load one sprite PNG as a nearest-filtered texture (cached per step). */
+export function loadSprite(id: string, step = stepArt().spritePpu): Promise<THREE.Texture> {
+  const key = `${step}/${id}`;
+  const hit = texCache.get(key);
   if (hit) return Promise.resolve(hit);
   return new Promise((resolve, reject) => {
     const loader = new THREE.TextureLoader();
     loader.load(
       // Inside the playable-ad bundle this resolves to an embedded data URI;
       // on web/Android the path falls through untouched.
-      assetUrl(`art/${id}.png`),
+      assetUrl(spriteUrl(id, step)),
       (tex) => {
         tex.magFilter = THREE.NearestFilter;
         tex.minFilter = THREE.NearestFilter;
         tex.generateMipmaps = false;
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-        texCache.set(id, tex);
+        texCache.set(key, tex);
         resolve(tex);
       },
       undefined,
-      () => reject(new Error(`sprite failed to load: ${id}`)),
+      () => reject(new Error(`sprite failed to load: ${spriteUrl(id, step)}`)),
     );
   });
 }
 
 /** The cached texture for an already-loaded sprite, or null. */
-export function spriteTexture(id: string): THREE.Texture | null {
-  return texCache.get(id) ?? null;
+export function spriteTexture(id: string, step = stepArt().spritePpu): THREE.Texture | null {
+  return texCache.get(`${step}/${id}`) ?? null;
 }
 
-export function preloadSprites(ids: string[]): Promise<THREE.Texture[]> {
-  return Promise.all([...new Set(ids)].map(loadSprite));
+export function preloadSprites(
+  ids: string[], step = stepArt().spritePpu,
+): Promise<THREE.Texture[]> {
+  return Promise.all([...new Set(ids)].map((id) => loadSprite(id, step)));
 }
 
 /**
@@ -201,10 +224,11 @@ const SPRITE_SCALE = 0.72;
  * texel density doubled every creature in it. A sprite's world size is a property of
  * its art, not of the masonry it stands in front of.
  *
- * All four steps ship the same 144-authored roster today, so all four say 144 and
- * this returns the same size at every step. When the follow-up re-derives the roster
- * at each density it halves the pixels and the `spritePpu` entry together, and the
- * quad still does not move — only its crispness changes.
+ * Each step ships its own roster, halved in pixels and in `spritePpu` together, so
+ * this returns the same answer at all four and only the crispness changes. That is
+ * worth stating as an invariant because it is not enforced anywhere: nothing stops
+ * someone regenerating one step's art at a different size, and the symptom would be
+ * creatures that change scale when you touch a graphics setting.
  */
 export function spriteWorldSize(tex: THREE.Texture): { w: number; h: number } {
   const img = tex.image as { width: number; height: number };
@@ -342,16 +366,27 @@ export class Sprite {
   }
 
   /**
-   * Re-derive the quad after a pixel-step change.
+   * Swap in this step's art and re-derive the quad.
    *
-   * A no-op today and deliberately still here: every step ships the same 144-authored
-   * PNGs, so `spriteWorldSize` returns the same answer and this returns early. The
-   * follow-up that authors a roster per step is the thing that makes it fire, and the
-   * seam has to exist before then or changing the step mid-run would leave every
-   * creature at the previous step's size until the next descent rebuilt it.
+   * Takes the texture rather than fetching it, because the caller has to await the
+   * whole floor's rosterix anyway and doing it per sprite would pop creatures in one
+   * at a time. `tex` is this sprite's art at the NEW step; the texel uniform moves
+   * with it, since the selection keyline is measured in the sprite's own texels and
+   * would otherwise stay one 144-texel hairline on an 18-texel creature.
+   *
+   * The old texture is not disposed: it belongs to the module cache, still keyed
+   * under its own step, and the player switching back should not re-fetch it.
+   *
+   * Sizes are expected to be unchanged — the art is authored so that
+   * `pixels / spritePpu` is constant — so the early-out is the normal path and the
+   * geometry rebuild is the safety net for a roster that ever drifts.
    */
-  restep(): void {
-    const size = spriteWorldSize(this.mat.uniforms.map.value as THREE.Texture);
+  restep(tex: THREE.Texture): void {
+    this.mat.uniforms.map.value = tex;
+    const img = tex.image as { width: number; height: number };
+    (this.mat.uniforms.uTexel.value as THREE.Vector2).set(1 / img.width, 1 / img.height);
+
+    const size = spriteWorldSize(tex);
     if (size.w === this.w && size.h === this.h) return;
     this.w = size.w;
     this.h = size.h;
@@ -364,6 +399,17 @@ export class Sprite {
     shGeo.rotateX(-Math.PI / 2);
     this.shadow.geometry.dispose();
     this.shadow.geometry = shGeo;
+  }
+
+  /**
+   * The pixel dimensions of the art currently bound. Only a harness asks: it is
+   * the one way to tell from outside which step's PNG the cache actually handed
+   * over, since a right-sized quad proves nothing on its own.
+   */
+  get texSize(): { w: number; h: number } {
+    const img = (this.mat.uniforms.map.value as THREE.Texture).image as
+      { width: number; height: number };
+    return { w: img.width, h: img.height };
   }
 
   /** Baked light where the sprite stands. Call when it moves. */

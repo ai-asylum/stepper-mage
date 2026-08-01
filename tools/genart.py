@@ -34,7 +34,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "art" / "manifest.json"
@@ -179,11 +179,19 @@ def crop_to_content(img: Image.Image, pad: int = 2) -> Image.Image:
     return img.crop((x0, y0, x1, y1))
 
 
-def to_pixel_grid(img: Image.Image, target_h: int, colors: int) -> Image.Image:
-    """Area-resample onto the true pixel grid, then quantise the palette."""
+def to_pixel_grid(
+    img: Image.Image, target_h: int, colors: int, target_w: int | None = None
+) -> Image.Image:
+    """Area-resample onto the true pixel grid, then quantise the palette.
+
+    `target_w` overrides the aspect-derived width. Only the stepped rosters pass
+    it, and they pass it for one reason: a width rounded independently at each
+    density drifts by up to a texel, which at 18 is four percent of a creature.
+    The lower steps take their exact dimensions from the 144 art instead.
+    """
     w, h = img.size
     scale = target_h / h
-    tw = max(1, round(w * scale))
+    tw = max(1, target_w if target_w is not None else round(w * scale))
     small = img.resize((tw, target_h), Image.BOX)
 
     # Hard alpha: pixel art has no partial coverage. Do this BEFORE quantising so
@@ -259,11 +267,142 @@ def post(asset: dict, raw: Path) -> None:
     print(f"  [pix] {asset['id']} -> {img.size[0]}x{img.size[1]}", flush=True)
 
 
+# ------------------------------------------------------------------- pixel steps
+
+# How each texel density is resampled. Three knobs, and they do not move
+# together — which is the whole reason this is a table and not a scale factor.
+#
+#   colors   A coarse grid is not a fine grid with fewer pixels, it is fewer
+#            FEATURES, and a palette is a feature. Thirty-two entries across an
+#            18-step creature's ~300 pixels is one per nine, which spends the
+#            palette on noise the eye reads as dirt.
+#
+#   blur     Kills detail finer than a resample cell BEFORE the box filter can
+#            beat against it. Needed most in the middle: at 72 the cell is close
+#            enough to the raw's own ~8px block that they alias badly, while at
+#            18 a cell is so large that the box average has already destroyed
+#            everything below it and the blur only costs structure. Blurring 18
+#            as hard as 72 is what turned the bookshelf into a brown rectangle.
+#
+#   contrast Averaging pulls every tone toward the local mean, so the fewer
+#            pixels a shape gets the flatter it comes out. The coarser the grid,
+#            the harder the survivors have to work — this is what puts the
+#            shelves back in the bookshelf and the teeth back on the gears.
+STEP_TUNE = {
+    144: {"colors": 32, "blur": 0.00, "contrast": 1.00},
+    72: {"colors": 24, "blur": 0.30, "contrast": 1.05},
+    36: {"colors": 16, "blur": 0.24, "contrast": 1.12},
+    18: {"colors": 16, "blur": 0.16, "contrast": 1.22},
+}
+
+
+def presoften(img: Image.Image, radius: float) -> Image.Image:
+    """
+    Blur the raw's sub-cell detail away before it can alias.
+
+    The raws are 1024px images of "pixel art" whose pixels are ~8px blocks, plus
+    real fine detail — the radiating lines on the boss's page, the spines on a
+    bookshelf. At 144 a resample cell is ~5px and that detail lands roughly one
+    feature per cell. At 36 a cell is ~20px and at 18 it is ~40, and a box filter
+    over detail finer than its own cell does not average it away cleanly: it
+    beats against it. The 36 boss came out as violet salt-and-pepper where a page
+    should be, which is the same failure as an ordered dither over a flat tone —
+    high-frequency noise standing in for a tone.
+
+    Only RGB is softened. Alpha is left exactly as it was, so the silhouette and
+    its coverage are decided by the full-resolution edge and a blur cannot eat
+    into it. That needs the premultiply/unpremultiply dance, because blurring
+    straight RGB drags the transparent border's black in around the outline.
+    """
+    if radius <= 0.5:
+        return img
+    import numpy as np
+
+    blur = ImageFilter.GaussianBlur(radius)
+    arr = np.asarray(img.convert("RGBA"), dtype=np.float32)
+    a = arr[..., 3:4] / 255.0
+
+    # Premultiplied blur, then divide the coverage back out. Blurring straight
+    # RGB would drag the knocked-out background (still white under alpha 0) in
+    # around the whole outline as a halo; weighting by coverage means a pixel
+    # just inside the silhouette averages only over the pixels that are actually
+    # part of the sprite.
+    pm = Image.fromarray((arr[..., :3] * a).astype("uint8"), "RGB").filter(blur)
+    cov = Image.fromarray(arr[..., 3].astype("uint8"), "L").filter(blur)
+    num = np.asarray(pm, dtype=np.float32)
+    den = np.asarray(cov, dtype=np.float32)[..., None] / 255.0
+    rgb = np.where(den > 1e-3, num / np.maximum(den, 1e-3), arr[..., :3])
+
+    out = arr.copy()
+    out[..., :3] = np.clip(rgb, 0, 255)
+    return Image.fromarray(out.astype("uint8"), "RGBA")
+
+
+def punch(img: Image.Image, amount: float) -> Image.Image:
+    """Raise contrast on the colour only, leaving the silhouette alone."""
+    if amount == 1.0:
+        return img
+    r, g, b, a = img.split()
+    rgb = ImageEnhance.Contrast(Image.merge("RGB", (r, g, b))).enhance(amount)
+    return Image.merge("RGBA", (*rgb.split(), a))
+
+
+def step_dir(step: int) -> Path:
+    """Where a step's roster lives. 144 is the committed default and stays put."""
+    return OUT_DIR if step == 144 else OUT_DIR / f"s{step}"
+
+
+def post_step(asset: dict, raw: Path, step: int) -> tuple[int, int] | None:
+    """
+    Re-derive one sprite at a coarser density, FROM THE RAW.
+
+    Not a downsample of the shipped 144 PNG: that is already quantised to 32
+    colours and keylined, and squeezing it again would carry both of those
+    decisions down to a grid that wanted different ones. This goes back to the
+    1024px raw and repeats the whole pipeline against the smaller grid.
+
+    The 144 art still decides the SIZE. Final dimensions are exactly `step/144`
+    of what ships today, so `pixels / spritePpu` is identical at every step and
+    the quad does not move — which is the one thing this must not get wrong.
+    """
+    ref = OUT_DIR / f"{asset['id']}.png"
+    if not ref.exists():
+        print(f"  [skip] {asset['id']} (no 144 art to size against)")
+        return None
+    with Image.open(ref) as r:
+        w144, h144 = r.size
+
+    k = step / 144
+    fw, fh = max(3, round(w144 * k)), max(3, round(h144 * k))
+    keyline = asset.get("keyline", True)
+    # The keyline is one texel at every density, and it is drawn OUTSIDE the
+    # silhouette — so the grid the creature itself is resampled onto is two
+    # texels smaller in each axis than the file that ships.
+    pad = 2 if keyline else 0
+
+    tune = STEP_TUNE[step]
+    img = Image.open(raw)
+    img = knock_out_background(img)
+    img = crop_to_content(img)
+    cell = img.height / max(1, fh - pad)
+    img = presoften(img, cell * tune["blur"])
+    img = punch(img, tune["contrast"])
+    img = to_pixel_grid(img, fh - pad, tune["colors"], target_w=fw - pad)
+    if keyline:
+        img = add_keyline(img)
+
+    out = step_dir(step)
+    out.mkdir(parents=True, exist_ok=True)
+    img.save(out / f"{asset['id']}.png", optimize=True)
+    return img.size
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="comma-separated asset ids")
     ap.add_argument("--force", action="store_true", help="regenerate existing raws")
     ap.add_argument("--post", action="store_true", help="post-process cached raws only")
+    ap.add_argument("--steps", help="comma-separated texel densities to re-derive, e.g. 72,36,18")
     ap.add_argument("--jobs", type=int, default=4, help="parallel generations")
     args = ap.parse_args()
 
@@ -276,6 +415,20 @@ def main() -> None:
         assets = [a for a in assets if a["id"] in want]
     if not assets:
         sys.exit("no assets selected")
+
+    if args.steps:
+        steps = [int(s) for s in args.steps.split(",")]
+        for step in steps:
+            print(f"step {step} -> {step_dir(step).relative_to(ROOT)}")
+            for a in assets:
+                raw = RAW_DIR / f"{a['id']}.png"
+                if not raw.exists():
+                    print(f"  [skip] {a['id']} (no raw)")
+                    continue
+                size = post_step(a, raw, step)
+                if size:
+                    print(f"  [pix] {a['id']} -> {size[0]}x{size[1]}", flush=True)
+        return
 
     if args.post:
         for a in assets:

@@ -35,8 +35,20 @@ and measurably less shimmer.
   step to fix — a coarser page would cost legibility on a 390px phone and buy nothing.
   The grimoire is held in your hands in front of the room, which is already a different
   plane; at the low end it reads as a fine object in a coarse world rather than as a
-  mismatch. Same answer, same reason, for every billboarded sprite: they follow the
-  density their art was authored at, not the masonry's.
+  mismatch.
+- **Sprites take the step, but they stop at 36.** Rosters ship at 144, 72 and 36, and
+  the 18 world draws its creatures from the 36 set. The 18 roster was generated, looked
+  at, and cut. **A texel density that works for tiling masonry does not work for a
+  single object that has to be identified**: a wall repeats and gets to be vague,
+  while a creature one tile away fills half the screen and has to be recognisably a
+  candle-moth rather than a boss. At 18 the moth is nineteen texels across and the
+  floor-1 boss loses the eye that is its whole identity, so it reads as a coloured blob
+  with a keyline. No amount of re-authoring fixes nineteen pixels. This is the phase's
+  own rule — cut a step that cannot be made to look deliberate — applied to the half of
+  the art where it bit.
+- **18 is the default.** It is what the phase argued for: 144's "detail" arrives as
+  shimmer in a 400px-tall buffer, and 18 puts nearly everything on screen in
+  magnification. It also means every step is somebody's first impression.
 
 ## Out of scope
 
@@ -56,12 +68,21 @@ numbers are the art. At PPU 36 a 3px bevel is a third of a brick, so each step n
 own set, chosen by eye, not a scale factor applied to one set. Five themes times four
 steps is the bulk of this phase.
 
-**Sprites are sized off PPU and will double if it halves.** World size is
-`pixels / PPU * SPRITE_SCALE`, so every creature and prop needs its source size halved
-per step or the roster grows twice as tall each time. They can be re-derived from the
-raws cached in `art/_work/` with `tools/genart.py --post` — no API calls — but that is 63
-files per step, and they all ship. Decide whether every step carries a full set before
-generating any of them.
+**Sprites are sized off their own density, not the world's.** World size is
+`pixels / spritePpu * SPRITE_SCALE`, where `spritePpu` is the roster a step draws from —
+a separate field from `ppu` precisely because the two diverge at 18. Halve the pixels
+and that entry together and the quad does not move; wire them into one number and
+halving the world's density doubles every creature in it.
+
+Lower rosters are re-derived from the raws cached in `art/_work/` with
+`tools/genart.py --steps 72,36` — no API calls. Going back to the 1024px raw matters:
+the shipped 144 PNG is already quantised to 32 colours and keylined, and squeezing that
+again carries both decisions down to a grid that wanted different ones. Three knobs move
+per step and they do not move together — palette size, a pre-blur that kills detail
+finer than a resample cell, and a contrast lift that compensates for how hard averaging
+flattens tone. Blurring 18 as hard as 72 is what turned the bookshelf into a brown
+rectangle; the coarser the grid the *less* pre-blur it wants, because the box filter has
+already destroyed everything below a cell.
 
 **The book and HUD are a separate pipeline and will not follow.** They render crisp at
 device resolution and were just authored at a fixed pixel size, so the chunkier the
@@ -79,7 +100,9 @@ accidents. If a step cannot be made to look deliberate, cutting it is the better
 - Each step's textures were composed at that density — no step is a resample of another.
 - At every step, a brick reads as a brick and a bevel reads as one pixel of shadow, not
   as a third of a course.
-- Sprites are the same size in world units at every step.
+- Sprites are the same size in world units at every step — to within one texel of the
+  coarsest step, which is as exact as integer pixel dimensions allow.
+- A creature is identifiable at every step, standing one tile away.
 - Distant walls do not shimmer at 72 and below.
 - Nothing in the HUD, the book or the tree changes size or legibility when the step
   changes, or if it does, it changes deliberately.

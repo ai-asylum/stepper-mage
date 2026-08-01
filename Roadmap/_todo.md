@@ -108,9 +108,9 @@ every phase. Never list tasks for editing this file or a phase doc.
       are marked placeholders.
 - [x] Author each theme's detail vocabulary at each step, judged by eye not by scale.
       Same table, the `detail` group.
-- [ ] Re-derive every sprite at each step from the cached raws, keeping world size fixed.
-      World size is already held by `spritePpu` in `STEP_ART` — halve the pixels and that
-      entry together and the quad does not move.
+- [x] Re-derive every sprite at each step from the cached raws, keeping world size fixed.
+      Shipped at 144, 72 and 36; the 18 roster was generated, judged unidentifiable and
+      cut, so the 18 world draws creatures from 36. See the phase doc.
 - [x] Add a persisted resolution setting with all four steps, and a way to reach it.
 - [x] Decide whether the book and tree atlases follow the step, and do what you decide.
       They do not — see the phase doc's settled decisions.
@@ -168,4 +168,6 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Re-check free-turn attrition; the turn rule change may already have dissolved it.
 - [ ] Stop the resting reticle preferring furniture over the creature in the room.
 - [ ] Give the sixth belt loop and the fourth loadout slot something to hold, or remove them.
+- [ ] Step the torch sconce's resolution; it is the last thing in the world drawn at 144.
+      `buildSconce` uses absolute 144-space texel offsets, so it needs rewriting per step.
 - [ ] Commit changes.

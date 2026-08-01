@@ -33,7 +33,8 @@ import { Rng } from './core/rng';
 import { DIR_VEC, type Dir } from './dungeon/grid';
 import { THEMES } from './art/theme';
 import {
-  DEFAULT_STEP, PIXEL_STEPS, isPixelStep, pixelStep, setPixelStep, type PixelStep,
+  DEFAULT_STEP, PIXEL_STEPS, isPixelStep, pixelStep, setPixelStep, stepArt,
+  type PixelStep,
 } from './art/steps';
 import {
   CHEST_HEAL_SPREAD, PLAYER_MAX_HP, chestHealBase, descendHeal, healable,
@@ -1704,7 +1705,7 @@ async function boot(): Promise<void> {
    * Saved before the rebuild, because the rebuild is the slow half and a tab closed
    * during it should still come back at the step the player asked for.
    */
-  const setPixels = (s: PixelStep): void => {
+  const setPixels = async (s: PixelStep): Promise<void> => {
     if (s === pixelStep()) return;
     setPixelStep(s);
     meta.pixelStep = s;
@@ -1713,15 +1714,22 @@ async function boot(): Promise<void> {
     // still points at the one being torn down, so resteping it would rebuild textures
     // for a floor about to be disposed.
     if (loading) return;
-    floor.restep();
+    // The HUD chip reads the new step immediately; the stone catches up when the
+    // roster lands. Awaiting first would leave the chip showing the old number
+    // during the fetch, which reads as a dead button.
     hud.pixelStep = s;
+    const at = floor;
+    await floor.restep();
+    // Descending mid-fetch swaps `floor` out from under us; the new one was built
+    // at the new step already, so there is nothing left to say.
+    if (at !== floor) return;
     hud.addLog(`Stone rebuilt at ${s} texels per pace.`, 0xbfa8e0);
   };
 
   /** The chip's one gesture: round the four steps, coarsening, and back to 144. */
-  const cyclePixels = (): void => {
+  const cyclePixels = (): Promise<void> => {
     const i = PIXEL_STEPS.indexOf(pixelStep());
-    setPixels(PIXEL_STEPS[(i + 1) % PIXEL_STEPS.length]);
+    return setPixels(PIXEL_STEPS[(i + 1) % PIXEL_STEPS.length]);
   };
 
   // ---------------------------------------------------------------- the star tree
@@ -2087,7 +2095,7 @@ async function boot(): Promise<void> {
     // Before the finished-run branch: the pixel chip is the one control on this screen
     // that is not about the run, so a run that has ended must not swallow it on its way
     // to the tree.
-    if (a.kind === 'pixels') { cyclePixels(); return; }
+    if (a.kind === 'pixels') { void cyclePixels(); return; }
     if (dead) {
       /**
        * A finished run has exactly one way on: the star tree, where the stars it
@@ -2659,20 +2667,34 @@ async function boot(): Promise<void> {
       steps: [...PIXEL_STEPS],
       saved: meta.pixelStep,
       /**
+       * Which roster this step draws creatures from. Not the same as `step` at the
+       * bottom of the range — 18 takes its sprites from 36 — so a harness has to be
+       * told rather than assume the two move together.
+       */
+      spritePpu: stepArt().spritePpu,
+      /**
        * A creature's quad in WORLD units, which is the number this phase has to hold
        * constant across all four steps. Read off the live sprites rather than
        * recomputed, so it measures the geometry that is actually on screen.
        */
       sprites: floor.entities.map((e) => ({
-        id: e.spriteId, w: e.sprite.w, h: e.sprite.h,
+        id: e.sprite.id,
+        w: e.sprite.w,
+        h: e.sprite.h,
+        // The art actually bound, so a harness can tell "the quad is the right
+        // size" from "the quad is the right size AND it is this step's PNG".
+        tw: e.sprite.texSize.w,
+        th: e.sprite.texSize.h,
       })),
     }),
-    setPixels: (s: number) => {
+    setPixels: async (s: number) => {
       if (!isPixelStep(s)) return null;
-      setPixels(s);
+      // Awaited: the roster is fetched now, so a harness that sets a step and
+      // then measures is measuring the finished swap and not the one before it.
+      await setPixels(s);
       return pixelStep();
     },
-    cyclePixels: () => { cyclePixels(); return pixelStep(); },
+    cyclePixels: async () => { await cyclePixels(); return pixelStep(); },
     /** Rebuild at a given depth. Floor 4 is the only place an oil drum exists. */
     goToDepth: (depth: number) => enterFloor(Math.max(1, Math.min(THEMES.length, depth))),
     targetKind: (kind: string) => {

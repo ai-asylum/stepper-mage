@@ -134,9 +134,20 @@ export class Floor {
    * run mid-descent. This rebuilds the two things the step actually decides — the
    * tile textures and the sprite quads — and touches nothing else.
    */
-  restep(): void {
+  async restep(): Promise<void> {
     this.view.restep();
-    for (const e of this.entities) e.sprite.restep();
+    // Fetch the whole roster at the new step before touching a single sprite, so
+    // the floor changes density all at once instead of creature by creature as
+    // each PNG lands. `Sprite.id` is authoritative here rather than `spriteId` —
+    // it is what the quad is actually showing after a prop has risen as a golem.
+    const ids = [...new Set(this.entities.map((e) => e.sprite.id))];
+    const art = new Map(
+      await Promise.all(ids.map(async (id) => [id, await loadSprite(id)] as const)),
+    );
+    for (const e of this.entities) {
+      const tex = art.get(e.sprite.id);
+      if (tex) e.sprite.restep(tex);
+    }
   }
 
   /** True when a living, solid entity occupies this tile. */

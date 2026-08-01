@@ -30,13 +30,30 @@ const storeUrl = `https://play.google.com/store/apps/details?id=${appId}`;
 
 /**
  * Every sprite the game fetches at runtime, keyed by the path `loadSprite()`
- * asks for (`art/<id>.png`). The whole game is in the demo, so the manifest is
- * the whole sprite set; trimming the slice is what would trim this list.
+ * asks for. The whole game is in the demo, so the manifest is the whole sprite
+ * set; trimming the slice is what would trim this list.
+ *
+ * Every roster on disk is embedded, not just the default step's. The pixel-step
+ * chip is on screen in the playable too, and `assetUrl` falls through to a plain
+ * relative path when a key is missing — which inside a single inlined HTML file
+ * is a guaranteed 404, so tapping the chip would have emptied the dungeon of
+ * every creature. The extra rosters cost a few hundred KB between them against a
+ * 5 MB budget, because each is a quarter of the pixels of the one above.
+ *
+ * The step directories are DISCOVERED rather than listed, so cutting a roster
+ * (18's was generated and cut) is one `rm` and not also an edit here.
  */
-const assets = readdirSync(join(root, 'public', 'art'))
-  .filter((f) => f.endsWith('.png'))
-  .sort()
-  .map((f) => ({ file: `public/art/${f}`, key: `art/${f}` }));
+const artDir = join(root, 'public', 'art');
+const pngs = (dir) => readdirSync(join(artDir, dir)).filter((f) => f.endsWith('.png')).sort();
+const steps = readdirSync(artDir, { withFileTypes: true })
+  .filter((d) => d.isDirectory() && /^s\d+$/.test(d.name))
+  .map((d) => d.name)
+  .sort();
+const assets = [
+  ...pngs('.').map((f) => ({ file: `public/art/${f}`, key: `art/${f}` })),
+  ...steps.flatMap((d) =>
+    pngs(d).map((f) => ({ file: `public/art/${d}/${f}`, key: `art/${d}/${f}` }))),
+];
 
 buildPlayable({
   root,
