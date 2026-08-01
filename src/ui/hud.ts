@@ -134,6 +134,16 @@ export type UiAction =
    * only route, and it exists so the thing drawn under the thumb is a real control.
    */
   | { kind: 'tree' }
+  /**
+   * Coarsen the world's texel density one step, wrapping back to the finest.
+   *
+   * The only DISPLAY control in the game, and it is in the HUD rather than on the star
+   * tree because the tree only opens from a finished run: a player whose eyes the
+   * shimmer is hurting should not have to die to turn it down. It is drawn beside the
+   * minimap, which is the other readout that is up from the first frame and stays up
+   * over the run-end card.
+   */
+  | { kind: 'pixels' }
   | { kind: 'none' };
 
 /**
@@ -275,6 +285,13 @@ export class Hud {
    * every ✦ picked up on floor three into progress toward a named thing.
    */
   pinGoal: { name: string; need: number } | null = null;
+
+  /**
+   * The world's texel density, for the chip that changes it. Told, not asked: the
+   * answer lives in `src/art/steps.ts` and `main.ts` writes it here on every change,
+   * exactly as it does for the banked stars and the pinned goal.
+   */
+  pixelStep = 144;
 
   /**
    * How the run ended, or null while it is still live.
@@ -436,6 +453,9 @@ export class Hud {
     this.drawWorldOverlay(ctx);
     this.drawTopBar(ctx, W);
     this.drawMiniMap(ctx, W);
+    // Above the run-end return below, so the one control that is not about the run
+    // stays reachable on a run that has ended.
+    this.drawPixelChip(ctx, W);
 
     /**
      * A finished run keeps its world and its readouts and loses its controls.
@@ -838,6 +858,29 @@ export class Hud {
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+  }
+
+  /**
+   * The texel-density chip, right-hand column under the minimap.
+   *
+   * There is nowhere else for it. The left column is the depth, the health bar, the
+   * hand and the pinned goal; the centre is the party bar and the shout; the bottom
+   * two-thirds is the grimoire's. The strip under the minimap is the only piece of
+   * this screen nothing else claims, and it puts the chip next to the other readout
+   * that is neither the world nor the book.
+   *
+   * A control, so it takes a hit region and so `UI_CONTROLS` in `main.ts` names it.
+   * `▦` is a hatched square — the pixel grid it changes, at a glance.
+   */
+  private drawPixelChip(ctx: CanvasRenderingContext2D, W: number): void {
+    const label = `▦ ${this.pixelStep}`;
+    ctx.font = '8px ui-monospace, monospace';
+    const w = ctx.measureText(label).width + 14;
+    // Under the minimap when there is one, under the star total when there is not.
+    const y = this.map ? 140 : 40;
+    const x = W - w - 10;
+    this.pill(ctx, x, y, label, 'rgba(200,186,214,0.9)', 'rgba(170,150,200,0.45)');
+    this.hits.push({ rect: [x - 6, y - 6, w + 12, 26], action: { kind: 'pixels' } });
   }
 
   private drawShout(ctx: CanvasRenderingContext2D, W: number, H: number): void {

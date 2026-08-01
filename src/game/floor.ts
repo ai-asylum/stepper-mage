@@ -124,6 +124,21 @@ export class Floor {
     return true;
   }
 
+  /**
+   * Rebuild everything that was built at a texel density, keeping the floor.
+   *
+   * The pixel step's one write path into a live run. It is NOT `Floor.create` again:
+   * the layout is deterministic from the seed and would come back identical, but
+   * every hit point, every risen golem, every spent altar and the whole explored set
+   * live on the entities and the grid, so recreating the floor would quietly reset a
+   * run mid-descent. This rebuilds the two things the step actually decides — the
+   * tile textures and the sprite quads — and touches nothing else.
+   */
+  restep(): void {
+    this.view.restep();
+    for (const e of this.entities) e.sprite.restep();
+  }
+
   /** True when a living, solid entity occupies this tile. */
   solidAt(x: number, y: number): boolean {
     for (const e of this.entities) {

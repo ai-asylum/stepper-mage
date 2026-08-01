@@ -27,7 +27,16 @@ and measurably less shimmer.
   and there is nowhere left to put a brick.
 - **Each step is remade, not downsampled.** A resampled 144px texture at 36px is mush;
   the point is art that was composed for the grid it lands on.
-- The step is a **setting the player chooses**, persisted.
+- The step is a **setting the player chooses**, persisted. It lives as a chip under the
+  minimap, in the run, because the only other screen in the game opens from a finished
+  run and nobody should have to die to turn the shimmer down.
+- **The book, the tree and the HUD do not take a step.** They are a separate
+  full-resolution overlay pass, so they are not what aliases and there is nothing for a
+  step to fix — a coarser page would cost legibility on a 390px phone and buy nothing.
+  The grimoire is held in your hands in front of the room, which is already a different
+  plane; at the low end it reads as a fine object in a coarse world rather than as a
+  mismatch. Same answer, same reason, for every billboarded sprite: they follow the
+  density their art was authored at, not the masonry's.
 
 ## Out of scope
 

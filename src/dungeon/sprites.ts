@@ -17,7 +17,7 @@
  */
 import * as THREE from 'three';
 import { assetUrl } from 'playable-kit/runtime';
-import { PPU } from '../art/tiles';
+import { stepArt } from '../art/steps';
 import type { WorldUniforms } from './render';
 
 const SPRITE_VERT = /* glsl */ `
@@ -192,10 +192,24 @@ export function preloadSprites(ids: string[]): Promise<THREE.Texture[]> {
  */
 const SPRITE_SCALE = 0.72;
 
-/** Texture pixel size -> world size, keeping texels close to the wall texels. */
+/**
+ * Texture pixel size -> world size.
+ *
+ * Divided by `spritePpu` — the density the PNG was AUTHORED at — and never by the
+ * world's current `ppu()`. That distinction is the whole of keeping a creature the
+ * same size at every step: the two used to be one number, so halving the world's
+ * texel density doubled every creature in it. A sprite's world size is a property of
+ * its art, not of the masonry it stands in front of.
+ *
+ * All four steps ship the same 144-authored roster today, so all four say 144 and
+ * this returns the same size at every step. When the follow-up re-derives the roster
+ * at each density it halves the pixels and the `spritePpu` entry together, and the
+ * quad still does not move — only its crispness changes.
+ */
 export function spriteWorldSize(tex: THREE.Texture): { w: number; h: number } {
   const img = tex.image as { width: number; height: number };
-  return { w: (img.width / PPU) * SPRITE_SCALE, h: (img.height / PPU) * SPRITE_SCALE };
+  const p = stepArt().spritePpu;
+  return { w: (img.width / p) * SPRITE_SCALE, h: (img.height / p) * SPRITE_SCALE };
 }
 
 // ----------------------------------------------------------------- animation
@@ -242,8 +256,12 @@ export class Sprite {
   /** Base hover height (flying creatures sit above the floor). */
   hover = 0;
 
-  readonly w: number;
-  readonly h: number;
+  /**
+   * The quad's world size. Not `readonly`, because the pixel step can invalidate it
+   * — see `restep`. Nothing else writes them.
+   */
+  w: number;
+  h: number;
 
   state: AnimState = 'idle';
   private t = 0;
@@ -321,6 +339,31 @@ export class Sprite {
     this.shadow.frustumCulled = false;
 
     this.group.add(this.shadow, this.mesh);
+  }
+
+  /**
+   * Re-derive the quad after a pixel-step change.
+   *
+   * A no-op today and deliberately still here: every step ships the same 144-authored
+   * PNGs, so `spriteWorldSize` returns the same answer and this returns early. The
+   * follow-up that authors a roster per step is the thing that makes it fire, and the
+   * seam has to exist before then or changing the step mid-run would leave every
+   * creature at the previous step's size until the next descent rebuilt it.
+   */
+  restep(): void {
+    const size = spriteWorldSize(this.mat.uniforms.map.value as THREE.Texture);
+    if (size.w === this.w && size.h === this.h) return;
+    this.w = size.w;
+    this.h = size.h;
+    // Bottom-pivoted exactly as the constructor builds it.
+    const geo = new THREE.PlaneGeometry(size.w, size.h);
+    geo.translate(0, size.h / 2, 0);
+    this.mesh.geometry.dispose();
+    this.mesh.geometry = geo;
+    const shGeo = new THREE.PlaneGeometry(size.w * 0.82, size.w * 0.42);
+    shGeo.rotateX(-Math.PI / 2);
+    this.shadow.geometry.dispose();
+    this.shadow.geometry = shGeo;
   }
 
   /** Baked light where the sprite stands. Call when it moves. */

@@ -9,7 +9,7 @@
  */
 import * as THREE from 'three';
 import { Grid, Tile, DIR_VEC } from './grid';
-import { PPU, WALL_H, buildTileSet, buildSconce, colToHex } from '../art/tiles';
+import { WALL_H, buildTileSet, buildSconce, colToHex } from '../art/tiles';
 import type { Theme } from '../art/theme';
 import type { Pix } from '../art/pixel';
 
@@ -136,7 +136,7 @@ export class DungeonView {
   private sconces: { mesh: THREE.Mesh; frames: THREE.Texture[]; phase: number }[] = [];
   private disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = [];
 
-  constructor(private grid: Grid, private theme: Theme, seed: string) {
+  constructor(private grid: Grid, private theme: Theme, private seed: string) {
     this.uniforms = {
       uCam: { value: new THREE.Vector3() },
       uTorch: { value: new THREE.Color(colToHex(theme.lightCol)) },
@@ -151,6 +151,24 @@ export class DungeonView {
       uFogDensity: { value: 0.016 },
     };
     this.build(seed);
+  }
+
+  /**
+   * Rebuild every texture and every mesh at the current texel density.
+   *
+   * Deliberately `dispose()` then `build()` — the same two calls a descent makes,
+   * in the same order — rather than a second, gentler path that only swaps the
+   * textures. A floor already had to be able to tear itself down completely, and a
+   * texture-only swap would be a second teardown to keep correct: the geometry
+   * carries the tile UVs and the sconce quads are sized off the frames.
+   *
+   * The GRID is untouched, so the layout, the baked light and everything standing on
+   * the floor survive; `uniforms` is the same object throughout, which is why the
+   * sprite materials that hold references into it keep working across a rebuild.
+   */
+  restep(): void {
+    this.dispose();
+    this.build(this.seed);
   }
 
   /**
@@ -179,8 +197,10 @@ export class DungeonView {
     const floorB = tiles.floors.map(() => new MeshBuild());
     const ceilB = tiles.ceils.map(() => new MeshBuild());
 
-    const wallVh = WALL_H; // keeps texels square on a 1x1.5 wall
-    void PPU;
+    // UV repeat down a wall quad, so the texels stay square on a face that is
+    // taller than it is wide. It is the wall's WORLD height and has nothing to do
+    // with the step: the texture is already `ppu() * WALL_H` texels tall.
+    const wallVh = WALL_H;
 
     for (let y = 0; y < g.h; y++) {
       for (let x = 0; x < g.w; x++) {

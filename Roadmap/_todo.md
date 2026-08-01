@@ -102,12 +102,18 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 8 — Pixel_Resolution_Steps
 
-- [ ] Make PPU a runtime value; rebuild every texture and sprite size when it changes.
-- [ ] Author the masonry, bevel, AO and crack constants for each of the four steps.
-- [ ] Author each theme's detail vocabulary at each step, judged by eye not by scale.
+- [x] Make PPU a runtime value; rebuild every texture and sprite size when it changes.
+- [x] Author the masonry, bevel, AO and crack constants for each of the four steps.
+      The table is `STEP_ART` in `src/art/steps.ts`; 144 is authored, the other three
+      are marked placeholders.
+- [x] Author each theme's detail vocabulary at each step, judged by eye not by scale.
+      Same table, the `detail` group.
 - [ ] Re-derive every sprite at each step from the cached raws, keeping world size fixed.
-- [ ] Add a persisted resolution setting with all four steps, and a way to reach it.
-- [ ] Decide whether the book and tree atlases follow the step, and do what you decide.
+      World size is already held by `spritePpu` in `STEP_ART` — halve the pixels and that
+      entry together and the quad does not move.
+- [x] Add a persisted resolution setting with all four steps, and a way to reach it.
+- [x] Decide whether the book and tree atlases follow the step, and do what you decide.
+      They do not — see the phase doc's settled decisions.
 - [ ] Commit changes.
 
 ## Phase 9 — Enemy_Identity

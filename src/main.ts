@@ -33,6 +33,9 @@ import { Rng } from './core/rng';
 import { DIR_VEC, type Dir } from './dungeon/grid';
 import { THEMES } from './art/theme';
 import {
+  DEFAULT_STEP, PIXEL_STEPS, isPixelStep, pixelStep, setPixelStep, type PixelStep,
+} from './art/steps';
+import {
   CHEST_HEAL_SPREAD, PLAYER_MAX_HP, chestHealBase, descendHeal, healable,
 } from './game/tuning';
 import {
@@ -99,6 +102,19 @@ interface Meta {
    * it — so it needs no sanitisation beyond "is this a node id".
    */
   pinned: NodeId | null;
+  /**
+   * The world's texel density, in texels per world unit.
+   *
+   * The only DISPLAY setting on this object, and it is here rather than in a store of
+   * its own because there is exactly one of it and `meta` is already the thing that
+   * survives a run. It is not derived, not bought and not gameplay: nothing reads it
+   * but `src/art/steps.ts`, which the tile generators ask at build time.
+   *
+   * Guarded on load by membership rather than by `savedCount`, for the reason `pinned`
+   * is: it is one of four values, not a count, and a save claiming PPU 3 would build a
+   * three-texel wall rather than a small number.
+   */
+  pixelStep: PixelStep;
 }
 
 const META_KEY = 'stepper-mage.meta.v1';
@@ -188,12 +204,13 @@ function loadMeta(): Meta {
         giftedPage: typeof m.giftedPage === 'string' && isPageElement(m.giftedPage)
           ? m.giftedPage : null,
         pinned: isNodeId(m.pinned) ? m.pinned : null,
+        pixelStep: isPixelStep(m.pixelStep) ? m.pixelStep : DEFAULT_STEP,
       });
     }
   } catch { /* corrupt or unavailable storage: fall through to defaults */ }
   return applyTree({
     stars: 0, loadout: [...DEFAULT_LOADOUT], slots: 0, handSize: 0, best: 0, nodes: [],
-    giftedPage: null, pinned: null,
+    giftedPage: null, pinned: null, pixelStep: DEFAULT_STEP,
   });
 }
 
@@ -204,6 +221,15 @@ function saveMeta(m: Meta): void {
 async function boot(): Promise<void> {
   const engine = new Engine({ internalHeight: 400, levels: 36 });
   const meta = loadMeta();
+  /**
+   * The saved texel density, in force before anything is built.
+   *
+   * First statement after the load on purpose: every tile texture and every sprite
+   * quad reads the step at construction time, so a floor built before this line would
+   * be built at the default and then need rebuilding. Nothing between here and
+   * `enterFloor(1)` touches the world.
+   */
+  setPixelStep(meta.pixelStep);
   /**
    * Everything procedural on this run derives from here: the floor layout, the
    * altar roll and the chest roll.
@@ -1544,6 +1570,7 @@ async function boot(): Promise<void> {
     hud.floorName = theme.name;
     hud.bankedStars = meta.stars;
     hud.pinGoal = pinReadout();
+    hud.pixelStep = pixelStep();
     hud.bindMap(() => ({ floor, x: stepper.x, y: stepper.y, dir: stepper.dir }));
     wireCombat();
 
@@ -1661,6 +1688,40 @@ async function boot(): Promise<void> {
     // but attrition is real.
     state.hp += healable(state.hp, state.maxHp, descendHeal(state.depth));
     await enterFloor(state.depth + 1);
+  };
+
+  // ------------------------------------------------------------- the pixel step
+
+  /**
+   * Change the world's texel density, now, in the run that is on screen.
+   *
+   * Applied live rather than at the next descent, and that is the point: the thing
+   * this setting changes is the wall in front of you, so the only honest way to choose
+   * between four of them is to watch the same wall change. `Floor.restep` rebuilds the
+   * textures and the sprite quads over the standing grid, so nothing about the run
+   * moves — same layout, same health, same explored map, different stone.
+   *
+   * Saved before the rebuild, because the rebuild is the slow half and a tab closed
+   * during it should still come back at the step the player asked for.
+   */
+  const setPixels = (s: PixelStep): void => {
+    if (s === pixelStep()) return;
+    setPixelStep(s);
+    meta.pixelStep = s;
+    saveMeta(meta);
+    // A floor that is still being built is already reading the new step — and `floor`
+    // still points at the one being torn down, so resteping it would rebuild textures
+    // for a floor about to be disposed.
+    if (loading) return;
+    floor.restep();
+    hud.pixelStep = s;
+    hud.addLog(`Stone rebuilt at ${s} texels per pace.`, 0xbfa8e0);
+  };
+
+  /** The chip's one gesture: round the four steps, coarsening, and back to 144. */
+  const cyclePixels = (): void => {
+    const i = PIXEL_STEPS.indexOf(pixelStep());
+    setPixels(PIXEL_STEPS[(i + 1) % PIXEL_STEPS.length]);
   };
 
   // ---------------------------------------------------------------- the star tree
@@ -2023,6 +2084,10 @@ async function boot(): Promise<void> {
   };
 
   const act = (a: ReturnType<Hud['hit']>): void => {
+    // Before the finished-run branch: the pixel chip is the one control on this screen
+    // that is not about the run, so a run that has ended must not swallow it on its way
+    // to the tree.
+    if (a.kind === 'pixels') { cyclePixels(); return; }
     if (dead) {
       /**
        * A finished run has exactly one way on: the star tree, where the stars it
@@ -2151,7 +2216,7 @@ async function boot(): Promise<void> {
    */
   const UI_CONTROLS: ReadonlySet<string> = new Set([
     'cast', 'clear', 'descend', 'cycle', 'altar', 'chest', 'harvest',
-    'belt', 'card', 'tree',
+    'belt', 'card', 'tree', 'pixels',
   ]);
 
   /**
@@ -2582,6 +2647,32 @@ async function boot(): Promise<void> {
       refreshTargets();
       return { x: e.sprite.tx, y: e.sprite.ty };
     },
+    /**
+     * The world's texel density, readable and settable.
+     *
+     * Settable through the same `setPixels` the chip taps, so a harness proves the real
+     * path: the save is written and the standing floor is rebuilt. `steps` is reported
+     * so a screenshot pass need not hardcode the four.
+     */
+    pixels: () => ({
+      step: pixelStep(),
+      steps: [...PIXEL_STEPS],
+      saved: meta.pixelStep,
+      /**
+       * A creature's quad in WORLD units, which is the number this phase has to hold
+       * constant across all four steps. Read off the live sprites rather than
+       * recomputed, so it measures the geometry that is actually on screen.
+       */
+      sprites: floor.entities.map((e) => ({
+        id: e.spriteId, w: e.sprite.w, h: e.sprite.h,
+      })),
+    }),
+    setPixels: (s: number) => {
+      if (!isPixelStep(s)) return null;
+      setPixels(s);
+      return pixelStep();
+    },
+    cyclePixels: () => { cyclePixels(); return pixelStep(); },
     /** Rebuild at a given depth. Floor 4 is the only place an oil drum exists. */
     goToDepth: (depth: number) => enterFloor(Math.max(1, Math.min(THEMES.length, depth))),
     targetKind: (kind: string) => {
