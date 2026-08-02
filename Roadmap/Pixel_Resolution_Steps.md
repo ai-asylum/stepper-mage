@@ -92,8 +92,25 @@ which for art made of flat blocks is the right question to ask. It also replaced
 Gaussian pre-blur that existed to stop sub-cell aliasing, doing that job better because
 it preserves edges and a blur does not.
 
-The only per-step knobs left are palette size and a contrast lift that compensates for
-tonal flattening.
+The median is then pulled part-way back toward a raw point sample (`sharpen`, 0.4). The
+median is not itself what washes a sprite out — a median is always a value that was
+really there — it is the 3x box step in front of it, which means away the darkest and
+brightest thirds of every cell before the median gets to vote. Swept at 36: 0.35 is a
+clear lift, 0.55 starts speckling the boss, 0.8 is confetti.
+
+The other per-step knobs are palette size and a contrast lift.
+
+**Transparency comes from a matting model, not from the flood fill.** The local fill
+can only reach background that TOUCHES the border, so everything a subject encloses
+shipped as opaque white inside the silhouette — the telescope's tripod, the arch under
+the lectern, the meat rack's whole frame, the gap between a hound's legs and through
+its ribcage. It cannot just be made more aggressive: the reason it is a fill and not a
+"white -> alpha" threshold is that white INSIDE a sprite is real art (bone, teeth, page,
+starlight) and a threshold punches holes through all of it. Telling those two whites
+apart is a matting problem, so `tools/rembg.sh` hands it to the generator's background
+remover, run over the raws that are ALREADY cached — same seed, same image, new alpha,
+no art changed. Near-white inside silhouettes went from 2.5% of opaque pixels to 0.5%,
+and what remains is genuinely pale art: crystal, bone, the husk.
 
 **Generating coarse sprites instead of resampling them was tried and rejected.**
 `genart.py --regen N` swaps in a prompt asking for chunky, few-colour, low-detail art

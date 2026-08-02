@@ -13,9 +13,10 @@ The last steps matter. The model returns 1024x1024 images whose "pixels" are
 two different pixel sizes at once and instantly read as fake. Resampling onto a
 ~96-128px grid makes every pixel a real pixel.
 
-Backgrounds are knocked out locally (flood fill from the border) rather than via
-the API's --remove-bg, which costs another round trip per asset for a job the
-white background makes trivial.
+Backgrounds come from the API's background remover, cached in raw/nobg/ by
+tools/rembg.sh. A local flood fill from the border was tried first and is still
+the fallback, but it can only reach background that touches the border — see
+`matted()` for what that left inside the silhouettes.
 
 Usage:
     tools/genart.py            # generate everything missing
@@ -141,6 +142,31 @@ def raw_path(asset_id: str, coarse: int = 0) -> Path:
     return (RAW_DIR / f"c{coarse}" / f"{asset_id}.png") if coarse else RAW_DIR / f"{asset_id}.png"
 
 
+def matted(raw: Path) -> Path | None:
+    """
+    The properly matted version of a raw, if one has been fetched.
+
+    `knock_out_background` floods in from the border, so it can only reach
+    background that TOUCHES the border. Everything the subject encloses survives:
+    the gap inside a telescope's tripod, the arch under the lectern, the space
+    between a hound's legs and through its ribcage, the whole interior of the
+    meat rack's frame. Those shipped as opaque white rectangles inside the
+    silhouette.
+
+    It cannot simply be made more aggressive, either. The reason it is a flood
+    fill and not a "white -> alpha" threshold is that white INSIDE a sprite is
+    real art — bone, teeth, page, starlight — and a threshold punches holes
+    through all of it. Telling those two whites apart is a matting problem, so it
+    is handed to a matting model: `tools/rembg.sh` runs the generator's own
+    background remover over the cached raws and drops the result in `raw/nobg/`.
+
+    Run against the EXISTING raws, so no art changes — same seed, same image, just
+    an alpha channel that understands what the subject is.
+    """
+    m = raw.parent / "nobg" / raw.name
+    return m if m.exists() else None
+
+
 def generate(asset: dict, env: dict[str, str], force: bool, coarse: int = 0) -> Path | None:
     """Generate the 1K raw for one asset (cached in art/_work/raw)."""
     raw = raw_path(asset["id"], coarse)
@@ -219,7 +245,7 @@ def crop_to_content(img: Image.Image, pad: int = 2) -> Image.Image:
 
 def to_pixel_grid(
     img: Image.Image, target_h: int, colors: int, target_w: int | None = None,
-    median: bool = False,
+    median: bool = False, sharpen: float = 0.0,
 ) -> Image.Image:
     """Resample onto the true pixel grid, then quantise the palette.
 
@@ -253,6 +279,32 @@ def to_pixel_grid(
     if median:
         mid = img.resize((tw * 3, target_h * 3), Image.BOX)
         small = mid.filter(ImageFilter.MedianFilter(3)).resize((tw, target_h), Image.NEAREST)
+        small = small.convert("RGBA")
+        if sharpen > 0:
+            # Pull the median back toward a true point sample.
+            #
+            # The median itself does not flatten anything — a median is always a
+            # value that was actually there. What flattens is the 3x BOX step in
+            # front of it, which is a mean over a third of a cell, so the darkest
+            # and the brightest thirds are gone before the median ever votes. The
+            # result is stable and slightly washed.
+            #
+            # Blending toward the raw point sample puts that range back without
+            # putting the noise back, because the median stays the anchor and this
+            # only moves it partway. At 1.0 it IS the point sample, confetti and
+            # all; the useful band is well under half.
+            pt = img.resize((tw, target_h), Image.NEAREST)
+            m, p = small.load(), pt.convert("RGBA").load()
+            for y in range(target_h):
+                for x in range(tw):
+                    mr, mg, mb, ma = m[x, y]
+                    pr, pg, pb, _ = p[x, y]
+                    m[x, y] = (
+                        max(0, min(255, round(mr + sharpen * (pr - mr)))),
+                        max(0, min(255, round(mg + sharpen * (pg - mg)))),
+                        max(0, min(255, round(mb + sharpen * (pb - mb)))),
+                        ma,  # alpha stays the median's — the stabler silhouette
+                    )
     else:
         small = img.resize((tw, target_h), Image.BOX)
 
@@ -317,8 +369,12 @@ def add_keyline(img: Image.Image, rgb=(14, 9, 18)) -> Image.Image:
 
 
 def post(asset: dict, raw: Path) -> None:
-    img = Image.open(raw)
-    img = knock_out_background(img)
+    m = matted(raw)
+    img = Image.open(m or raw)
+    # A matted raw already carries the alpha; flooding it again would only walk
+    # the transparent region it already has.
+    if not m:
+        img = knock_out_background(img)
     img = crop_to_content(img)
     img = to_pixel_grid(img, asset.get("height", 112), asset.get("colors", 32))
     if asset.get("keyline", True):
@@ -343,11 +399,18 @@ def post(asset: dict, raw: Path) -> None:
 #            pixels a shape gets the flatter it comes out. The coarser the grid,
 #            the harder the survivors have to work — this is what puts the
 #            shelves back in the bookshelf and the teeth back on the gears.
+#
+#   sharpen  How far the median is pulled back toward a raw point sample. The
+#            median is not what washes the result out — a median is always a value
+#            that was really there — it is the 3x box step in front of it, which
+#            means away the darkest and brightest thirds of every cell before the
+#            median gets to vote. This puts that range back. Swept at 36: 0.35 is
+#            a clear lift, 0.55 starts speckling the boss, 0.8 is confetti.
 STEP_TUNE = {
-    144: {"colors": 32, "contrast": 1.00},
-    72: {"colors": 24, "contrast": 1.05},
-    36: {"colors": 16, "contrast": 1.12},
-    18: {"colors": 16, "contrast": 1.22},
+    144: {"colors": 32, "contrast": 1.00, "sharpen": 0.00},
+    72: {"colors": 24, "contrast": 1.05, "sharpen": 0.40},
+    36: {"colors": 16, "contrast": 1.12, "sharpen": 0.40},
+    18: {"colors": 16, "contrast": 1.22, "sharpen": 0.40},
 }
 
 
@@ -394,11 +457,14 @@ def post_step(asset: dict, raw: Path, step: int) -> tuple[int, int] | None:
     pad = 2 if keyline else 0
 
     tune = STEP_TUNE[step]
-    img = Image.open(raw)
-    img = knock_out_background(img)
+    m = matted(raw)
+    img = Image.open(m or raw)
+    if not m:
+        img = knock_out_background(img)
     img = crop_to_content(img)
     img = punch(img, tune["contrast"])
-    img = to_pixel_grid(img, fh - pad, tune["colors"], target_w=fw - pad, median=True)
+    img = to_pixel_grid(img, fh - pad, tune["colors"], target_w=fw - pad,
+                        median=True, sharpen=tune["sharpen"])
     if keyline:
         img = add_keyline(img)
 
