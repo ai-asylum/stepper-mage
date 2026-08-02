@@ -90,12 +90,45 @@ def load_keys() -> dict[str, str]:
     return env
 
 
-def build_prompt(asset: dict) -> str:
+# Style contract for a COARSE raw, replacing STYLE when generating for a low
+# density. The model cannot output a 24px image — it returns 1024px whatever you
+# ask — so the density has to be spent on the SUBJECT rather than the file: fewer,
+# larger shapes, no fine ornament, no dithering, and contrast strong enough that a
+# feature survives being averaged into two or three texels. What comes back is
+# still resampled; the point is that it was composed to be.
+#
+# TRIED AND NOT ADOPTED. Six assets were generated this way and compared against
+# the resampled roster at both 18 and 36. The raws did come back simpler and
+# bolder, and it still did not make 18 viable — a bookshelf is a brown rectangle
+# and the floor-1 boss has no eye either way, because the limit is nineteen texels
+# and not the source art. At 36 it was a wash, and worse on the hulk and the gears.
+#
+# The cost that settles it: changing the prompt changes what the model returns, so
+# every regenerated asset comes back as a DIFFERENT DESIGN — the floor-1 boss went
+# from an open book with a violet eye to a winged figure. Regenerating part of the
+# roster makes it inconsistent, and regenerating all of it is a redesign of the
+# game's art, which is not what a graphics setting should cost.
+#
+# Kept so the finding is re-testable, not because anything ships from it.
+COARSE_STYLE = (
+    "EXTREMELY LOW RESOLUTION pixel art, like a {n}x{n} pixel sprite blown up huge. "
+    "Enormous chunky square pixels, each visible block the size of a fingertip. "
+    "Only {c} flat colours, no gradients, NO dithering, no texture, no fine detail, "
+    "no small ornaments. Bold simple silhouette readable at a glance, one or two "
+    "large defining features only, heavy dark outline, very high contrast"
+)
+
+
+def build_prompt(asset: dict, coarse: int = 0) -> str:
     kind = asset.get("kind", "creature")
+    if coarse:
+        style = COARSE_STYLE.format(n=coarse, c=STEP_TUNE.get(coarse, {}).get("colors", 16))
+    else:
+        style = STYLE
     parts = [
         "A single subject centered in frame on a plain solid white background.",
         asset["prompt"].strip(),
-        STYLE + ".",
+        style + ".",
         FRAMING.get(kind, FRAMING["creature"]),
     ]
     if extra := asset.get("extra"):
@@ -103,15 +136,20 @@ def build_prompt(asset: dict) -> str:
     return " ".join(parts)
 
 
-def generate(asset: dict, env: dict[str, str], force: bool) -> Path | None:
+def raw_path(asset_id: str, coarse: int = 0) -> Path:
+    """Raws are cached per density. The 144 raws are never overwritten."""
+    return (RAW_DIR / f"c{coarse}" / f"{asset_id}.png") if coarse else RAW_DIR / f"{asset_id}.png"
+
+
+def generate(asset: dict, env: dict[str, str], force: bool, coarse: int = 0) -> Path | None:
     """Generate the 1K raw for one asset (cached in art/_work/raw)."""
-    raw = RAW_DIR / f"{asset['id']}.png"
+    raw = raw_path(asset["id"], coarse)
     if raw.exists() and not force:
         return raw
-    RAW_DIR.mkdir(parents=True, exist_ok=True)
+    raw.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         "uvx", "--from", str(ASSET_CREATOR), "asset-creator",
-        "--prompt", build_prompt(asset),
+        "--prompt", build_prompt(asset, coarse),
         "--aspect", asset.get("aspect", "1:1"),
         "--resolution", "1K",
         "--seed", str(asset.get("seed", 1234)),
@@ -403,6 +441,8 @@ def main() -> None:
     ap.add_argument("--force", action="store_true", help="regenerate existing raws")
     ap.add_argument("--post", action="store_true", help="post-process cached raws only")
     ap.add_argument("--steps", help="comma-separated texel densities to re-derive, e.g. 72,36,18")
+    ap.add_argument("--regen", type=int, default=0, metavar="N",
+                    help="generate fresh raws with a coarse prompt aimed at an NxN sprite")
     ap.add_argument("--jobs", type=int, default=4, help="parallel generations")
     args = ap.parse_args()
 
@@ -418,10 +458,16 @@ def main() -> None:
 
     if args.steps:
         steps = [int(s) for s in args.steps.split(",")]
+        env = load_keys() if args.regen else {}
         for step in steps:
-            print(f"step {step} -> {step_dir(step).relative_to(ROOT)}")
+            print(f"step {step} -> {step_dir(step).relative_to(ROOT)}"
+                  + (f"  (regenerating coarse raws at c{args.regen})" if args.regen else ""))
             for a in assets:
-                raw = RAW_DIR / f"{a['id']}.png"
+                if args.regen:
+                    generate(a, env, args.force, args.regen)
+                # A density-specific raw wins when one exists: it was composed for a
+                # coarse grid, which the 144 raw was not.
+                raw = raw_path(a["id"], args.regen) if args.regen else raw_path(a["id"])
                 if not raw.exists():
                     print(f"  [skip] {a['id']} (no raw)")
                     continue

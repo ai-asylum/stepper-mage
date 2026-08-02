@@ -84,6 +84,18 @@ flattens tone. Blurring 18 as hard as 72 is what turned the bookshelf into a bro
 rectangle; the coarser the grid the *less* pre-blur it wants, because the box filter has
 already destroyed everything below a cell.
 
+**Generating coarse sprites instead of resampling them was tried and rejected.**
+`genart.py --regen N` swaps in a prompt asking for chunky, few-colour, low-detail art
+aimed at an NxN sprite. Six assets were generated and compared against the resampled
+roster at 18 and 36. The raws did come back simpler and bolder; it still did not make
+18 viable, because the limit is nineteen texels rather than the source art, and at 36
+it was a wash and worse on two of the six. What settles it is that changing the prompt
+changes what the model returns — the floor-1 boss came back as a winged figure instead
+of an open book with a violet eye. Regenerating part of the roster makes it
+inconsistent and regenerating all of it is a redesign of the game's art, which is not
+what a graphics setting should cost. **Anything genuinely authored per density here
+means hand-drawn pixel art, not a different prompt.**
+
 **The book and HUD are a separate pipeline and will not follow.** They render crisp at
 device resolution and were just authored at a fixed pixel size, so the chunkier the
 world gets the wider the mismatch. Either the page and cover atlases take a step too, or
