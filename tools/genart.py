@@ -218,19 +218,43 @@ def crop_to_content(img: Image.Image, pad: int = 2) -> Image.Image:
 
 
 def to_pixel_grid(
-    img: Image.Image, target_h: int, colors: int, target_w: int | None = None
+    img: Image.Image, target_h: int, colors: int, target_w: int | None = None,
+    median: bool = False,
 ) -> Image.Image:
-    """Area-resample onto the true pixel grid, then quantise the palette.
+    """Resample onto the true pixel grid, then quantise the palette.
 
     `target_w` overrides the aspect-derived width. Only the stepped rosters pass
     it, and they pass it for one reason: a width rounded independently at each
     density drifts by up to a texel, which at 18 is four percent of a creature.
     The lower steps take their exact dimensions from the 144 art instead.
+
+    `median` picks the REPRESENTATIVE colour of each cell instead of the average.
+    Three ways to answer "what colour is this texel" were compared at 36:
+
+      mean (BOX)   soft and muddy. A cell twenty source pixels across contains a
+                   book spine, its shadow and the shelf behind it, and averaging
+                   returns brown. The bookshelf lost its shelves this way.
+      point        crisp and noisy. Sampling ONE pixel out of that cell keeps the
+                   edges but catches whatever outlier it lands on, so the boss
+                   arrived under a confetti of stray white and gold texels.
+      median       both. Downscale to three times the target so a cell becomes a
+                   3x3 neighbourhood, take the median of it, then point-sample.
+                   An outlier cannot be a median, and unlike a mean a median does
+                   not invent a colour that is not there — which for art made of
+                   flat blocks is exactly the right question to ask.
+
+    It replaced a Gaussian pre-blur that existed to stop sub-cell detail aliasing.
+    The median does that job better and without the cost, because it is an
+    edge-preserving filter and a blur is not.
     """
     w, h = img.size
     scale = target_h / h
     tw = max(1, target_w if target_w is not None else round(w * scale))
-    small = img.resize((tw, target_h), Image.BOX)
+    if median:
+        mid = img.resize((tw * 3, target_h * 3), Image.BOX)
+        small = mid.filter(ImageFilter.MedianFilter(3)).resize((tw, target_h), Image.NEAREST)
+    else:
+        small = img.resize((tw, target_h), Image.BOX)
 
     # Hard alpha: pixel art has no partial coverage. Do this BEFORE quantising so
     # semi-transparent halo pixels don't get folded into the palette as mud.
@@ -315,65 +339,16 @@ def post(asset: dict, raw: Path) -> None:
 #            18-step creature's ~300 pixels is one per nine, which spends the
 #            palette on noise the eye reads as dirt.
 #
-#   blur     Kills detail finer than a resample cell BEFORE the box filter can
-#            beat against it. Needed most in the middle: at 72 the cell is close
-#            enough to the raw's own ~8px block that they alias badly, while at
-#            18 a cell is so large that the box average has already destroyed
-#            everything below it and the blur only costs structure. Blurring 18
-#            as hard as 72 is what turned the bookshelf into a brown rectangle.
-#
 #   contrast Averaging pulls every tone toward the local mean, so the fewer
 #            pixels a shape gets the flatter it comes out. The coarser the grid,
 #            the harder the survivors have to work — this is what puts the
 #            shelves back in the bookshelf and the teeth back on the gears.
 STEP_TUNE = {
-    144: {"colors": 32, "blur": 0.00, "contrast": 1.00},
-    72: {"colors": 24, "blur": 0.30, "contrast": 1.05},
-    36: {"colors": 16, "blur": 0.24, "contrast": 1.12},
-    18: {"colors": 16, "blur": 0.16, "contrast": 1.22},
+    144: {"colors": 32, "contrast": 1.00},
+    72: {"colors": 24, "contrast": 1.05},
+    36: {"colors": 16, "contrast": 1.12},
+    18: {"colors": 16, "contrast": 1.22},
 }
-
-
-def presoften(img: Image.Image, radius: float) -> Image.Image:
-    """
-    Blur the raw's sub-cell detail away before it can alias.
-
-    The raws are 1024px images of "pixel art" whose pixels are ~8px blocks, plus
-    real fine detail — the radiating lines on the boss's page, the spines on a
-    bookshelf. At 144 a resample cell is ~5px and that detail lands roughly one
-    feature per cell. At 36 a cell is ~20px and at 18 it is ~40, and a box filter
-    over detail finer than its own cell does not average it away cleanly: it
-    beats against it. The 36 boss came out as violet salt-and-pepper where a page
-    should be, which is the same failure as an ordered dither over a flat tone —
-    high-frequency noise standing in for a tone.
-
-    Only RGB is softened. Alpha is left exactly as it was, so the silhouette and
-    its coverage are decided by the full-resolution edge and a blur cannot eat
-    into it. That needs the premultiply/unpremultiply dance, because blurring
-    straight RGB drags the transparent border's black in around the outline.
-    """
-    if radius <= 0.5:
-        return img
-    import numpy as np
-
-    blur = ImageFilter.GaussianBlur(radius)
-    arr = np.asarray(img.convert("RGBA"), dtype=np.float32)
-    a = arr[..., 3:4] / 255.0
-
-    # Premultiplied blur, then divide the coverage back out. Blurring straight
-    # RGB would drag the knocked-out background (still white under alpha 0) in
-    # around the whole outline as a halo; weighting by coverage means a pixel
-    # just inside the silhouette averages only over the pixels that are actually
-    # part of the sprite.
-    pm = Image.fromarray((arr[..., :3] * a).astype("uint8"), "RGB").filter(blur)
-    cov = Image.fromarray(arr[..., 3].astype("uint8"), "L").filter(blur)
-    num = np.asarray(pm, dtype=np.float32)
-    den = np.asarray(cov, dtype=np.float32)[..., None] / 255.0
-    rgb = np.where(den > 1e-3, num / np.maximum(den, 1e-3), arr[..., :3])
-
-    out = arr.copy()
-    out[..., :3] = np.clip(rgb, 0, 255)
-    return Image.fromarray(out.astype("uint8"), "RGBA")
 
 
 def punch(img: Image.Image, amount: float) -> Image.Image:
@@ -422,10 +397,8 @@ def post_step(asset: dict, raw: Path, step: int) -> tuple[int, int] | None:
     img = Image.open(raw)
     img = knock_out_background(img)
     img = crop_to_content(img)
-    cell = img.height / max(1, fh - pad)
-    img = presoften(img, cell * tune["blur"])
     img = punch(img, tune["contrast"])
-    img = to_pixel_grid(img, fh - pad, tune["colors"], target_w=fw - pad)
+    img = to_pixel_grid(img, fh - pad, tune["colors"], target_w=fw - pad, median=True)
     if keyline:
         img = add_keyline(img)
 

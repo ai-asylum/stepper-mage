@@ -77,12 +77,23 @@ halving the world's density doubles every creature in it.
 Lower rosters are re-derived from the raws cached in `art/_work/` with
 `tools/genart.py --steps 72,36` — no API calls. Going back to the 1024px raw matters:
 the shipped 144 PNG is already quantised to 32 colours and keylined, and squeezing that
-again carries both decisions down to a grid that wanted different ones. Three knobs move
-per step and they do not move together — palette size, a pre-blur that kills detail
-finer than a resample cell, and a contrast lift that compensates for how hard averaging
-flattens tone. Blurring 18 as hard as 72 is what turned the bookshelf into a brown
-rectangle; the coarser the grid the *less* pre-blur it wants, because the box filter has
-already destroyed everything below a cell.
+again carries both decisions down to a grid that wanted different ones.
+
+**The resample is a MEDIAN, and that choice does more for the result than anything
+else in the phase.** Three ways to answer "what colour is this texel" were compared at
+36. A mean (`Image.BOX`) is soft and muddy — a cell twenty source pixels across holds a
+book spine, its shadow and the shelf behind it, and averaging returns brown; that is how
+the bookshelf lost its shelves. A single point sample is crisp and noisy — it keeps
+edges but catches whatever outlier it lands on, so the boss arrived under a confetti of
+stray white and gold. The median is both: downscale to three times the target so a cell
+becomes a 3x3 neighbourhood, take its median, then point-sample. An outlier cannot be a
+median, and unlike a mean a median never invents a colour that is not in the source —
+which for art made of flat blocks is the right question to ask. It also replaced a
+Gaussian pre-blur that existed to stop sub-cell aliasing, doing that job better because
+it preserves edges and a blur does not.
+
+The only per-step knobs left are palette size and a contrast lift that compensates for
+tonal flattening.
 
 **Generating coarse sprites instead of resampling them was tried and rejected.**
 `genart.py --regen N` swaps in a prompt asking for chunky, few-colour, low-detail art
