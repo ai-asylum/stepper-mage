@@ -112,7 +112,7 @@ class Field {
  * two texels and at 36 it is one, and neither is a scaled version of the other.
  */
 function masonry(f: Field, rng: Rng, noise: Noise2, m: MasonryArt, variant: number): void {
-  const rowH = m.rowH[variant % 2];
+  const rowH = m.rowH;
   const blockW = m.blockW[variant % 3 === 0 ? 0 : 1];
   const { gap, bevel, jitter } = m;
 
@@ -443,7 +443,14 @@ export interface TileSet {
 }
 
 function buildWall(theme: Theme, seed: string, variant: number): Pix {
-  const rng = new Rng(seed);
+  // Seeded PER VARIANT, which it did not used to be. Every variant drew from the
+  // same sequence, so the only things telling two wall faces apart were the course
+  // height and the block width the variant index selected. Course height had to
+  // stop varying — it is what breaks a wall run at its seams — and taking it away
+  // would have left six variants collapsing onto two patterns, which is the same
+  // tiling artefact from the other direction. Varying the sequence instead gives
+  // every face its own block layout and jitter under courses that still line up.
+  const rng = new Rng(`${seed}-w${variant}`);
   const noise = new Noise2(seed + '-n');
   const art = stepArt().wall;
   const W = ppu(), H = Math.round(ppu() * WALL_H);

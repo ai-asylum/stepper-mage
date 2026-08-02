@@ -56,8 +56,20 @@ export interface GrainArt { freq: number; amount: number }
 export interface AoArt { top: number; bottom: number; sides: number }
 
 export interface MasonryArt {
-  /** Course heights in texels. The variant picks one. */
-  rowH: readonly [number, number];
+  /**
+   * Course height in texels. ONE number, not a per-variant choice.
+   *
+   * A wall run is many quads and each takes whichever variant its tile drew, so a
+   * course height that varied by variant meant the horizontal mortar lines broke at
+   * every tile seam — half the wall on 5-texel courses and half on 4, which cannot
+   * be made to meet. It was always wrong and 144 merely hid it; at 18 a wall is
+   * under four courses tall, so the mismatch IS the wall.
+   *
+   * Variety comes from the per-variant rng seed instead: block widths, the stagger
+   * wander and the jitter all still differ face to face. Only the courses are shared,
+   * which is the same reasoning the ceiling's vault already carried.
+   */
+  rowH: number;
   /** Block width ranges in texels. The variant picks one. */
   blockW: readonly [readonly [number, number], readonly [number, number]];
   /** Mortar gap in texels. */
@@ -283,7 +295,7 @@ const STEP_144: StepArt = {
   wall: {
     base: 0.62,
     masonry: {
-      rowH: [30, 24],
+      rowH: 30,
       blockW: [[39, 60], [48, 78]],
       gap: 3,
       bevel: 0.17,
@@ -320,7 +332,7 @@ const STEP_144: StepArt = {
     blendFreq: 0.06,
     blend: 0.18,
     masonry: {
-      rowH: [33, 33],
+      rowH: 33,
       blockW: [[45, 69], [45, 69]],
       gap: 3,
       bevel: 0.1,
@@ -391,7 +403,7 @@ const STEP_72: StepArt = {
   wall: {
     base: 0.62,
     masonry: {
-      rowH: [15, 12],
+      rowH: 15,
       blockW: [[20, 31], [25, 39]],
       gap: 1,
       bevel: 0.18,
@@ -431,7 +443,7 @@ const STEP_72: StepArt = {
     blendFreq: 0.11,
     blend: 0.16,
     masonry: {
-      rowH: [16, 16],
+      rowH: 16,
       blockW: [[23, 35], [23, 35]],
       gap: 1,
       bevel: 0.11,
@@ -504,7 +516,7 @@ const STEP_36: StepArt = {
   wall: {
     base: 0.62,
     masonry: {
-      rowH: [9, 7],
+      rowH: 9,
       blockW: [[12, 18], [14, 22]],
       gap: 0,
       bevel: 0.19,
@@ -553,7 +565,7 @@ const STEP_36: StepArt = {
     blendFreq: 0.11,
     blend: 0.14,
     masonry: {
-      rowH: [9, 9],
+      rowH: 9,
       blockW: [[12, 18], [12, 18]],
       gap: 0,
       // Stronger than 144's, not weaker: the ceiling ramp is five colours over a dark
@@ -642,7 +654,7 @@ const STEP_18: StepArt = {
   wall: {
     base: 0.62,
     masonry: {
-      rowH: [5, 4],
+      rowH: 5,
       blockW: [[6, 9], [7, 11]],
       gap: 0,
       bevel: 0.22,
@@ -688,7 +700,7 @@ const STEP_18: StepArt = {
     blendFreq: 0.06,
     blend: 0.11,
     masonry: {
-      rowH: [5, 5],
+      rowH: 5,
       blockW: [[7, 10], [7, 10]],
       gap: 0,
       bevel: 0.17,
