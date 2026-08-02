@@ -96,6 +96,26 @@ inconsistent and regenerating all of it is a redesign of the game's art, which i
 what a graphics setting should cost. **Anything genuinely authored per density here
 means hand-drawn pixel art, not a different prompt.**
 
+**Hand-authoring the sprites at 18 was also tried, and also rejected — on quality,
+not on principle.** The technique is sound and the project already relies on it:
+`bitfont.ts` draws the grimoire's type one texel at a time for exactly this reason,
+and every tile surface is authored per density. The economics favour it at the bottom
+of the range, too — an 18-step creature is about 400 pixels, roughly two bitfont
+glyphs, where resampling is throwing away 99.97% of a 1254px image. Three sprites were
+drawn as character grids with a mirrored left half (the moth, the boss, the gear
+stack: the two that fail worst plus one that survives), over two passes. The second
+pass fixed a real mechanical bug — trailing gaps at the mirror seam were detaching the
+moth's wings from its body — and was clearly better than the first. It was still worse
+than the tuned resample on all three.
+
+The honest reading: authoring a recognisable *creature silhouette* at 19–24 texels is
+character-artist work, and the constraint is the eye holding the pencil, not the
+method. Masonry is forgiving because a brick is any brick; a candle-moth is a specific
+shape and there is no parameter for "reads as a moth". **A real pixel artist would
+likely beat both the drawn and the resampled columns here.** Until there is one, the
+resampled roster with a 36 floor is the best available answer, and mixing a handful of
+drawn sprites into a generated roster would only make it inconsistent.
+
 **The book and HUD are a separate pipeline and will not follow.** They render crisp at
 device resolution and were just authored at a fixed pixel size, so the chunkier the
 world gets the wider the mismatch. Either the page and cover atlases take a step too, or
