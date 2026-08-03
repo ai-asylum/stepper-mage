@@ -25,6 +25,8 @@
  * a rivet's drop shadow, the vault's fluting and its inner floor ring.
  */
 
+import { isPlayableBundle } from 'playable-kit/runtime';
+
 /** Every density the world can be built at, coarsest last. */
 export const PIXEL_STEPS = [144, 72, 36, 18] as const;
 export type PixelStep = (typeof PIXEL_STEPS)[number];
@@ -48,6 +50,23 @@ export const DEFAULT_STEP: PixelStep = 72;
 
 export function isPixelStep(v: unknown): v is PixelStep {
   return (PIXEL_STEPS as readonly unknown[]).includes(v);
+}
+
+/**
+ * The steps a build can actually offer, which is not always all four.
+ *
+ * The playable ad is one inlined HTML file under a hard 5 MB budget, and it has to
+ * embed every sprite it might ask for — a missing one is a guaranteed 404 inside a
+ * single file. The 144 roster is 2.6 MB of the 3.7 MB of art in the game and it is
+ * the only step that uses it: 72 draws from `s72`, and both 36 and 18 draw from
+ * `s36`. So the ad ships the three coarser steps and the full game ships four.
+ *
+ * Dropping the step rather than hiding the control is the deliberate half of this.
+ * The chip still works and still says what it is showing; there is simply one fewer
+ * position on it, which is a smaller lie than a chip that 404s the dungeon.
+ */
+export function availableSteps(): readonly PixelStep[] {
+  return isPlayableBundle() ? PIXEL_STEPS.filter((s) => s !== 144) : PIXEL_STEPS;
 }
 
 /** Noise applied per texel: frequency is in 1/texels, so it moves with the step. */

@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { Grid, generate, visibleTiles, type Dir } from '../dungeon/grid';
 import { DungeonView } from '../dungeon/render';
 import { Sprite, preloadSprites, loadSprite } from '../dungeon/sprites';
+import { viewsFor, type SpriteView } from '../art/views';
 import { populate, spriteIdsFor, type Placed, type PlacedKind } from './populate';
 import { themeForDepth, type Theme } from '../art/theme';
 import { bossHp, enemyHp } from './tuning';
@@ -62,6 +63,50 @@ export function faceToward(e: Entity, x: number, y: number): void {
     : (dy > 0 ? 2 : 0)) as Dir;
 }
 
+/** Load every view a creature ships, at the current step. `front` always exists. */
+async function loadViews(id: string): Promise<Map<SpriteView, THREE.Texture>> {
+  const m = new Map<SpriteView, THREE.Texture>();
+  m.set('front', await loadSprite(id));
+  for (const v of viewsFor(id)) m.set(v, await loadSprite(`${id}_${v}`));
+  return m;
+}
+
+/** Attach a creature's extra views to a sprite that already has its front bound. */
+async function attachViews(sprite: Sprite, id: string, front: THREE.Texture): Promise<void> {
+  const extra = viewsFor(id);
+  if (!extra.length) return;
+  const m = new Map<SpriteView, THREE.Texture>([['front', front]]);
+  for (const v of extra) m.set(v, await loadSprite(`${id}_${v}`));
+  sprite.setViews(m);
+}
+
+/**
+ * Which drawn view of a body the camera is looking at, and whether to mirror it.
+ *
+ * The billboard always faces the camera, so "which way is this creature turned" is
+ * entirely a question of art: take the direction from the body to the camera, snap
+ * it to the grid, and compare it with the body's facing.
+ *
+ *   same           it is looking at you           front
+ *   opposite       it is looking away             back
+ *   either side    it is in profile               side, mirrored for one of them
+ *
+ * The generated profile faces screen-RIGHT (see `tools/genviews.py`), and a body is
+ * turned screen-right when its facing is one step anticlockwise of the camera's own
+ * view direction — which works out as a relative of 3. So 1 is the mirrored one.
+ */
+function viewFrom(e: Entity, cam: THREE.Vector3): [SpriteView, boolean] {
+  const dx = cam.x - (e.sprite.tx + e.sprite.ox);
+  const dz = cam.z - (e.sprite.ty + e.sprite.oz);
+  const toCam: Dir = (Math.abs(dx) >= Math.abs(dz)
+    ? (dx > 0 ? 1 : 3)
+    : (dz > 0 ? 2 : 0)) as Dir;
+  const rel = ((e.facing - toCam) % 4 + 4) % 4;
+  if (rel === 0) return ['front', false];
+  if (rel === 2) return ['back', false];
+  return ['side', rel === 1];
+}
+
 export class Floor {
   readonly grid: Grid;
   readonly view: DungeonView;
@@ -97,6 +142,7 @@ export class Floor {
     });
     sprite.tx = p.x; sprite.ty = p.y; sprite.ox = p.ox; sprite.oz = p.oz;
     sprite.setTileLight(this.grid.lightAt(p.x, p.y));
+    await attachViews(sprite, p.sprite, tex);
 
     const hp = p.kind === 'boss' ? bossHp(this.depth)
       : p.kind === 'enemy' ? enemyHp(this.depth)
@@ -142,6 +188,7 @@ export class Floor {
     });
     risen.tx = old.tx; risen.ty = old.ty; risen.ox = old.ox; risen.oz = old.oz;
     risen.setTileLight(this.grid.lightAt(old.tx, old.ty));
+    await attachViews(risen, e.golemId, tex);
     this.group.remove(old.group);
     old.dispose();
     this.group.add(risen.group);
@@ -173,12 +220,11 @@ export class Floor {
     // each PNG lands. `Sprite.id` is authoritative here rather than `spriteId` —
     // it is what the quad is actually showing after a prop has risen as a golem.
     const ids = [...new Set(this.entities.map((e) => e.sprite.id))];
-    const art = new Map(
-      await Promise.all(ids.map(async (id) => [id, await loadSprite(id)] as const)),
-    );
+    const art = new Map(await Promise.all(ids.map(async (id) =>
+      [id, await loadViews(id)] as const)));
     for (const e of this.entities) {
-      const tex = art.get(e.sprite.id);
-      if (tex) e.sprite.restep(tex);
+      const views = art.get(e.sprite.id);
+      if (views) e.sprite.setViews(views);
     }
   }
 
@@ -262,6 +308,8 @@ export class Floor {
   update(dt: number, time: number, cam: THREE.Vector3): void {
     this.view.update(time, cam);
     for (const e of this.entities) {
+      const [v, flip] = viewFrom(e, cam);
+      e.sprite.setView(v, flip);
       e.sprite.update(dt, time, cam);
       if (e.sprite.isGone && e.alive) {
         e.alive = false;

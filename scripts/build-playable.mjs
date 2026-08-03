@@ -49,11 +49,13 @@ const steps = readdirSync(artDir, { withFileTypes: true })
   .filter((d) => d.isDirectory() && /^s\d+$/.test(d.name))
   .map((d) => d.name)
   .sort();
-const assets = [
-  ...pngs('.').map((f) => ({ file: `public/art/${f}`, key: `art/${f}` })),
-  ...steps.flatMap((d) =>
-    pngs(d).map((f) => ({ file: `public/art/${d}/${f}`, key: `art/${d}/${f}` }))),
-];
+// The 144 roster in `public/art/` is NOT embedded. It is 2.6 MB of the 3.7 MB of
+// art in the game and only one step reads it — 72 draws from s72, and 36 and 18
+// both draw from s36 — so leaving it out costs the ad exactly one position on the
+// pixel chip and buys back most of the budget. `availableSteps()` drops 144 to
+// match, so nothing can ask for a file that is not here.
+const assets = steps.flatMap((d) =>
+  pngs(d).map((f) => ({ file: `public/art/${d}/${f}`, key: `art/${d}/${f}` })));
 
 buildPlayable({
   root,

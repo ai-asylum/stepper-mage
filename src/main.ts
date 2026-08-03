@@ -33,7 +33,7 @@ import { Rng } from './core/rng';
 import { DIR_VEC, type Dir } from './dungeon/grid';
 import { THEMES } from './art/theme';
 import {
-  DEFAULT_STEP, PIXEL_STEPS, isPixelStep, pixelStep, setPixelStep, stepArt,
+  DEFAULT_STEP, availableSteps, isPixelStep, pixelStep, setPixelStep, stepArt,
   type PixelStep,
 } from './art/steps';
 import {
@@ -230,7 +230,10 @@ async function boot(): Promise<void> {
    * be built at the default and then need rebuilding. Nothing between here and
    * `enterFloor(1)` touches the world.
    */
-  setPixelStep(meta.pixelStep);
+  // Clamped to what this build ships. A save carrying 144 is legitimate — the full
+  // game offers it — and the same save opened in the playable, which does not embed
+  // that roster, would ask for sprites that are not in the file.
+  setPixelStep(availableSteps().includes(meta.pixelStep) ? meta.pixelStep : DEFAULT_STEP);
   /**
    * Everything procedural on this run derives from here: the floor layout, the
    * altar roll and the chest roll.
@@ -1726,10 +1729,16 @@ async function boot(): Promise<void> {
     hud.addLog(`Stone rebuilt at ${s} texels per pace.`, 0xbfa8e0);
   };
 
-  /** The chip's one gesture: round the four steps, coarsening, and back to 144. */
+  /**
+   * The chip's one gesture: round the steps this build ships, coarsening, and back.
+   *
+   * `availableSteps()` rather than `PIXEL_STEPS` because the playable ad cannot
+   * afford the 144 roster — see the comment there.
+   */
   const cyclePixels = (): Promise<void> => {
-    const i = PIXEL_STEPS.indexOf(pixelStep());
-    return setPixels(PIXEL_STEPS[(i + 1) % PIXEL_STEPS.length]);
+    const steps = availableSteps();
+    const i = steps.indexOf(pixelStep());
+    return setPixels(steps[(i + 1) % steps.length]);
   };
 
   // ---------------------------------------------------------------- the star tree
@@ -2664,7 +2673,7 @@ async function boot(): Promise<void> {
      */
     pixels: () => ({
       step: pixelStep(),
-      steps: [...PIXEL_STEPS],
+      steps: [...availableSteps()],
       saved: meta.pixelStep,
       /**
        * Which roster this step draws creatures from. Not the same as `step` at the

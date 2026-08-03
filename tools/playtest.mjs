@@ -210,6 +210,51 @@ check('a body turns toward the player when it acts', facing.after === facing.wan
 check('the player moving does not turn a body', facing.unchangedByPlayerMove === true,
   JSON.stringify(facing));
 
+console.log('\n=== 3d. the drawn view follows the facing ===');
+/**
+ * The art half of facing. Rotates a hostile through all four directions from a
+ * fixed vantage and asserts which frame the renderer picked, including the mirror:
+ * one profile has to serve both sides or the roster doubles.
+ */
+const views = await ev(async () => {
+  const g = window.__game;
+  const grid = g.floor.grid;
+  const dirs = [[0, 0, 1], [1, -1, 0], [2, 0, -1], [3, 1, 0]];
+  const home = { x: g.stepper.x, y: g.stepper.y, dir: g.stepper.dir };
+  const e = g.floor.entities.find((x) => x.alive && x.hostile);
+  if (!e) return null;
+  const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  for (const [d, dx, dy] of dirs) {
+    const px = e.sprite.tx + dx * 2, py = e.sprite.ty + dy * 2;
+    if (!grid.walkable(px, py) || g.floor.solidAt(px, py)) continue;
+    if (grid.rayTiles(px, py, d, 2).length < 1) continue;
+    g.place(px, py, d);
+    const seen = [];
+    for (let f = 0; f < 4; f++) {
+      e.facing = f;
+      await frame();
+      seen.push({ f, view: e.sprite.shownView, flip: e.sprite.shownFlipped });
+    }
+    g.place(home.x, home.y, home.dir);
+    // The facing that looks back at the camera, given the player faces `d`.
+    return { id: e.spriteId, toward: (d + 2) % 4, seen };
+  }
+  g.place(home.x, home.y, home.dir);
+  return null;
+});
+console.log(views);
+const byF = (f) => views && views.seen.find((s) => s.f === f);
+check('facing the player draws the front',
+  !!views && byF(views.toward).view === 'front', JSON.stringify(views));
+check('facing away draws the back',
+  !!views && byF((views.toward + 2) % 4).view === 'back', JSON.stringify(views));
+check('the two perpendicular facings draw one profile, mirrored',
+  !!views
+  && byF((views.toward + 1) % 4).view === 'side'
+  && byF((views.toward + 3) % 4).view === 'side'
+  && byF((views.toward + 1) % 4).flip !== byF((views.toward + 3) % 4).flip,
+  JSON.stringify(views));
+
 console.log('\n=== 4. one cast, one turn: Fireball on the furniture ===');
 const solo = await ev(async () => {
   const g = window.__game;

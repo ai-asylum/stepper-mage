@@ -121,9 +121,9 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Decide what "physical" resolves to, and size the sprite run before generating.
       Gust and stone, no new element; 40 frames for hostile back+side first. Phase doc.
 - [x] Give every entity a facing, and set it when a creature moves or attacks.
-- [ ] Generate back and side frames for the twenty hostiles, from the front by reference.
+- [x] Generate back and side frames for the twenty hostiles, from the front by reference.
 - [ ] Generate attack frames for the twenty hostiles.
-- [ ] Pick the drawn frame from the angle between a creature's facing and the camera.
+- [x] Pick the drawn frame from the angle between a creature's facing and the camera.
 - [ ] Telegraph an enemy that is about to act, before it acts.
 - [ ] Play an attack pose and a screen effect when an enemy hits the player.
 - [ ] Give creatures elemental weaknesses and resistances that change damage taken.

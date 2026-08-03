@@ -20,6 +20,7 @@ import { assetUrl } from 'playable-kit/runtime';
 // Only `stepArt().spritePpu` — never `pixelStep()`. Nothing about a sprite is
 // decided by the density of the masonry behind it, and the two differ at 18.
 import { stepArt } from '../art/steps';
+import type { SpriteView } from '../art/views';
 import type { WorldUniforms } from './render';
 
 const SPRITE_VERT = /* glsl */ `
@@ -64,12 +65,24 @@ const SPRITE_FRAG = /* glsl */ `
   uniform vec3 uOutline;
   uniform float uOutlineAmt;
   uniform vec2 uTexel;
+  /**
+   * Mirror the sprite horizontally. This is how one drawn profile serves a creature
+   * turned to the left AND to the right: a grid stepper only shows four relative
+   * angles and two of them are the same profile from opposite sides, so flipping
+   * here removes a whole pose from every creature in the roster.
+   */
+  uniform float uFlipX;
 
   varying vec2 vUv;
   varying vec3 vWorld;
 
   void main() {
-    vec4 t = texture2D(map, vUv);
+    // Every sample below goes through this, the keyline taps included — reading the
+    // mirrored texel for the fill and the unmirrored ones for the outline would put
+    // the keyline on the wrong side of the silhouette.
+    vec2 uv = vec2(mix(vUv.x, 1.0 - vUv.x, uFlipX), vUv.y);
+
+    vec4 t = texture2D(map, uv);
     // Hard cutout — pixel art has no partial coverage, and alpha blending here
     // would break the depth sort against other sprites.
     if (t.a < 0.5) discard;
@@ -78,10 +91,10 @@ const SPRITE_FRAG = /* glsl */ `
     // one pixel thick at every distance instead of thinning out with range.
     if (uOutlineAmt > 0.0) {
       float a =
-        texture2D(map, vUv + vec2(uTexel.x, 0.0)).a *
-        texture2D(map, vUv - vec2(uTexel.x, 0.0)).a *
-        texture2D(map, vUv + vec2(0.0, uTexel.y)).a *
-        texture2D(map, vUv - vec2(0.0, uTexel.y)).a;
+        texture2D(map, uv + vec2(uTexel.x, 0.0)).a *
+        texture2D(map, uv - vec2(uTexel.x, 0.0)).a *
+        texture2D(map, uv + vec2(0.0, uTexel.y)).a *
+        texture2D(map, uv - vec2(0.0, uTexel.y)).a;
       if (a < 0.5) {
         gl_FragColor = vec4(uOutline, uAlpha);
         return;
@@ -288,6 +301,17 @@ export class Sprite {
   h: number;
 
   state: AnimState = 'idle';
+  /**
+   * The drawn views this creature has, and which is showing.
+   *
+   * A profile is narrower than a front, so turning genuinely resizes the quad —
+   * which is why `bind` rebuilds the geometry rather than only swapping the map.
+   * Height is equal across views by construction (see `tools/genviews.py`), so a
+   * creature does not grow as it turns.
+   */
+  private views = new Map<SpriteView, THREE.Texture>();
+  private view: SpriteView = 'front';
+  private flipped = false;
   private t = 0;
   private phase: number;
   /** Personality: every creature bobs at its own rate so a room is not a chorus. */
@@ -336,6 +360,7 @@ export class Sprite {
         uEmissive: { value: opts.emissive ?? 0.85 },
         uOutline: { value: new THREE.Color(0xffffff) },
         uOutlineAmt: { value: 0 },
+        uFlipX: { value: 0 },
         uTexel: {
           value: new THREE.Vector2(
             1 / ((tex.image as { width: number }).width),
@@ -345,6 +370,8 @@ export class Sprite {
         ...world,
       },
     });
+
+    this.views.set('front', tex);
 
     this.mesh = new THREE.Mesh(geo, this.mat);
     this.mesh.frustumCulled = false;
@@ -366,24 +393,52 @@ export class Sprite {
   }
 
   /**
-   * Swap in this step's art and re-derive the quad.
+   * Replace the whole set of drawn views, then re-show whichever one is current.
    *
-   * Takes the texture rather than fetching it, because the caller has to await the
-   * whole floor's rosterix anyway and doing it per sprite would pop creatures in one
-   * at a time. `tex` is this sprite's art at the NEW step; the texel uniform moves
-   * with it, since the selection keyline is measured in the sprite's own texels and
-   * would otherwise stay one 144-texel hairline on an 18-texel creature.
+   * This is both the spawn path and the pixel-step path. It takes textures rather
+   * than fetching them because the caller has to await the floor's whole roster
+   * anyway, and doing it per sprite would pop creatures in one at a time.
    *
-   * The old texture is not disposed: it belongs to the module cache, still keyed
-   * under its own step, and the player switching back should not re-fetch it.
-   *
-   * Sizes are expected to be unchanged — the art is authored so that
-   * `pixels / spritePpu` is constant — so the early-out is the normal path and the
-   * geometry rebuild is the safety net for a roster that ever drifts.
+   * Old textures are not disposed: they belong to the module cache, still keyed
+   * under their own step, and a player switching back should not re-fetch them.
    */
-  restep(tex: THREE.Texture): void {
+  setViews(views: ReadonlyMap<SpriteView, THREE.Texture>): void {
+    this.views = new Map(views);
+    this.bind(this.view, this.flipped, true);
+  }
+
+  /**
+   * Show a creature from a given side, mirroring for the opposite one.
+   *
+   * Cheap to call every frame: it early-outs unless the view or the flip actually
+   * changed, which they only do when a creature turns or the player walks round it.
+   */
+  setView(view: SpriteView, flip: boolean): void {
+    this.bind(view, flip);
+  }
+
+  /** The view currently drawn, after falling back for art that does not exist. */
+  get shownView(): SpriteView { return this.view; }
+  get shownFlipped(): boolean { return this.flipped; }
+
+  private bind(view: SpriteView, flip: boolean, force = false): void {
+    // Fall back to the front rather than drawing nothing: most of the roster has no
+    // back or side yet, and a prop has no business having one.
+    const tex = this.views.get(view) ?? this.views.get('front');
+    if (!tex) return;
+    const resolved: SpriteView = this.views.has(view) ? view : 'front';
+    // A front is never mirrored. Flipping a symmetrical creature would be invisible
+    // and flipping an asymmetrical one would make it change hands as you walk past.
+    const doFlip = resolved === 'side' && flip;
+    if (!force && resolved === this.view && doFlip === this.flipped) return;
+    this.view = resolved;
+    this.flipped = doFlip;
+
     this.mat.uniforms.map.value = tex;
+    this.mat.uniforms.uFlipX.value = doFlip ? 1 : 0;
     const img = tex.image as { width: number; height: number };
+    // The keyline is measured in the sprite's OWN texels, so it has to move with the
+    // texture or it stays a 144-texel hairline on a 36-texel creature.
     (this.mat.uniforms.uTexel.value as THREE.Vector2).set(1 / img.width, 1 / img.height);
 
     const size = spriteWorldSize(tex);
