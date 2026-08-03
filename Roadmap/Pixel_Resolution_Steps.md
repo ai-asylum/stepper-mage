@@ -46,9 +46,12 @@ and measurably less shimmer.
   with a keyline. No amount of re-authoring fixes nineteen pixels. This is the phase's
   own rule — cut a step that cannot be made to look deliberate — applied to the half of
   the art where it bit.
-- **18 is the default.** It is what the phase argued for: 144's "detail" arrives as
-  shimmer in a 400px-tall buffer, and 18 puts nearly everything on screen in
-  magnification. It also means every step is somebody's first impression.
+- **72 is the default.** 144's "detail" arrives as shimmer in a 400px-tall buffer, so
+  the default belongs below it; 72 puts the 1:1 point at about two tiles, which is
+  most of the screen in magnification while a wall still has room for a course of
+  brick, a bevel and a crack. It is also the only step where nothing is out of
+  register — creatures come from the 72 roster, so stone and sprites share a density.
+  At 18 the creatures have to come from 36 and the torch is still 144.
 
 ## Out of scope
 

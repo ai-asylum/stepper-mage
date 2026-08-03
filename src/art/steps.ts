@@ -32,18 +32,19 @@ export type PixelStep = (typeof PIXEL_STEPS)[number];
 /**
  * Where a fresh save starts.
  *
- * The coarsest of the four. This is the product call the phase argued for and then
- * deferred: 144 undersamples badly into a 400px-tall buffer, so its "detail" arrives
- * as shimmer, and 18 puts nearly everything on screen in magnification where a texel
- * is a deliberate block rather than a contested screen pixel.
+ * 144 undersamples badly into a 400px-tall buffer — its "detail" arrives as shimmer
+ * rather than as detail — so the default belongs below it. 72 is where the 1:1 point
+ * sits at about two tiles, which puts most of what is on screen in magnification
+ * while a wall still has room for a course of brick, a bevel and a crack.
  *
- * It is also the least forgiving choice, which is the point — every step is now the
- * first thing somebody sees, so 18 has to be art rather than a fallback. Three
- * things underneath it are deliberately finer than the stone: creatures, which draw
- * from the 36 roster (see `spritePpu`), the grimoire, which is argued in the phase
- * doc, and the torch sconce, which is not argued but a loose end (see `sconce`).
+ * It also happens to be the one step where nothing underneath it is out of register:
+ * creatures come from the 72 roster, so the stone and the things standing in front of
+ * it are drawn at the same density. At 18 the creatures have to come from 36 (see
+ * `spritePpu`) and the torch is still 144 (see `sconce`), so two things are visibly
+ * finer than the wall behind them. Those steps remain selectable and remain worth
+ * selecting; they are just not what a new player should be handed first.
  */
-export const DEFAULT_STEP: PixelStep = 18;
+export const DEFAULT_STEP: PixelStep = 72;
 
 export function isPixelStep(v: unknown): v is PixelStep {
   return (PIXEL_STEPS as readonly unknown[]).includes(v);
