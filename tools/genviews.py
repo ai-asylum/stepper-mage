@@ -64,6 +64,20 @@ ASSET_CREATOR = G.ASSET_CREATOR
 # The two panels, in the order the prompt asks for them.
 VIEWS = ("back", "side")
 
+# The attack pose is its own single-panel run. It cannot ride along in the
+# turnaround sheet: that sheet's whole instruction is "the same creature standing
+# still, turned", and asking one image for two calm views plus a lunge got a sheet
+# where all three were mid-swing.
+ATTACK_PROMPT = (
+    "ONE view of the EXACT SAME CREATURE as the reference, on a plain solid white "
+    "background. Match the reference exactly: same design, same colours, same "
+    "proportions. It is ATTACKING — caught at the peak of a strike, lunging toward "
+    "the viewer, weapon or claws or jaws thrown forward, body committed and "
+    "off-balance, mouth open if it has one. Aggressive, violent, mid-motion. "
+    "Front-facing, full body from head to feet, centered, with a small margin of "
+    "empty space at every edge. " + G.STYLE + "."
+)
+
 PROMPT = (
     "TWO VIEWS OF THE EXACT SAME CREATURE, side by side, on a plain solid white "
     "background, with a clear empty gap between them. Match the reference image "
@@ -90,9 +104,9 @@ def run(cmd: list[str], env: dict[str, str]) -> bool:
     return res.returncode == 0
 
 
-def make_sheet(asset: dict, env: dict[str, str]) -> Path | None:
-    """Generate the two-view sheet for one creature, cached."""
-    out = SHEET_DIR / f"{asset['id']}.png"
+def make_sheet(asset: dict, env: dict[str, str], attack: bool = False) -> Path | None:
+    """Generate the sheet for one creature, cached."""
+    out = (SHEET_DIR / "attack" if attack else SHEET_DIR) / f"{asset['id']}.png"
     if out.exists():
         return out
     ref = G.raw_path(asset["id"])
@@ -102,13 +116,13 @@ def make_sheet(asset: dict, env: dict[str, str]) -> Path | None:
     out.parent.mkdir(parents=True, exist_ok=True)
     ok = run([
         "uvx", "--from", str(ASSET_CREATOR), "asset-creator",
-        "--prompt", PROMPT,
+        "--prompt", ATTACK_PROMPT if attack else PROMPT,
         "--reference", str(ref),
-        # Wide, because the two views sit side by side. 1K is the lowest the API
-        # offers and far more than survives the resample.
-        "--aspect", "16:9",
+        # Wide when two views sit side by side, square for a single pose. 1K is the
+        # lowest the API offers and far more than survives the resample.
+        "--aspect", "1:1" if attack else "16:9",
         "--resolution", "1K",
-        "--seed", str(asset.get("seed", 1234) + 7000),
+        "--seed", str(asset.get("seed", 1234) + (9100 if attack else 7000)),
         "--output", str(out),
     ], env)
     if not ok or not out.exists():
@@ -119,7 +133,7 @@ def make_sheet(asset: dict, env: dict[str, str]) -> Path | None:
 
 def matte_sheet(sheet: Path, env: dict[str, str]) -> Path | None:
     """One background-removal call per sheet, cached."""
-    out = NOBG_DIR / sheet.name
+    out = sheet.parent / "nobg" / sheet.name
     if out.exists():
         return out
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -229,6 +243,8 @@ def main() -> None:
     ap.add_argument("--only", help="comma-separated asset ids")
     ap.add_argument("--split-only", action="store_true",
                     help="re-split and re-post cached sheets; no API calls")
+    ap.add_argument("--attack", action="store_true",
+                    help="the single-panel attack pose run instead of the turnaround")
     args = ap.parse_args()
 
     assets = [a for a in json.loads(G.MANIFEST.read_text())["assets"] if "id" in a]
@@ -240,18 +256,20 @@ def main() -> None:
         sys.exit("no hostiles selected")
 
     env = os.environ.copy() if args.split_only else G.load_keys()
-    print(f"{len(todo)} hostiles, {len(VIEWS)} views each")
+    views = ("attack",) if args.attack else VIEWS
+    print(f"{len(todo)} hostiles, {len(views)} view(s) each")
 
     bad: list[str] = []
     for a in todo:
         aid = a["id"]
         if args.split_only:
-            sheet = NOBG_DIR / f"{aid}.png"
+            base = (SHEET_DIR / "attack" if args.attack else SHEET_DIR) / "nobg"
+            sheet = base / f"{aid}.png"
             if not sheet.exists():
                 print(f"  [skip] {aid} (no matted sheet)")
                 continue
         else:
-            raw = make_sheet(a, env)
+            raw = make_sheet(a, env, args.attack)
             if not raw:
                 bad.append(aid)
                 continue
@@ -261,14 +279,14 @@ def main() -> None:
                 continue
 
         with Image.open(sheet) as im:
-            panels = split_panels(im, len(VIEWS))
-        if len(panels) != len(VIEWS):
-            print(f"  [FAIL split] {aid} — found {len(panels)} subject(s), wanted {len(VIEWS)}")
+            panels = split_panels(im, len(views))
+        if len(panels) != len(views):
+            print(f"  [FAIL split] {aid} — found {len(panels)} subject(s), wanted {len(views)}")
             bad.append(aid)
             continue
 
         out = []
-        for view, panel in zip(VIEWS, panels):
+        for view, panel in zip(views, panels):
             sizes = post_view(aid, view, panel)
             out.append(f"{view} {sizes.get(144, ('?', '?'))[0]}x{sizes.get(144, ('?', '?'))[1]}")
         print(f"  [pix] {aid} -> {', '.join(out)}", flush=True)
@@ -293,7 +311,7 @@ def write_index() -> None:
     """
     found: dict[str, list[str]] = {}
     for f in sorted(G.OUT_DIR.glob("*.png")):
-        for view in VIEWS:
+        for view in (*VIEWS, "attack"):
             if f.stem.endswith(f"_{view}"):
                 found.setdefault(f.stem[: -len(view) - 1], []).append(view)
     rows = "\n".join(
@@ -314,7 +332,7 @@ def write_index() -> None:
         " * A creature missing from this table simply always draws its front, which is\n"
         " * what the whole roster did before the frames existed.\n"
         " */\n"
-        "export type SpriteView = 'front' | 'back' | 'side';\n\n"
+        "export type SpriteView = 'front' | 'back' | 'side' | 'attack';\n\n"
         "export const VIEW_FRAMES: Record<string, readonly SpriteView[]> = {\n"
         f"{rows}\n"
         "};\n\n"

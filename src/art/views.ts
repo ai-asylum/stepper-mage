@@ -11,29 +11,29 @@
  * A creature missing from this table simply always draws its front, which is
  * what the whole roster did before the frames existed.
  */
-export type SpriteView = 'front' | 'back' | 'side';
+export type SpriteView = 'front' | 'back' | 'side' | 'attack';
 
 export const VIEW_FRAMES: Record<string, readonly SpriteView[]> = {
-  f1_boss: ['back', 'side'],
-  f1_enemy_ink: ['back', 'side'],
-  f1_enemy_moth: ['back', 'side'],
-  f1_enemy_wraith: ['back', 'side'],
-  f2_boss: ['back', 'side'],
-  f2_enemy_cleaver: ['back', 'side'],
-  f2_enemy_hound: ['back', 'side'],
-  f2_enemy_imp: ['back', 'side'],
-  f3_boss: ['back', 'side'],
-  f3_enemy_creeper: ['back', 'side'],
-  f3_enemy_hulk: ['back', 'side'],
-  f3_enemy_priest: ['back', 'side'],
-  f4_boss: ['back', 'side'],
-  f4_enemy_bellows: ['back', 'side'],
-  f4_enemy_slag: ['back', 'side'],
-  f4_enemy_wasp: ['back', 'side'],
-  f5_boss: ['back', 'side'],
-  f5_enemy_acolyte: ['back', 'side'],
-  f5_enemy_husk: ['back', 'side'],
-  f5_enemy_sentinel: ['back', 'side'],
+  f1_boss: ['attack', 'back', 'side'],
+  f1_enemy_ink: ['attack', 'back', 'side'],
+  f1_enemy_moth: ['attack', 'back', 'side'],
+  f1_enemy_wraith: ['attack', 'back', 'side'],
+  f2_boss: ['attack', 'back', 'side'],
+  f2_enemy_cleaver: ['attack', 'back', 'side'],
+  f2_enemy_hound: ['attack', 'back', 'side'],
+  f2_enemy_imp: ['attack', 'back', 'side'],
+  f3_boss: ['attack', 'back', 'side'],
+  f3_enemy_creeper: ['attack', 'back', 'side'],
+  f3_enemy_hulk: ['attack', 'back', 'side'],
+  f3_enemy_priest: ['attack', 'back', 'side'],
+  f4_boss: ['attack', 'back', 'side'],
+  f4_enemy_bellows: ['attack', 'back', 'side'],
+  f4_enemy_slag: ['attack', 'back', 'side'],
+  f4_enemy_wasp: ['attack', 'back', 'side'],
+  f5_boss: ['attack', 'back', 'side'],
+  f5_enemy_acolyte: ['attack', 'back', 'side'],
+  f5_enemy_husk: ['attack', 'back', 'side'],
+  f5_enemy_sentinel: ['attack', 'back', 'side'],
 };
 
 /** The frames shipped for one creature, front always included. */

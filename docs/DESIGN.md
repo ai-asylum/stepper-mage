@@ -62,6 +62,18 @@ behaviour.
 - Putting any of them back: free.
 - Turning in place: free.
 
+**A hostile gets a move AND an attack in the same round.** The player gets one action;
+a creature gets both, so its threat range is two tiles rather than one and backing away
+no longer costs it a turn to re-close. Golems get the same budget, because a golem is
+the mirror of the thing it fights and a rule that applied to one side and not the other
+is the kind of inconsistency a player cannot learn.
+
+This is a tempo rule, not a difficulty rule. It was priced back out on the player's
+side — the bar went 40 to 46 and per-hit damage came down a fifth — so a fight costs
+about what it did before while reading very differently. The measurement is in
+`src/game/tuning.ts` under `PLAYER_MAX_HP`, including the two levers that turned out
+not to be levers.
+
 The earlier rule was the exact opposite — every component cost a turn and the cast
 was free — and it had a trap in it. Taking a component charged a turn and *returning*
 one charged nothing, so leafing through the book and changing your mind handed the

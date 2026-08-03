@@ -766,7 +766,11 @@ export class Combat {
         c.alerted = true;
         if (this.denied(c)) { this.announceDenial(c); continue; }
 
-        if (d <= 1) {
+        // A move AND an attack, not one or the other. A body two tiles out closes
+        // and swings in the same round, so its threat range is 2 rather than 1 and
+        // backing off no longer costs it a turn to re-close.
+        if (d > 1) this.stepToward(e, px, py);
+        if (Math.abs(e.sprite.tx - px) + Math.abs(e.sprite.ty - py) <= 1) {
           faceToward(e, px, py);
           e.sprite.play('attack');
           const dmg = Math.max(1, c.damage + this.rng.int(DAMAGE_JITTER[0], DAMAGE_JITTER[1]));
@@ -775,8 +779,6 @@ export class Combat {
           this.onEvent({
             kind: 'hit', text: `${label(e)} hits you for ${dmg}.`, colour: 0xff6a6a,
           });
-        } else {
-          this.stepToward(e, px, py);
         }
         await delay(ACT_PACE_MS);
       } else if (e.animated) {
@@ -795,18 +797,23 @@ export class Combat {
         if (foe && foeDist <= GOLEM_AGGRO) engaged = true;
         if (this.denied(c)) { this.announceDenial(c); continue; }
 
-        if (foe && foeDist <= 1) {
-          faceToward(e, foe.sprite.tx, foe.sprite.ty);
-          e.sprite.play('attack');
-          this.damage(
-            foe,
-            Math.max(1, c.damage + this.rng.int(DAMAGE_JITTER[0], DAMAGE_JITTER[1])),
-            0xb98cff,
-          );
-          for (const inf of c.infuse) this.addStatus(foe, inf, STATUS_META[inf].turns);
-          await delay(ACT_PACE_MS);
-        } else if (foe && foeDist <= GOLEM_AGGRO) {
-          this.stepToward(e, foe.sprite.tx, foe.sprite.ty);
+        // Same budget as a hostile — a move and an attack. A golem is the mirror of
+        // the thing it fights, and a rule that applied to one side and not the other
+        // would be the kind of inconsistency a player cannot learn.
+        if (foe && foeDist <= GOLEM_AGGRO) {
+          if (foeDist > 1) this.stepToward(e, foe.sprite.tx, foe.sprite.ty);
+          const near = Math.abs(e.sprite.tx - foe.sprite.tx)
+            + Math.abs(e.sprite.ty - foe.sprite.ty);
+          if (near <= 1) {
+            faceToward(e, foe.sprite.tx, foe.sprite.ty);
+            e.sprite.play('attack');
+            this.damage(
+              foe,
+              Math.max(1, c.damage + this.rng.int(DAMAGE_JITTER[0], DAMAGE_JITTER[1])),
+              0xb98cff,
+            );
+            for (const inf of c.infuse) this.addStatus(foe, inf, STATUS_META[inf].turns);
+          }
           await delay(ACT_PACE_MS);
         } else {
           // heel: close to the player but never onto their tile

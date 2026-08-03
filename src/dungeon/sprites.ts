@@ -414,6 +414,15 @@ export class Sprite {
    * changed, which they only do when a creature turns or the player walks round it.
    */
   setView(view: SpriteView, flip: boolean): void {
+    // A body mid-strike shows its attack pose regardless of which way it is turned.
+    // There is one drawn strike and it is front-facing, so it out-ranks the facing
+    // for the third of a second it plays — a creature lunging at you is looking at
+    // you by definition, and drawing its back while it hits you would be worse than
+    // having no attack frame at all.
+    if (this.state === 'attack' && this.views.has('attack')) {
+      this.bind('attack', false);
+      return;
+    }
     this.bind(view, flip);
   }
 

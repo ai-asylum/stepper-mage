@@ -40,11 +40,23 @@
  * (see `DAMAGE_JITTER`: the average hit is half a point above the base, so the hit
  * count is derived from 4.5 and 6.5, not from 4 and 6).
  *
- * Unchanged by the rebase. The bar is the unit everything else is quoted in, and
- * moving it would have re-expressed every other number in this file rather than
- * re-pricing the one thing that changed, which is what a round now costs.
+ * 40 -> 46 when hostiles were given a move AND an attack in the same round. The bar
+ * is the unit everything else is quoted in and moving it is a last resort, but it is
+ * the right lever HERE and the measurement is what says so.
+ *
+ * `enemyDamage` came down 20% first, which is the matching fix on paper and was not
+ * enough: the depth-5 gate seed took exactly 40 from seven mook hits and died with
+ * the boss already dead. Healing is not available as a lever either — the harness
+ * shows the player arriving at every floor at FULL, so `descendHeal` is already
+ * generous enough to be irrelevant and raising it does literally nothing. (It was
+ * raised, measured, and reverted.)
+ *
+ * What is left is the bar, and it is also the honest one. The change did not make
+ * enemies hit harder, it made them act more often; the matching compensation is
+ * being able to absorb more actions, not each action mattering less. Cutting damage
+ * further would have flattened a depth curve that is deliberately steep.
  */
-export const PLAYER_MAX_HP = 40;
+export const PLAYER_MAX_HP = 46;
 
 /**
  * Enemy HP, sized in CASTS. A rank-1 Fireball is 10 and lights a 3-per-turn burn,
@@ -100,28 +112,36 @@ export const bossHp = (depth: number): number => 70 + depth * 13;
  * rising to 41% at depth 5, measured). Making the per-hit number climb as fast as
  * the round count does makes the last two floors arithmetically unwinnable.
  *
- * Raised by one across the board (2 + ⌈d/2⌉ became 3 + ⌈d/2⌉), and this is the ONLY
- * enemy-side number the rebase moved. It is where the free round is charged for: a
- * mook that dies to the cast never swings, so a room of two or three bodies gave two
- * or three swings back, and a depth-5 room fell from 20.2 HP to 13.9. At 3 + ⌈d/2⌉ it
- * is 16.4 — still a fifth under what it was, deliberately, because the two levers
- * that would close the gap both cost more than the gap is worth (see `enemyHp` and
- * `roomEnemyChance`) and rooms are the part of a floor the routed line skips.
+ * It went 2 + ⌈d/2⌉ -> 3 + ⌈d/2⌉ when the free round was charged for, and back to
+ * 2 + ⌈d/2⌉ when hostiles were given a move AND an attack in the same round.
  *
- * Kept flatter than `bossDamage` on purpose: at depth 5 a mook hits for 6 and a
- * boss for 10, and a mook that hits like a boss makes the boss furniture.
+ * That change is why this number came down, and the reasoning is worth keeping
+ * because it will come up again: a body two tiles away used to spend its round
+ * closing and swing on the next one, so the round it arrived was free. Now it
+ * closes and swings together. Over a four-to-six round fight that is one extra
+ * landed hit, about 20% more, and it arrives at the START of the fight when the
+ * player has the fewest options. Left alone it killed the hand-size-1 gate on
+ * floors 3, 4 and 5.
+ *
+ * Per-hit damage was the lever rather than healing or player HP because the change
+ * was about TEMPO, not difficulty: enemies should feel responsive, not deadlier. So
+ * hits went up ~20% and damage per hit came down ~20%, and a fight costs about what
+ * it did before while reading very differently.
+ *
+ * Kept flatter than `bossDamage` on purpose: at depth 5 a mook hits for 5 and a
+ * boss for 9, and a mook that hits like a boss makes the boss furniture.
  */
-export const enemyDamage = (depth: number): number => 3 + Math.ceil(depth / 2);
+export const enemyDamage = (depth: number): number => 2 + Math.ceil(depth / 2);
 
 /**
  * A boss hits for a bit under two mooks, and never for a third of the bar.
  *
- * 4 + d became 5 + d for the same reason `bossHp` moved: the fight lands one fewer
- * hit than it used to, so each hit that does land has to be worth more. At depth 5
- * this is 10, the average swing is 10.5 and the worst is 12 — 30% of the bar, which
- * is the closest to a third this is allowed to come.
+ * 4 + d became 5 + d when the fight started landing one fewer hit, and is 4 + d
+ * again now that move-and-attack has handed that hit back — see `enemyDamage` for
+ * the full argument. At depth 5 this is 9, the average swing is 9.5 and the worst
+ * is 11, which keeps a boss under 30% of the bar.
  */
-export const bossDamage = (depth: number): number => 5 + depth;
+export const bossDamage = (depth: number): number => 4 + depth;
 
 /**
  * Per-attack jitter, passed straight to `Rng.int`, which is INCLUSIVE at both

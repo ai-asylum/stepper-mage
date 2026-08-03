@@ -232,12 +232,22 @@ const views = await ev(async () => {
     const seen = [];
     for (let f = 0; f < 4; f++) {
       e.facing = f;
+      // Back to idle first. A body mid-strike deliberately shows its attack pose
+      // whichever way it is turned, and section 3c leaves this one swinging — so
+      // without this the facing mapping is measured through the override.
+      e.sprite.play('idle');
       await frame();
       seen.push({ f, view: e.sprite.shownView, flip: e.sprite.shownFlipped });
     }
+    // And the override itself, which is the other half of the rule.
+    e.facing = (d + 2) % 4;
+    e.sprite.play('attack');
+    await frame();
+    const striking = e.sprite.shownView;
+    e.sprite.play('idle');
     g.place(home.x, home.y, home.dir);
     // The facing that looks back at the camera, given the player faces `d`.
-    return { id: e.spriteId, toward: (d + 2) % 4, seen };
+    return { id: e.spriteId, toward: (d + 2) % 4, seen, striking };
   }
   g.place(home.x, home.y, home.dir);
   return null;
@@ -248,6 +258,8 @@ check('facing the player draws the front',
   !!views && byF(views.toward).view === 'front', JSON.stringify(views));
 check('facing away draws the back',
   !!views && byF((views.toward + 2) % 4).view === 'back', JSON.stringify(views));
+check('a body mid-strike draws its attack pose', !!views && views.striking === 'attack',
+  JSON.stringify(views));
 check('the two perpendicular facings draw one profile, mirrored',
   !!views
   && byF((views.toward + 1) % 4).view === 'side'

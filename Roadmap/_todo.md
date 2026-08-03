@@ -122,7 +122,7 @@ every phase. Never list tasks for editing this file or a phase doc.
       Gust and stone, no new element; 40 frames for hostile back+side first. Phase doc.
 - [x] Give every entity a facing, and set it when a creature moves or attacks.
 - [x] Generate back and side frames for the twenty hostiles, from the front by reference.
-- [ ] Generate attack frames for the twenty hostiles.
+- [x] Generate attack frames for the twenty hostiles.
 - [x] Pick the drawn frame from the angle between a creature's facing and the camera.
 - [ ] Telegraph an enemy that is about to act, before it acts.
 - [ ] Play an attack pose and a screen effect when an enemy hits the player.
