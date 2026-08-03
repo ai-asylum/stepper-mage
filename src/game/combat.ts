@@ -26,7 +26,7 @@
  */
 import { Rng } from '../core/rng';
 import { DIR_VEC, type Grid } from '../dungeon/grid';
-import type { Entity, Floor } from './floor';
+import { faceToward, type Entity, type Floor } from './floor';
 import {
   STATUS_META, displayName, harvestOf, isFixtureElement, resolveCast,
   type CastTarget, type Element, type ResolvedCast, type StatusId,
@@ -767,6 +767,7 @@ export class Combat {
         if (this.denied(c)) { this.announceDenial(c); continue; }
 
         if (d <= 1) {
+          faceToward(e, px, py);
           e.sprite.play('attack');
           const dmg = Math.max(1, c.damage + this.rng.int(DAMAGE_JITTER[0], DAMAGE_JITTER[1]));
           this.state.hp -= dmg;
@@ -795,6 +796,7 @@ export class Combat {
         if (this.denied(c)) { this.announceDenial(c); continue; }
 
         if (foe && foeDist <= 1) {
+          faceToward(e, foe.sprite.tx, foe.sprite.ty);
           e.sprite.play('attack');
           this.damage(
             foe,
@@ -923,6 +925,8 @@ export class Combat {
     }
     if (!best) return;
 
+    // Face the step BEFORE taking it, while the old tile is still the origin.
+    faceToward(e, best[0], best[1]);
     e.sprite.tx = best[0]; e.sprite.ty = best[1];
     e.sprite.setTileLight(g.lightAt(best[0], best[1]));
     e.sprite.play('walk');

@@ -6,7 +6,7 @@
  * list from here; nothing else needs to know how a floor is put together.
  */
 import * as THREE from 'three';
-import { Grid, generate, visibleTiles } from '../dungeon/grid';
+import { Grid, generate, visibleTiles, type Dir } from '../dungeon/grid';
 import { DungeonView } from '../dungeon/render';
 import { Sprite, preloadSprites, loadSprite } from '../dungeon/sprites';
 import { populate, spriteIdsFor, type Placed, type PlacedKind } from './populate';
@@ -28,12 +28,39 @@ export interface Entity {
   animated: boolean;
   /** Golems and enemies act; props and scenery do not. */
   hostile: boolean;
+  /**
+   * Which way this body is turned. Scenery carries one and ignores it.
+   *
+   * It is state on the ENTITY rather than something derived from the last move,
+   * because the two moments it has to survive are moments where nothing moved: a
+   * creature that has not acted this round is still facing wherever it was, and a
+   * creature the player has swapped past must keep facing the way it was so that
+   * the player is genuinely behind it. Deriving facing from a step would quietly
+   * reset both.
+   */
+  facing: Dir;
   /** Set once an altar has given up its page. */
   spent: boolean;
 }
 
 /** Kinds that physically occupy their tile. Stairs are walk-on by design. */
 const SOLID: ReadonlySet<string> = new Set(['altar', 'chest', 'prop', 'enemy', 'boss']);
+
+/**
+ * Turn a body to look at a tile. A no-op when it is already standing there.
+ *
+ * The dominant axis wins, which is the only choice a four-way facing can make about
+ * a diagonal. Ties go to the horizontal, arbitrarily but consistently — a creature
+ * that flickered between two facings while a diagonal target shuffled would read as
+ * broken in a way that picking the wrong one of two never does.
+ */
+export function faceToward(e: Entity, x: number, y: number): void {
+  const dx = x - e.sprite.tx, dy = y - e.sprite.ty;
+  if (!dx && !dy) return;
+  e.facing = (Math.abs(dx) >= Math.abs(dy)
+    ? (dx > 0 ? 1 : 3)
+    : (dy > 0 ? 2 : 0)) as Dir;
+}
 
 export class Floor {
   readonly grid: Grid;
@@ -79,6 +106,11 @@ export class Floor {
       sprite, kind: p.kind, spriteId: p.sprite, golemId: p.golem,
       hp, maxHp: hp, alive: true, roomId: p.roomId, animated: false, hostile,
       spent: false,
+      // Spawned facing an arbitrary but STABLE direction, derived from the tile so
+      // the same seed lays out the same room twice. Arbitrary is the point: a room
+      // where every creature happens to be looking at the door has nothing to
+      // notice, and the read this phase is buying is "that one has not seen me".
+      facing: (((p.x * 7 + p.y * 13 + p.sprite.length) % 4) + 4) % 4 as Dir,
     };
     this.entities.push(e);
     this.group.add(sprite.group);

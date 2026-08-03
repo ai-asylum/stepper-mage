@@ -1,8 +1,8 @@
 # Enemy Identity
 
 **Player-facing:** yes
-**Status:** planned
-**Started:** —
+**Status:** in progress
+**Started:** 2026-08-03
 
 Creatures get facing, attack poses, attack VFX, a telegraph before they act, and
 elements they are weak and resistant to.
@@ -32,6 +32,23 @@ player has to be able to see and then exploit.
 - Creatures have **elemental weaknesses and resistances**. Paper and library stock is
   weak to fire; bone resists fire and is weak to physical blows.
 - A creature's element is **learned by fighting it**, not read off a tooltip.
+- **"Physical" resolves to gust and stone. No new element.** Resistances are a table of
+  element to multiplier, so "weak to physical blows" is spelled "weak to gust, weak to
+  stone" and nothing has to be added to `Element` or to the three-sources rule.
+
+  Stone alone was the obvious answer and it is wrong: stone is a FIXTURE element, and
+  the only props that yield it are the floor-3 statue and the floor-4 gears and hoist.
+  Floor 2 is the Ossuary Kitchens — the floor made of bone — and it harvests water and
+  oil. Bone-weak-to-stone would have been unexploitable on the one floor it is about.
+
+  Gust carries it because it is a book page, so it is available on every floor from the
+  first turn. It is also already the impact element: it is the one that staggers. Stone
+  rides along as the fixture-sourced version of the same blow, a bonus where a floor
+  happens to have one, never the only key to a door.
+- **Left and right are the same drawing, mirrored.** A grid stepper only ever shows a
+  creature at four relative angles, and two of them are the same profile seen from
+  opposite sides. Flipping the quad's UV costs nothing and removes a whole pose from
+  every creature in the roster.
 
 ## Out of scope
 
@@ -46,17 +63,33 @@ in [docs/DESIGN.md](../docs/DESIGN.md); do not restate it here.
 
 Two things to resolve before building rather than during:
 
-**"Weak to physical blows" has no channel to land in.** The game has no physical
-damage. The five pages are fire, frost, spark, gust and decay; the four fixture
-elements are stone, water, oil and starlight. Stone is the closest thing to a physical
-blow and Gust shoves. So bone-weak-to-physical either resolves to Stone, or it means
-adding a physical channel — which is a new element and touches the three-sources rule.
+**The sprite run, sized.** Forty things in the roster move and attack: 15 enemies, 5
+bosses and 20 golems. Everything else is scenery. A front already exists for all of
+them, so a full set of front, side, back and attack is three new frames each — 120
+generations against the 65 sprites in the whole game today.
 
-**The sprite count is the real cost.** 35 creatures and 5 bosses, at front, back and
-attack, is roughly 120 frames against the 63 that exist in the whole game today. That
-is a Scenario generation run, and the manifest is the content bible it has to go
-through. Sizing that honestly, and deciding whether every creature needs a back or
-only the ones you can get behind, comes first.
+Mirroring takes the first bite: without it a creature needs a left AND a right and the
+run is 160. It is 120 because left is right flipped.
+
+The rest of the trim is ordering, not cutting:
+
+1. **Back and side for the 20 hostiles — 40 frames.** This is the phase. Facing has no
+   signal at all today, so this is the only tier that buys an acceptance criterion
+   nothing else can.
+2. **Attack frames for the 20 hostiles — 20 frames.** Lower priority than it looks:
+   `Sprite` already animates an attack by TRANSFORM — anticipation, lunge, squash —
+   so an attack already reads as an attack. A drawn pose makes it better; facing makes
+   it possible.
+3. **Golems, 60 frames, as a follow-up.** They are swappable (`bodyAt` includes an
+   animated prop) and you walk behind them constantly, so they genuinely want the same
+   treatment. No acceptance criterion in this phase mentions them.
+
+**Generate every new angle with `--reference` against the existing front.** This is
+the technique the whole run depends on and it is not optional. Pixel_Resolution_Steps
+established, at the cost of six wasted generations, that changing a prompt changes what
+the model returns even on the same seed — the floor-1 boss came back as a winged figure
+instead of an open book with an eye. A back view generated from a prompt would be a
+different creature seen from behind. It has to be an edit of the front.
 
 ## Acceptance
 

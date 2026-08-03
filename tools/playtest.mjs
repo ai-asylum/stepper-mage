@@ -163,6 +163,53 @@ check('turning away from it withdraws the offer', !!reach && reach.turnedAway ==
 check('line of sight alone is not reach', !!reach && reach.across === false && !!reach.stillVisible,
   JSON.stringify(reach));
 
+console.log('\n=== 3c. facing: a body turns toward what it acts on ===');
+/**
+ * Facing is entity state with no art behind it yet, so this is the only thing that
+ * can say it works. It asserts the two writes that exist — a body turns to step and
+ * turns to attack — and the one NON-write that the swap depends on: being walked
+ * past must not turn a creature round, or the player is never actually behind it.
+ */
+const facing = await ev(async () => {
+  const g = window.__game;
+  const grid = g.floor.grid;
+  const dirs = [[0, 0, 1], [1, -1, 0], [2, 0, -1], [3, 1, 0]];
+  const home = { x: g.stepper.x, y: g.stepper.y, dir: g.stepper.dir };
+  const out = { spawnAllValid: g.floor.entities.every((e) => e.facing >= 0 && e.facing <= 3) };
+
+  const e = g.floor.entities.find((x) => x.alive && x.hostile);
+  if (!e) return out;
+
+  // Stand next to it and let the round run: it should attack, and turn to do it.
+  for (const [d, dx, dy] of dirs) {
+    const px = e.sprite.tx + dx, py = e.sprite.ty + dy;
+    if (!grid.walkable(px, py) || g.floor.solidAt(px, py)) continue;
+    g.place(px, py, d);
+    // The facing that points from the creature back at the player.
+    out.want = (d + 2) % 4;
+    e.facing = (out.want + 2) % 4;          // start it looking the wrong way
+    await g.combat.playerStepped(px, py);
+    out.after = e.facing;
+    break;
+  }
+
+  // Being walked past must not spin it round.
+  if (out.after !== undefined) {
+    const before = e.facing;
+    g.place(home.x, home.y, home.dir);
+    out.unchangedByPlayerMove = e.facing === before;
+  }
+  g.place(home.x, home.y, home.dir);
+  return out;
+});
+console.log(facing);
+check('every body spawns with a valid facing', facing.spawnAllValid === true,
+  JSON.stringify(facing));
+check('a body turns toward the player when it acts', facing.after === facing.want,
+  `want ${facing.want}, got ${facing.after}`);
+check('the player moving does not turn a body', facing.unchangedByPlayerMove === true,
+  JSON.stringify(facing));
+
 console.log('\n=== 4. one cast, one turn: Fireball on the furniture ===');
 const solo = await ev(async () => {
   const g = window.__game;
