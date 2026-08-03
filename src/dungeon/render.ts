@@ -102,9 +102,27 @@ class MeshBuild {
     la: number, lb: number, lc: number, ld: number,
     /** UV repeat, so a tall wall keeps square texels. */
     uw = 1, vh = 1,
+    /**
+     * Put v=0 on the FIRST pair of corners rather than the last.
+     *
+     * Walls need it and the reason is a convention that is easy to get backwards:
+     * three.js uploads textures with `flipY = true` by default, so v=0 is the
+     * BOTTOM row of the source image and v=1 is the top. A wall quad passes its
+     * two floor corners first and its two ceiling corners last, so the default
+     * layout below hands v=0 to the ceiling corners — and every wall in the game
+     * was drawn upside down. Soot crept up from the skirting instead of down from
+     * the ceiling, moss strands hung out of the floor, and the waterline sat a
+     * third of the way up rather than two thirds down.
+     *
+     * Floors and ceilings do not pass it: their corners are wound spatially rather
+     * than vertically, and flagstone noise and a barrel vault have no up.
+     */
+    flipV = false,
   ): void {
     this.pos.push(...a, ...b, ...c, ...d);
-    this.uv.push(0, vh, uw, vh, uw, 0, 0, 0);
+    const vLo = flipV ? 0 : vh;
+    const vHi = flipV ? vh : 0;
+    this.uv.push(0, vLo, uw, vLo, uw, vHi, 0, vHi);
     this.light.push(la, lb, lc, ld);
     const i = this.n;
     this.idx.push(i, i + 1, i + 2, i, i + 2, i + 3);
@@ -197,10 +215,22 @@ export class DungeonView {
     const floorB = tiles.floors.map(() => new MeshBuild());
     const ceilB = tiles.ceils.map(() => new MeshBuild());
 
-    // UV repeat down a wall quad, so the texels stay square on a face that is
-    // taller than it is wide. It is the wall's WORLD height and has nothing to do
-    // with the step: the texture is already `ppu() * WALL_H` texels tall.
-    const wallVh = WALL_H;
+    // ONE. Not `WALL_H`, which is what it used to be and what put a strip of the
+    // top of every wall along the bottom of every wall.
+    //
+    // The repeat existed to keep texels square on a face taller than it is wide,
+    // which would be right if the texture were square. It is not: `buildWall` makes
+    // it `ppu()` by `ppu() * WALL_H`, so it already HAS the quad's aspect and the
+    // mapping is 1:1 as it stands. Repeating V by 1.05 on top of that walked the
+    // sample 5% past the bottom of the texture, and the wrap mode is `Repeat`, so
+    // that last 5% came back around as the texture's first rows — the
+    // ceiling-shaded, sooted, strand-hung top edge, drawn at the floor.
+    //
+    // Which is why it read as upside-down, and why it read that way on some floors
+    // more than others: what lands in that strip is whatever the theme puts along
+    // its top edge, so the Ossuary showed soot at the skirting and the moss floor
+    // grew hanging strands out of the ground.
+    const wallVh = 1;
 
     for (let y = 0; y < g.h; y++) {
       for (let x = 0; x < g.w; x++) {
@@ -252,7 +282,7 @@ export class DungeonView {
             [ax, 0, az], [bx, 0, bz],
             [bx, WALL_H, bz], [ax, WALL_H, az],
             lb, lb, lt, lt,
-            1, wallVh,
+            1, wallVh, true,
           );
         }
       }
