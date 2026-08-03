@@ -114,7 +114,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Add a persisted resolution setting with all four steps, and a way to reach it.
 - [x] Decide whether the book and tree atlases follow the step, and do what you decide.
       They do not — see the phase doc's settled decisions.
-- [ ] Commit changes.
+- [x] Commit changes.
 
 ## Phase 9 — Enemy_Identity
 

@@ -2,7 +2,7 @@
 
 **Player-facing:** yes
 **Started:** 2026-07-30 00:05
-**Status:** in progress
+**Status:** complete
 
 Four texel densities — 144, 72, 36 and 18 pixels per world unit — each one **authored**
 at its own resolution rather than downsampled from the one above, and chosen from a
