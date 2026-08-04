@@ -113,6 +113,12 @@ export class Floor {
   readonly theme: Theme;
   readonly group = new THREE.Group();
   readonly entities: Entity[] = [];
+  /**
+   * Tiles the player can see right now, from the last `cull`.
+   *
+   * Empty until the first cull, which happens on spawn before anything draws.
+   */
+  visible: ReadonlySet<number> = new Set();
 
   private constructor(readonly depth: number, readonly seed: string) {
     this.theme = themeForDepth(depth);
@@ -292,6 +298,11 @@ export class Floor {
   /** Hide anything the player cannot currently see, so the floor stays cheap. */
   cull(px: number, py: number): void {
     const vis = visibleTiles(this.grid, px, py);
+    // Kept, because the minimap needs the same answer. It used to plot creatures on
+    // any EXPLORED tile, which drew them live through walls — a wallhack, and the
+    // reason enemies showed on the map with nothing on screen. Sharing the set the
+    // 3D cull uses is what makes the two physically unable to disagree.
+    this.visible = vis;
     // Visibility is recomputed every step anyway, so this is the natural place
     // to accumulate the explored set the minimap draws from. The tile the player
     // is standing on is marked here too rather than off an arrival event, because

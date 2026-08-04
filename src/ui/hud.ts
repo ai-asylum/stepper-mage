@@ -340,6 +340,30 @@ export class Hud {
    */
   handCards: HandCard[] = [];
 
+  /**
+   * Does this body belong on the minimap right now?
+   *
+   * A `static` rather than an inline condition so the harness can ask the same
+   * question the draw loop asks. It was inline, the harness could not reach it, and
+   * the rule was wrong for a long time without anything noticing.
+   *
+   * Anything that MOVES has to be in SIGHT, not merely standing on explored ground.
+   * Terrain can be remembered because it stays where it was — that is what the
+   * dimmer explored tiles are. A creature cannot: remembering where it stood is
+   * worthless the moment it walks off, and drawing it live from memory is drawing it
+   * through a wall. That is what put enemies on the map with nothing on screen, and
+   * it was the map lying rather than the world hiding.
+   *
+   * Furniture keeps the explored rule, so an altar or a chest you have found stays
+   * on the map from across the floor, which is most of why a map is worth having.
+   */
+  static onMap(floor: Floor, e: Entity): boolean {
+    const g = floor.grid;
+    if (!e.alive || !g.inside(e.sprite.tx, e.sprite.ty)) return false;
+    const i = g.idx(e.sprite.tx, e.sprite.ty);
+    return (e.hostile || e.animated) ? floor.visible.has(i) : !!g.explored[i];
+  }
+
   /** Where the minimap reads the world from. Bound per floor. */
   private map: (() => { floor: Floor; x: number; y: number; dir: Dir }) | null = null;
 
@@ -825,7 +849,7 @@ export class Hud {
     for (const e of floor.entities) {
       if (!e.alive) continue;
       if (!g.inside(e.sprite.tx, e.sprite.ty)) continue;
-      if (!g.explored[g.idx(e.sprite.tx, e.sprite.ty)]) continue;
+      if (!Hud.onMap(floor, e)) continue;
       const edx = e.sprite.tx - px, edy = e.sprite.ty - py;
       // project the world offset onto the player's right / forward axes
       const a = edx * rx + edy * ry;

@@ -267,6 +267,51 @@ check('the two perpendicular facings draw one profile, mirrored',
   && byF((views.toward + 1) % 4).flip !== byF((views.toward + 3) % 4).flip,
   JSON.stringify(views));
 
+console.log('\n=== 3e. the minimap does not draw creatures through walls ===');
+/**
+ * The map and the 3D world have to agree about what you can see. They did not: the
+ * map plotted any entity standing on an EXPLORED tile, so a hostile in a room you
+ * had already walked through was drawn live from memory — on the map, invisible on
+ * screen, and effectively a wallhack.
+ *
+ * Terrain is different and stays remembered, so this also checks the other half:
+ * furniture out of sight is still allowed on the map, because it cannot have moved.
+ */
+const mini = await ev(async () => {
+  const g = window.__game;
+  const grid = g.floor.grid;
+  // `Hud.onMap` is the real filter the draw loop uses, reached through the instance's
+  // constructor so the test cannot drift from the drawing.
+  const onMap = g.hud.constructor.onMap;
+  const idx = (e) => grid.idx(e.sprite.tx, e.sprite.ty);
+  const live = g.floor.entities.filter((e) => e.alive && grid.inside(e.sprite.tx, e.sprite.ty));
+  const movers = live.filter((e) => e.hostile || e.animated);
+  const hidden = movers.filter((e) => !g.floor.visible.has(idx(e)));
+  return {
+    visibleCount: g.floor.visible.size,
+    // Movers that are OUT of sight but on ground already explored. These are the
+    // ones the old rule drew: on the map, nothing on screen.
+    hiddenButExplored: hidden.filter((e) => !!grid.explored[idx(e)]).length,
+    // ...and how many of those the map still plots. Must be zero.
+    hiddenAndPlotted: hidden.filter((e) => onMap(g.floor, e)).length,
+    // The map and the 3D world have to agree, body for body.
+    disagreements: movers.filter((e) => onMap(g.floor, e) !== e.sprite.group.visible).length,
+    // Furniture out of sight is still allowed on the map: it cannot have moved.
+    staticPlottedOffScreen: live.filter((e) => !(e.hostile || e.animated)
+      && !g.floor.visible.has(idx(e)) && onMap(g.floor, e)).length,
+  };
+});
+console.log(mini);
+check('the visible set is populated', mini.visibleCount > 0, JSON.stringify(mini));
+check('the scenario actually contains a hidden hostile to catch',
+  mini.hiddenButExplored > 0, JSON.stringify(mini));
+check('no out-of-sight creature is plotted on the map', mini.hiddenAndPlotted === 0,
+  JSON.stringify(mini));
+check('the map and the 3D world agree body for body', mini.disagreements === 0,
+  JSON.stringify(mini));
+check('furniture out of sight is still remembered on the map',
+  mini.staticPlottedOffScreen > 0, JSON.stringify(mini));
+
 console.log('\n=== 4. one cast, one turn: Fireball on the furniture ===');
 const solo = await ev(async () => {
   const g = window.__game;
