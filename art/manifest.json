@@ -1,5 +1,5 @@
 {
-  "$comment": "The art bible. Every sprite in the game is one row here. Shared style + framing live in tools/genart.py so this file stays about CONTENT. Five floors, each with a palette identity, three enemies, four animatable props, and a boss. Every prop has a matching golem form \u2014 animating the room is the core verb, so the golem roster is first-class content, not a variant.",
+  "$comment": "The art bible. Every sprite in the game is one row here. Shared style + framing live in tools/genart.py so this file stays about CONTENT. Five floors, each with a palette identity, three enemies, four animatable props, and a boss. Every prop has a matching golem form — animating the room is the core verb, so the golem roster is first-class content, not a variant.",
   "assets": [
     {
       "id": "altar",
@@ -13,7 +13,7 @@
       "kind": "prop",
       "height": 148,
       "seed": 1004,
-      "prompt": "A SPENT SPELL ALTAR: a waist-high stone pedestal carved with arcane runes, now EMPTY \u2014 no book, nothing floating above it. The runes are dark and dead, no glow at all. Three candles melted down to stubs, wicks snuffed and smoking faintly. A shallow dusty depression on top where a book used to rest, with a few torn scraps of parchment left behind. Cold, abandoned, used up."
+      "prompt": "A SPENT SPELL ALTAR: a waist-high stone pedestal carved with arcane runes, now EMPTY — no book, nothing floating above it. The runes are dark and dead, no glow at all. Three candles melted down to stubs, wicks snuffed and smoking faintly. A shallow dusty depression on top where a book used to rest, with a few torn scraps of parchment left behind. Cold, abandoned, used up."
     },
     {
       "id": "chest",
@@ -45,21 +45,24 @@
       "kind": "creature",
       "height": 157,
       "seed": 1101,
-      "prompt": "An INK WRETCH: a hunched gaunt humanoid made of living black ink, its body dripping and running downward in long streaks, no face except a wide smear of a mouth and two white pinprick eyes. Long dribbling arms ending in dagger-like ink claws. Torn scholar's robes soaked through and clinging. Cold teal highlights in the black."
+      "prompt": "An INK WRETCH: a hunched gaunt humanoid made of living black ink, its body dripping and running downward in long streaks, no face except a wide smear of a mouth and two white pinprick eyes. Long dribbling arms ending in dagger-like ink claws. Torn scholar's robes soaked through and clinging. Cold teal highlights in the black.",
+      "attack": "its whole arm stretched and thinned into a long whipping lance of liquid ink driven forward, the body leaning after it, black ink flung off the arc in fat droplets"
     },
     {
       "id": "f1_enemy_moth",
       "kind": "creature",
       "height": 139,
       "seed": 1102,
-      "prompt": "A CANDLE MOTH: a large sinister moth the size of a dog, its furred body a stub of dripping white wax with a live flame burning at the top of its thorax, four ragged parchment-textured wings covered in eye-spot patterns that look like written runes, six thin black legs. Warm orange glow on the underside of the wings."
+      "prompt": "A CANDLE MOTH: a large sinister moth the size of a dog, its furred body a stub of dripping white wax with a live flame burning at the top of its thorax, four ragged parchment-textured wings covered in eye-spot patterns that look like written runes, six thin black legs. Warm orange glow on the underside of the wings.",
+      "attack": "all four wings snapped wide and swept back, and the flame on its thorax roaring up into a tall blinding column that showers sparks down over the wings"
     },
     {
       "id": "f1_enemy_wraith",
       "kind": "creature",
       "height": 168,
       "seed": 1103,
-      "prompt": "A PAGE WRAITH: a floating hoodless spectre whose entire body is a swirling vortex of torn manuscript pages held in a human silhouette, hollow dark void where a face should be with two cold violet reading-lamp eyes, long trailing sleeves of loose parchment fraying into nothing at the bottom. It has no legs, tapering to a ragged wisp."
+      "prompt": "A PAGE WRAITH: a floating hoodless spectre whose entire body is a swirling vortex of torn manuscript pages held in a human silhouette, hollow dark void where a face should be with two cold violet reading-lamp eyes, long trailing sleeves of loose parchment fraying into nothing at the bottom. It has no legs, tapering to a ragged wisp.",
+      "attack": "its vortex of manuscript pages erupting outward in a spiral storm of torn paper, the empty parchment sleeves flung wide, the violet lamp-eyes blazing white"
     },
     {
       "id": "f1_prop_bookshelf",
@@ -94,7 +97,8 @@
       "kind": "boss",
       "height": 190,
       "seed": 1150,
-      "prompt": "THE UNBOUND INDEX, a library boss: an enormous floating grimoire the size of a door, its covers spread wide like wings, hundreds of pages fanning out from the spine in a great peacock display. A single vast eye stares out of the open pages. Chains and brass clasps hang broken from its edges. Dozens of smaller books orbit it. Violet arcane light pours from between the pages."
+      "prompt": "THE UNBOUND INDEX, a library boss: an enormous floating grimoire the size of a door, its covers spread wide like wings, hundreds of pages fanning out from the spine in a great peacock display. A single vast eye stares out of the open pages. Chains and brass clasps hang broken from its edges. Dozens of smaller books orbit it. Violet arcane light pours from between the pages.",
+      "attack": "its spread covers thrown forward like slamming wings and the fanned pages compressed into a blast, the single vast eye stretched wide and glaring, a lance of violet light pouring out from between the pages, the orbiting books flung outward"
     },
     {
       "$floor": 2,
@@ -105,21 +109,24 @@
       "kind": "creature",
       "height": 162,
       "seed": 1201,
-      "prompt": "A CLEAVER SKELETON: an animated skeleton in a filthy blood-stained butcher's apron, a rusted meat cleaver fused into the bone of each forearm instead of hands, ribcage strung with hanging hooks, jaw hanging open in a grin, one eye socket lit with a sickly yellow flame. Grease-stained bone."
+      "prompt": "A CLEAVER SKELETON: an animated skeleton in a filthy blood-stained butcher's apron, a rusted meat cleaver fused into the bone of each forearm instead of hands, ribcage strung with hanging hooks, jaw hanging open in a grin, one eye socket lit with a sickly yellow flame. Grease-stained bone.",
+      "attack": "both forearm cleavers hauled up over the skull and brought down together in a heavy two-handed chop, ribcage hooks swinging with the motion"
     },
     {
       "id": "f2_enemy_imp",
       "kind": "creature",
       "height": 128,
       "seed": 1202,
-      "prompt": "A GREASE IMP: a small squat fat demon with glistening translucent yellow-brown skin like rendered fat, wide toothy grin, tiny horns, a distended dripping belly, stubby arms, big splayed webbed feet leaving greasy prints. It cradles a ladle. Slick highlights all over its body."
+      "prompt": "A GREASE IMP: a small squat fat demon with glistening translucent yellow-brown skin like rendered fat, wide toothy grin, tiny horns, a distended dripping belly, stubby arms, big splayed webbed feet leaving greasy prints. It cradles a ladle. Slick highlights all over its body.",
+      "attack": "swinging its ladle in a wide arc and flinging a sheet of boiling grease off it, belly wobbling, weight thrown onto one splayed webbed foot"
     },
     {
       "id": "f2_enemy_hound",
       "kind": "creature",
       "height": 128,
       "seed": 1203,
-      "prompt": "A BONE HOUND: a skeletal dog assembled from mismatched animal bones, elongated snapping skull with too many teeth, exposed ribcage with a dull red ember burning inside, spine of stacked vertebrae, four bony legs with clawed paws, tail a whip of linked bones. Lean and predatory."
+      "prompt": "A BONE HOUND: a skeletal dog assembled from mismatched animal bones, elongated snapping skull with too many teeth, exposed ribcage with a dull red ember burning inside, spine of stacked vertebrae, four bony legs with clawed paws, tail a whip of linked bones. Lean and predatory.",
+      "attack": "caught mid-pounce with all four legs off the ground, body stretched flat out, the over-toothed skull jaws hinged wide open to bite, the ember in its ribcage flaring"
     },
     {
       "id": "f2_prop_cauldron",
@@ -154,7 +161,8 @@
       "kind": "boss",
       "height": 190,
       "seed": 1250,
-      "prompt": "THE MARROW CHEF, a kitchen boss: a colossally obese towering butcher, skin pale and waxy, head a boiled ox skull wearing a filthy tall chef's toque, four arms each gripping a different implement - a cleaver, a two-tined fork, a ladle, a bone saw. Blood-soaked apron stretched over an enormous gut. Rings of sausages and hooks hang from a belt of chains. Steam rising off its shoulders."
+      "prompt": "THE MARROW CHEF, a kitchen boss: a colossally obese towering butcher, skin pale and waxy, head a boiled ox skull wearing a filthy tall chef's toque, four arms each gripping a different implement - a cleaver, a two-tined fork, a ladle, a bone saw. Blood-soaked apron stretched over an enormous gut. Rings of sausages and hooks hang from a belt of chains. Steam rising off its shoulders.",
+      "attack": "all four arms swung in at once from four directions - cleaver, fork, ladle and bone saw converging - the ox skull lowered, steam ripping off its shoulders"
     },
     {
       "$floor": 3,
@@ -165,21 +173,24 @@
       "kind": "creature",
       "height": 174,
       "seed": 1301,
-      "prompt": "A SPORE HULK: a massive lumbering humanoid of rotted wet wood and packed moss, an enormous pale bracket-fungus cap growing where its head should be with no face at all, thick bursting puffball sacs clustered on its shoulders and back leaking green spore dust, arms like mossy logs, fingers of woody roots."
+      "prompt": "A SPORE HULK: a massive lumbering humanoid of rotted wet wood and packed moss, an enormous pale bracket-fungus cap growing where its head should be with no face at all, thick bursting puffball sacs clustered on its shoulders and back leaking green spore dust, arms like mossy logs, fingers of woody roots.",
+      "attack": "every puffball sac on its shoulders and back bursting at once into a thick green spore cloud, both log arms driven straight down into the ground"
     },
     {
       "id": "f3_enemy_creeper",
       "kind": "creature",
       "height": 151,
       "seed": 1302,
-      "prompt": "A THORN CREEPER: a low quadrupedal beast woven entirely from barbed bramble vines and dead leaves, long wicked thorns bristling along its spine, a snapping jaw of splintered wood, two small hateful red flower-blooms for eyes, whipping vine tail. Hollow between the vines so you can see through its body."
+      "prompt": "A THORN CREEPER: a low quadrupedal beast woven entirely from barbed bramble vines and dead leaves, long wicked thorns bristling along its spine, a snapping jaw of splintered wood, two small hateful red flower-blooms for eyes, whipping vine tail. Hollow between the vines so you can see through its body.",
+      "attack": "every thorn along its spine bristling erect and its vine tail whipped forward over its own head like a scorpion, the splintered wooden jaw snapping"
     },
     {
       "id": "f3_enemy_priest",
       "kind": "creature",
       "height": 180,
       "seed": 1303,
-      "prompt": "A MYCELIUM PRIEST: a tall gaunt robed figure, its robes rotted grey sackcloth threaded with glowing pale mycelium veins, head a tall pointed toadstool cap shading a hollow dark face with three small glowing green eyes, long thin arms raised in benediction, fingertips trailing hanging white fungal threads."
+      "prompt": "A MYCELIUM PRIEST: a tall gaunt robed figure, its robes rotted grey sackcloth threaded with glowing pale mycelium veins, head a tall pointed toadstool cap shading a hollow dark face with three small glowing green eyes, long thin arms raised in benediction, fingertips trailing hanging white fungal threads.",
+      "attack": "arms flung wide and the mycelium veins in its robes blazing white, the hanging fungal threads at its fingertips lashing out straight ahead like harpoons"
     },
     {
       "id": "f3_prop_fungus",
@@ -214,7 +225,8 @@
       "kind": "boss",
       "height": 190,
       "seed": 1350,
-      "prompt": "MOTHER BLOOM, a fungal boss: an enormous swollen fungal queen, a vast bulbous sac-body of translucent pale flesh with dark spores swirling visibly inside it, crowned by a huge ring of luminous violet mushroom caps like a halo. A small withered humanoid torso and thin grasping arms emerge from the top of the sac. Thick root-tentacles anchor her to the ground and spread outward. Clouds of glowing spores drift around her."
+      "prompt": "MOTHER BLOOM, a fungal boss: an enormous swollen fungal queen, a vast bulbous sac-body of translucent pale flesh with dark spores swirling visibly inside it, crowned by a huge ring of luminous violet mushroom caps like a halo. A small withered humanoid torso and thin grasping arms emerge from the top of the sac. Thick root-tentacles anchor her to the ground and spread outward. Clouds of glowing spores drift around her.",
+      "attack": "the bulbous sac violently contracted to squeeze a dense spore cloud out of itself, the thick root-tentacles reared up off the floor, the small withered arms clawing forward"
     },
     {
       "$floor": 4,
@@ -225,21 +237,24 @@
       "kind": "creature",
       "height": 168,
       "seed": 1401,
-      "prompt": "A SLAG GOLEM: a broad humanoid of cooled black volcanic slag with molten orange lava glowing in every crack and seam of its body, no head - just a glowing furnace-hole in its chest, heavy asymmetric fists of fused metal and stone, thick stumpy legs, dripping embers falling from its knuckles, heat shimmer around its shoulders."
+      "prompt": "A SLAG GOLEM: a broad humanoid of cooled black volcanic slag with molten orange lava glowing in every crack and seam of its body, no head - just a glowing furnace-hole in its chest, heavy asymmetric fists of fused metal and stone, thick stumpy legs, dripping embers falling from its knuckles, heat shimmer around its shoulders.",
+      "attack": "arched backward so the furnace-hole in its chest gapes open and vents a white-hot jet straight out, lava running brighter in every crack, embers streaming from its fists"
     },
     {
       "id": "f4_enemy_bellows",
       "kind": "creature",
       "height": 145,
       "seed": 1402,
-      "prompt": "A BELLOWS FIEND: a hunched brass automaton whose torso is a great leather-and-brass accordion bellows mid-wheeze, a riveted iron mask face with a single glowing yellow lens eye and a pipe-nozzle mouth venting steam, thin articulated copper-tube arms, bird-like clawed metal feet, pressure gauge on its shoulder in the red."
+      "prompt": "A BELLOWS FIEND: a hunched brass automaton whose torso is a great leather-and-brass accordion bellows mid-wheeze, a riveted iron mask face with a single glowing yellow lens eye and a pipe-nozzle mouth venting steam, thin articulated copper-tube arms, bird-like clawed metal feet, pressure gauge on its shoulder in the red.",
+      "attack": "its accordion bellows torso violently crushed flat, blasting a jet of fire and steam out of the pipe-nozzle mouth, the shoulder pressure gauge slammed past the red"
     },
     {
       "id": "f4_enemy_wasp",
       "kind": "creature",
       "height": 122,
       "seed": 1403,
-      "prompt": "A CINDER WASP: a large mechanical wasp with a segmented red-hot glowing iron abdomen, two pairs of blurred brass wire-mesh wings, a long white-hot needle stinger, faceted furnace-orange compound eyes, sharp black mandibles, six barbed metal legs tucked under. Trailing sparks."
+      "prompt": "A CINDER WASP: a large mechanical wasp with a segmented red-hot glowing iron abdomen, two pairs of blurred brass wire-mesh wings, a long white-hot needle stinger, faceted furnace-orange compound eyes, sharp black mandibles, six barbed metal legs tucked under. Trailing sparks.",
+      "attack": "abdomen curled hard under and forward to drive the white-hot needle stinger out ahead of it, wings blurred into a smear, all six barbed legs thrown out to grip"
     },
     {
       "id": "f4_prop_forge",
@@ -274,7 +289,8 @@
       "kind": "boss",
       "height": 190,
       "seed": 1450,
-      "prompt": "THE OVERSEER ENGINE, a foundry boss: a towering brass and iron machine-god, a vast riveted boiler body with a roaring furnace door for a mouth spilling white-hot light, a crown of belching smokestacks, four long piston-driven arms ending in industrial claws and a glowing crucible, cracked pressure dials and a single enormous searchlight eye. Chains and cooling pipes wrap its frame. Standing on caterpillar treads."
+      "prompt": "THE OVERSEER ENGINE, a foundry boss: a towering brass and iron machine-god, a vast riveted boiler body with a roaring furnace door for a mouth spilling white-hot light, a crown of belching smokestacks, four long piston-driven arms ending in industrial claws and a glowing crucible, cracked pressure dials and a single enormous searchlight eye. Chains and cooling pipes wrap its frame. Standing on caterpillar treads.",
+      "attack": "its furnace door mouth thrown wide spilling white-hot light, all four piston arms punched out to full extension, every smokestack belching, the searchlight eye at glare"
     },
     {
       "$floor": 5,
@@ -285,21 +301,24 @@
       "kind": "creature",
       "height": 168,
       "seed": 1501,
-      "prompt": "A VOID ACOLYTE: a slender robed figure in deep midnight-blue vestments trimmed with gold constellation embroidery, no head at all - instead a slowly rotating sphere of starless black void hovering above the collar with a single ring of gold orbiting it, long sleeves, gloved hands cupping a tiny bright star. Hem of the robe frays into drifting stardust."
+      "prompt": "A VOID ACOLYTE: a slender robed figure in deep midnight-blue vestments trimmed with gold constellation embroidery, no head at all - instead a slowly rotating sphere of starless black void hovering above the collar with a single ring of gold orbiting it, long sleeves, gloved hands cupping a tiny bright star. Hem of the robe frays into drifting stardust.",
+      "attack": "its cupped gloved hands flung open to release the tiny star, which flares blinding white, the void sphere where a head should be spinning fast enough to blur its gold ring"
     },
     {
       "id": "f5_enemy_husk",
       "kind": "creature",
       "height": 157,
       "seed": 1502,
-      "prompt": "A STAR HUSK: the hollow cracked shell of a humanoid statue made of pale grey moonstone, its chest and skull split wide open with brilliant white starlight blazing out of the hollow interior, cracks across the whole body leaking light, blank eyeless face, one arm ending in a shattered stump, weightless stone shards floating in orbit around the breaks."
+      "prompt": "A STAR HUSK: the hollow cracked shell of a humanoid statue made of pale grey moonstone, its chest and skull split wide open with brilliant white starlight blazing out of the hollow interior, cracks across the whole body leaking light, blank eyeless face, one arm ending in a shattered stump, weightless stone shards floating in orbit around the breaks.",
+      "attack": "the cracks across its whole body wrenched open so the shell comes apart, a single hard beam of white starlight firing forward out of the split in its chest and flooding the frame, every floating stone shard blown outward away from the body"
     },
     {
       "id": "f5_enemy_sentinel",
       "kind": "creature",
       "height": 174,
       "seed": 1503,
-      "prompt": "A MIRROR SENTINEL: an armoured guardian whose body is made of angular polished mirror shards held together by thin gold filigree, its face a perfectly flat oval mirror reflecting nothing, tall geometric shoulder plates, a gold circlet, hands of faceted glass blades. Its reflections show fragments of stars instead of the room."
+      "prompt": "A MIRROR SENTINEL: an armoured guardian whose body is made of angular polished mirror shards held together by thin gold filigree, its face a perfectly flat oval mirror reflecting nothing, tall geometric shoulder plates, a gold circlet, hands of faceted glass blades. Its reflections show fragments of stars instead of the room.",
+      "attack": "its two faceted glass blade-hands scissored across each other in a cutting sweep, the flat mirror face tilted to throw a blinding starburst reflection at the viewer"
     },
     {
       "id": "f5_prop_orrery",
@@ -334,7 +353,8 @@
       "kind": "boss",
       "height": 190,
       "seed": 1550,
-      "prompt": "THE CARTOGRAPHER, a celestial boss: a colossal robed astronomer whose head is a great armillary sphere of gold rings with a burning blue star trapped at its centre, six arms - some holding brass dividers, a quill, an unrolled star map, others empty and open. Its midnight robe is a window onto a real starfield with constellations moving in it. A vast slowly rotating gold zodiac ring floats behind its shoulders like a halo."
+      "prompt": "THE CARTOGRAPHER, a celestial boss: a colossal robed astronomer whose head is a great armillary sphere of gold rings with a burning blue star trapped at its centre, six arms - some holding brass dividers, a quill, an unrolled star map, others empty and open. Its midnight robe is a window onto a real starfield with constellations moving in it. A vast slowly rotating gold zodiac ring floats behind its shoulders like a halo.",
+      "attack": "the vast gold zodiac ring behind it spun up and blazing, all six arms spread wide with the star map snapped taut between two of them, the blue star in its armillary head flaring to white"
     },
     {
       "$comment": "Golem forms. Animating a prop is the core verb, so every prop has an authored risen form. Shared cues: violet arcane eyes, a hunched bipedal stance built from the object's own material, the object still recognisable in the silhouette.",

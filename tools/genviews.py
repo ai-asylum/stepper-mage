@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """
-Back and side frames for every hostile, two views per generation.
+Back, side and attack frames for every hostile.
 
-    tools/genviews.py                  # everything missing
+    tools/genviews.py                     # the back+side turnaround, two per image
+    tools/genviews.py --attack            # the single-panel attack pose
     tools/genviews.py --only f1_boss
-    tools/genviews.py --split-only     # re-split and re-post cached sheets, no API
+    tools/genviews.py --split-only        # re-split cached sheets, no API calls
+    tools/genviews.py --attack --refresh  # throw the cached sheets away and redo
+
+The two runs are separate on purpose. The turnaround's whole instruction is "the same
+creature standing still, TURNED"; the attack's is "the same creature MID-STRIKE".
+Asking one image for two calm views plus a lunge returned three lunges.
 
 Why it works this way:
 
@@ -64,32 +70,37 @@ ASSET_CREATOR = G.ASSET_CREATOR
 # The two panels, in the order the prompt asks for them.
 VIEWS = ("back", "side")
 
-# The attack pose is its own single-panel run. It cannot ride along in the
-# turnaround sheet: that sheet's whole instruction is "the same creature standing
-# still, turned", and asking one image for two calm views plus a lunge got a sheet
-# where all three were mid-swing.
-ATTACK_PROMPT = (
-    "ONE view of the EXACT SAME CREATURE as the reference, on a plain solid white "
-    "background. Match the reference exactly: same design, same colours, same "
-    "proportions. It is ATTACKING — caught at the peak of a strike, lunging toward "
-    "the viewer, weapon or claws or jaws thrown forward, body committed and "
-    "off-balance, mouth open if it has one. Aggressive, violent, mid-motion. "
-    "Front-facing, full body from head to feet, centered, with a small margin of "
-    "empty space at every edge. " + G.STYLE + "."
+# The attack pose is its own single-panel run, and the pose itself comes from the
+# MANIFEST — one bespoke line per creature, in `attack`.
+#
+# It used to be one generic string for all twenty, and that was wrong in a way worth
+# recording. It read "weapon or claws or jaws thrown forward ... mouth open if it has
+# one", which is a shopping list, and a model handed a shopping list fills it: every
+# creature came back with a hand thrust forward, including the ones with no hands, and
+# the floating grimoire grew a fanged mouth and a clawed arm to comply. Twenty
+# creatures got one pose and several got anatomy they do not have.
+#
+# So the prompt now says only what THIS creature does with the body it has, and
+# forbids invention explicitly. A moth attacks by flaring its flame, a bone hound by
+# pouncing, a bellows fiend by crushing its own torso, the grimoire by firing light
+# from between its pages. No two are the same verb.
+ATTACK_FRAME = (
+    "ONE view of the EXACT SAME CREATURE as the reference image, on a plain solid "
+    "white background. Match the reference exactly: same design, same colours, same "
+    "proportions, same ANATOMY. "
+    "CRITICAL: do not add, invent or grow any body part the reference does not "
+    "already have — no extra arms, hands, claws, limbs, mouths, teeth, faces or eyes. "
+    "If it has no hands it does not reach; if it has no mouth it does not bite. "
+    "It is ATTACKING, caught at the peak of the action: {attack}. "
+    "Violent, committed, mid-motion. Front-facing, full body, centered, with a small "
+    "margin of empty space at every edge. " + G.STYLE + "."
 )
 
-PROMPT = (
-    "TWO VIEWS OF THE EXACT SAME CREATURE, side by side, on a plain solid white "
-    "background, with a clear empty gap between them. Match the reference image "
-    "exactly: same design, same colours, same proportions, same silhouette, same "
-    "size. This is a turnaround sheet of one character, not two characters. "
-    "LEFT VIEW: the creature seen from DIRECTLY BEHIND — its back to the viewer, "
-    "the back of its head and body, no face visible at all. "
-    "RIGHT VIEW: the creature seen from the SIDE in exact profile, facing to the "
-    "right, one side of the body toward the viewer. "
-    "Both views full body from head to feet, standing at the same height, upright, "
-    "level with each other. " + G.STYLE + "."
-)
+
+def attack_prompt(asset: dict) -> str | None:
+    """The bespoke attack line for one creature, or None if it has not been written."""
+    a = asset.get("attack")
+    return ATTACK_FRAME.format(attack=a.strip()) if a else None
 
 
 def hostiles(assets: list[dict]) -> list[dict]:
@@ -113,10 +124,13 @@ def make_sheet(asset: dict, env: dict[str, str], attack: bool = False) -> Path |
     if not ref.exists():
         print(f"  [skip] {asset['id']} (no front raw to reference)")
         return None
+    if attack and not attack_prompt(asset):
+        print(f"  [skip] {asset['id']} (no `attack` line in the manifest)")
+        return None
     out.parent.mkdir(parents=True, exist_ok=True)
     ok = run([
         "uvx", "--from", str(ASSET_CREATOR), "asset-creator",
-        "--prompt", ATTACK_PROMPT if attack else PROMPT,
+        "--prompt", attack_prompt(asset) if attack else PROMPT,
         "--reference", str(ref),
         # Wide when two views sit side by side, square for a single pose. 1K is the
         # lowest the API offers and far more than survives the resample.
@@ -245,6 +259,8 @@ def main() -> None:
                     help="re-split and re-post cached sheets; no API calls")
     ap.add_argument("--attack", action="store_true",
                     help="the single-panel attack pose run instead of the turnaround")
+    ap.add_argument("--refresh", action="store_true",
+                    help="discard cached sheets for the selected run and generate again")
     args = ap.parse_args()
 
     assets = [a for a in json.loads(G.MANIFEST.read_text())["assets"] if "id" in a]
@@ -269,6 +285,10 @@ def main() -> None:
                 print(f"  [skip] {aid} (no matted sheet)")
                 continue
         else:
+            if args.refresh:
+                base = SHEET_DIR / "attack" if args.attack else SHEET_DIR
+                for stale in (base / f"{aid}.png", base / "nobg" / f"{aid}.png"):
+                    stale.unlink(missing_ok=True)
             raw = make_sheet(a, env, args.attack)
             if not raw:
                 bad.append(aid)
