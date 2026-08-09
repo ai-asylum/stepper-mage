@@ -1,7 +1,7 @@
 # Enemy Identity
 
 **Player-facing:** yes
-**Status:** in progress
+**Status:** complete
 **Started:** 2026-08-03
 
 Creatures get facing, attack poses, attack VFX, a telegraph before they act, and

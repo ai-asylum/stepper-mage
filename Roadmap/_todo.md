@@ -128,7 +128,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Play an attack pose and a screen effect when an enemy hits the player.
 - [x] Give creatures elemental weaknesses and resistances that change damage taken.
 - [x] Teach a creature's element by fighting it, without a tooltip.
-- [ ] Commit changes.
+- [x] Commit changes.
 
 ## Phase 10 — Corpse_Raising_And_Golem_Persistence
 
