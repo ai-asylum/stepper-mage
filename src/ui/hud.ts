@@ -2614,12 +2614,12 @@ export class Hud {
      * price under each card.
      */
     const byWidth = (W - margin * 2 - gap * (offers.length - 1)) / offers.length;
-    const byHeight = (H * 0.42) * (CARD_W / CARD_H);
+    const byHeight = (H * 0.38) * (CARD_W / CARD_H);
     const cardW = Math.floor(Math.min(byWidth, byHeight));
     const cardH = Math.round(cardW * (CARD_H / CARD_W));
     const rowW = cardW * offers.length + gap * (offers.length - 1);
     const x0 = (W - rowW) / 2;
-    const top = H * 0.24;
+    const top = H * 0.22;
 
     offers.forEach((o, i) => {
       const x = x0 + i * (cardW + gap);
@@ -2645,26 +2645,35 @@ export class Hud {
        * Copy that used to sit INSIDE the row now sits under the object it describes,
        * which is what lets the object be the thing the eye lands on first.
        */
+      /**
+       * The copy is sized to be READ, not to fit.
+       *
+       * It started at 8px monospace under a card that fills a third of the screen,
+       * which made the one screen in the game meant to be read the one with the
+       * smallest type on it. The card can afford to lose a few pixels of height for
+       * copy that does not need leaning toward.
+       */
       ctx.textAlign = 'center';
-      ctx.font = '8px ui-monospace, monospace';
+      ctx.font = 'bold 10px ui-monospace, monospace';
       ctx.fillStyle = o.kind === 'sacrifice' ? 'rgba(255,150,110,0.95)'
         : o.golden ? 'rgba(255,207,92,0.9)'
-        : hexCss(o.colour, 0.85);
-      ctx.fillText(o.tag.toUpperCase(), x + cardW / 2, top - 8);
+        : hexCss(o.colour, 0.9);
+      ctx.fillText(o.tag.toUpperCase(), x + cardW / 2, top - 10);
 
-      let ty = top + cardH + 14;
-      ctx.font = 'bold 10px ui-serif, Georgia, serif';
+      let ty = top + cardH + 20;
+      ctx.font = 'bold 16px ui-serif, Georgia, serif';
       ctx.fillStyle = o.golden ? GOLD : '#fff4dc';
       for (const ln of wrapLines(ctx, o.name, cardW - 2)) {
         ctx.fillText(ln, x + cardW / 2, ty);
-        ty += 12;
+        ty += 18;
       }
 
-      ctx.font = '8px ui-monospace, monospace';
-      ctx.fillStyle = 'rgba(226,216,200,0.72)';
+      ty += 2;
+      ctx.font = '11px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(226,216,200,0.82)';
       for (const ln of wrapLines(ctx, o.detail, cardW - 2)) {
         ctx.fillText(ln, x + cardW / 2, ty);
-        ty += 10;
+        ty += 13;
       }
 
       /**
@@ -2673,12 +2682,12 @@ export class Hud {
        * — and a player who meets that price in the log afterwards was tricked.
        */
       if (o.cost) {
-        ty += 4;
-        ctx.font = 'bold 8px ui-monospace, monospace';
+        ty += 6;
+        ctx.font = 'bold 11px ui-monospace, monospace';
         ctx.fillStyle = '#ffc0a4';
         for (const ln of wrapLines(ctx, o.cost, cardW - 2)) {
           ctx.fillText(ln, x + cardW / 2, ty);
-          ty += 10;
+          ty += 13;
         }
       }
 
