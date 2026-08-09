@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Engine } from './core/engine';
-import { Floor, type Entity } from './game/floor';
+import { Floor, isCastableObject, type Entity } from './game/floor';
 import { Stepper, PITCH } from './game/stepper';
 import {
   Combat, targetsInView, MAX_RANK, type PlayerState,
@@ -872,7 +872,7 @@ async function boot(): Promise<void> {
      * First, because it is the narrowest rule in here.
      */
     if (wantsCorpse(ids)) return false;
-    const animatable = e.kind === 'prop' && !e.animated;
+    const animatable = isCastableObject(e);
     // Asked of the ingredient's ROLE and not of the literal id `animate`, which is a
     // working name the designer still owns (`docs/DESIGN.md`, Open) — gating the
     // reticle on the string meant renaming it would silently break targeting.

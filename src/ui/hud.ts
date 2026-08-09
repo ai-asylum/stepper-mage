@@ -13,7 +13,7 @@
  * know it before it can name the cast.
  */
 import type { Engine } from '../core/engine';
-import type { Entity } from '../game/floor';
+import { isCastableObject, type Entity } from '../game/floor';
 import { DENIAL_STATUSES, reactionFor, type Combat, type PlayerState } from '../game/combat';
 import {
   INGREDIENT_IDS, SPELL_BY_ID, STATUS_META, displayName, harvestOf, isElement,
@@ -649,7 +649,7 @@ export class Hud {
     for (const e of this.candidates) {
       if (!e.alive || !e.sprite.group.visible) { e.sprite.setOutline(0xffffff, false); continue; }
 
-      const animatable = e.kind === 'prop' && !e.animated;
+      const animatable = isCastableObject(e);
       const interactive = (e.kind === 'altar' || e.kind === 'chest') && !e.spent;
       /**
        * The same rule as `isLegal` in `main.ts`, which is the one that actually

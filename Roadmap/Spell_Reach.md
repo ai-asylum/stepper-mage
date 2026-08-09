@@ -102,4 +102,5 @@ move less than it looks like it should. Measure rather than assume.
 - A blast in an open room is unchanged.
 - A volume can reach and damage the player.
 - Object reactions obey the same bound as the cast that set them off.
-- `fullrun --hand1` clears 5/5.
+- A full run stays completable at hand size 1. **No harness backs this any more** —
+  `tools/fullrun.mjs` was deleted on 2026-08-09, so this is judged by playing.

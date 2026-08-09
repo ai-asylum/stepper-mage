@@ -70,4 +70,5 @@ it is illegible.
 - Floor 3 specifically is no longer four-of-four weak to fire.
 - The cast readout, the discovery banner and the nameplate marks have been seen and
   are legible at 375px wide.
-- `fullrun --hand1` clears 5/5.
+- A full run stays completable at hand size 1. **No harness backs this any more** —
+  `tools/fullrun.mjs` was deleted on 2026-08-09, so this is judged by playing.

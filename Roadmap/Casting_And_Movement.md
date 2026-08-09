@@ -73,4 +73,6 @@ hand size becomes capability bought with stars.
 - A two-finger swipe left side-steps; up and down both move and turn 180.
 - W into an occupied tile swaps with its occupant, boss included, and leaves the
   player facing its back.
-- `tools/fullrun.mjs --hand1` is re-tuned and green against the new rule.
+- The balance is re-tuned against the new rule. This was verified green by
+  `tools/fullrun.mjs --hand1` at the time; that harness was deleted on 2026-08-09,
+  so the result stands as a historical measurement rather than a repeatable one.

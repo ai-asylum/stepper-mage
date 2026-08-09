@@ -141,7 +141,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Make standing in fire cost something, for creatures and the player alike.
 - [ ] Let one Gust clear the fire it reaches.
 - [ ] Decide whether enemies avoid burning tiles, and record the decision either way.
-- [ ] Commit changes.
+- [x] Commit changes.
 
 ## Phase 11 — Elemental_Spread
 

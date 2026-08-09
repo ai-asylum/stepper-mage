@@ -3,109 +3,174 @@
  *
  * This is a new kind of thing in the game. Everything that persists today lives on
  * a body as a status and dies with it; nothing has ever lived on a tile. Burning
- * ground is the first, and it is deliberately its own small module rather than
+ * ground was the first, and it is deliberately its own small module rather than
  * another field on `Floor`, because the parts that can go wrong — the ageing, the
  * clearing, and everything downstream that has to ask "is this tile dangerous" —
- * are the same three questions any future ground state will ask. Frost is the
- * obvious next candidate and the obvious way for this to become five systems
- * instead of one.
+ * are the same questions every ground state asks.
+ *
+ * There are three now. Fire, and the two things that pour out of a broken container:
+ * OIL, which is not dangerous until it meets a flame, and WATER, which is not
+ * dangerous at all and is how you make a fire stop being. They share one map because
+ * a tile holds ONE substance — a puddle that was also on fire would need a rule for
+ * what that means, and the interesting answer is that the two react and leave a
+ * third thing behind rather than coexisting.
  *
  * Keyed by tile index, which is the same key `Grid.flood` and `Grid.fill` speak, so
- * a volume's tiles become burning tiles without a translation step in between.
+ * a volume's tiles become covered tiles without a translation step in between.
  */
 import type { FillTile } from '../dungeon/grid';
-import { FIRE_TURNS } from './tuning';
+import { FIRE_TURNS, SPILL_TURNS } from './tuning';
 
 /**
- * Rounds of fuel a tile loses per step out from the middle of the blast, and the
- * floor under it. The falloff is what shrinks a fire inward instead of switching
- * the whole patch off at once; the floor is what stops the outer ring of a big
- * volume being lit for zero rounds and flickering out on the frame it appears.
+ * Rounds of life a tile loses per step out from the middle of the spill, and the
+ * floor under it. The falloff is what shrinks a patch inward instead of switching
+ * the whole thing off at once; the floor is what stops the outer ring of a big
+ * volume living zero rounds and flickering out on the frame it appears.
  */
 const FALLOFF = 2;
 const MIN_TURNS = 2;
 
+/** What is lying on a tile. One per tile — see the header. */
+export type Substance = 'fire' | 'oil' | 'water';
+
+/**
+ * What happens when a substance arrives on a tile that already holds another.
+ *
+ * The whole reason spills are worth having. A barrel is not a pool of damage, it is
+ * a way to change what the floor will do to the next spell — and these three rows
+ * are the entire vocabulary:
+ *
+ *  - **oil meets fire: it goes up.** The tile burns, and burns from full, so oil
+ *    poured into an old guttering fire is how you make a big one. This is the play
+ *    the barrels exist for.
+ *  - **water meets fire: steam.** Both are spent and the tile is left bare. Water is
+ *    the only thing in the game besides Gust that puts fire out, and unlike Gust it
+ *    does not cost a turn — it costs a barrel, which you had to have positioned.
+ *  - **anything else: the newcomer wins.** Oil onto water is oil floating on it, and
+ *    the useful reading of that is simply "the tile is oily now".
+ *
+ * Returns the substance the tile is left holding, or null for a bare tile.
+ */
+function react(had: Substance, got: Substance): { left: Substance | null; full: boolean } {
+  if (had === 'oil' && got === 'fire') return { left: 'fire', full: true };
+  if (had === 'fire' && got === 'oil') return { left: 'fire', full: true };
+  if (had === 'water' && got === 'fire') return { left: null, full: false };
+  if (had === 'fire' && got === 'water') return { left: null, full: false };
+  return { left: got, full: false };
+}
+
+interface Patch { what: Substance; turns: number }
+
 export class Ground {
-  /** Tile index -> rounds of fire left on it. */
-  private fire = new Map<number, number>();
+  /** Tile index -> what is on it and how long it lasts. */
+  private patch = new Map<number, Patch>();
+
+  /** What is on this tile, if anything. */
+  at(i: number): Substance | null {
+    return this.patch.get(i)?.what ?? null;
+  }
 
   /** Is this tile on fire right now? */
   burning(i: number): boolean {
-    return this.fire.has(i);
+    return this.patch.get(i)?.what === 'fire';
   }
 
-  /** Every burning tile, for the renderer and the minimap. */
-  fires(): Iterable<number> {
-    return this.fire.keys();
+  /** Every covered tile with what is on it and the height to draw it at. */
+  *patches(): Iterable<{ i: number; what: Substance; level: 1 | 2 | 3 }> {
+    for (const [i, p] of this.patch) yield { i, what: p.what, level: this.level(i) };
   }
 
-  /** Every burning tile with the height it should be drawn at. */
-  *flames(): Iterable<{ i: number; level: 1 | 2 | 3 }> {
-    for (const i of this.fire.keys()) yield { i, level: this.level(i) };
+  /** Every burning tile — the minimap's question, and the fuel lookup's. */
+  *fires(): Iterable<number> {
+    for (const [i, p] of this.patch) if (p.what === 'fire') yield i;
   }
 
-  get count(): number { return this.fire.size; }
+  get count(): number { return this.patch.size; }
 
   /**
-   * Set tiles alight, hottest at the middle.
+   * Pour a substance over these tiles, thickest at the middle.
    *
    * `tiles` is expected in `Grid.fill` order — origin first, then outward — and the
-   * duration is spent against that ordering: the centre gets the full burn and every
-   * ring out gets `FALLOFF` rounds less, floored so no tile is lit for nothing.
+   * duration is spent against that ordering: the centre gets the full life and every
+   * ring out gets `FALLOFF` rounds less, floored so no tile is covered for nothing.
    *
-   * This is what makes a fire DIE like a fire. Lighting every tile with the same
+   * This is what makes a fire DIE like a fire. Covering every tile with the same
    * countdown means the whole patch vanishes on one frame, which reads as the effect
    * being switched off rather than as burning out. Fuelling the edges less means the
-   * outside goes dark first and the fire shrinks toward its middle, and — because
-   * height is drawn from the same number — the patch is already a dome on the round
-   * it lands rather than a slab that suddenly deflates.
+   * outside goes first and the patch shrinks toward its middle, and — because height
+   * is drawn from the same number — it lands as a dome rather than as a slab that
+   * suddenly deflates.
    *
-   * Re-lighting takes the HIGHER of the two, rather than refreshing or stacking. Two
-   * volumes overlapping should leave one fire whose middles are both still middles,
-   * and `Math.max` is the only rule that keeps a second cast from flattening the
-   * dome the first one made.
+   * Where a tile is already covered, `react` decides what is left. Otherwise the new
+   * patch takes the HIGHER of the two lifetimes rather than refreshing or stacking:
+   * two volumes overlapping should leave one patch whose middles are both still
+   * middles, and `Math.max` is the only rule that keeps a second cast from flattening
+   * the dome the first one made.
    */
-  ignite(tiles: readonly FillTile[], turns: number): void {
+  pour(tiles: readonly FillTile[], what: Substance, turns: number): void {
     for (const { i, d } of tiles) {
-      const fuel = Math.max(MIN_TURNS, turns - d * FALLOFF);
-      this.fire.set(i, Math.max(this.fire.get(i) ?? 0, fuel));
+      const life = Math.max(MIN_TURNS, turns - d * FALLOFF);
+      const had = this.patch.get(i);
+      if (!had || had.what === what) {
+        this.patch.set(i, { what, turns: Math.max(had?.turns ?? 0, life) });
+        continue;
+      }
+      const { left, full } = react(had.what, what);
+      if (!left) this.patch.delete(i);
+      // A reaction burns from FULL rather than from what is left of either input —
+      // oil going up is a new fire, not the remainder of an old one.
+      else this.patch.set(i, { what: left, turns: full ? FIRE_TURNS : life });
     }
   }
 
+  /** Set tiles alight. The common case, kept as its own name for readability. */
+  ignite(tiles: readonly FillTile[], turns = FIRE_TURNS): void {
+    this.pour(tiles, 'fire', turns);
+  }
+
+  /** Spill a container's contents. */
+  spill(tiles: readonly FillTile[], what: Substance): void {
+    this.pour(tiles, what, SPILL_TURNS);
+  }
+
   /**
-   * Put fire out on these tiles, completely.
+   * Clear these tiles completely, whatever was on them.
    *
    * Gust clears what it reaches rather than reducing it — "one shot maybe" was the
-   * shape asked for, and a gust that halves a fire is a gust nobody casts.
+   * shape asked for, and a gust that halves a fire is a gust nobody casts. It takes
+   * a puddle with it too, which is right: a gust that blew out a fire but left the
+   * oil would be the single most confusing object in the game.
    */
   extinguish(tiles: Iterable<number>): number {
     let cleared = 0;
-    for (const i of tiles) if (this.fire.delete(i)) cleared++;
+    for (const i of tiles) if (this.patch.delete(i)) cleared++;
     return cleared;
   }
 
   /**
-   * How tall this tile's flame is, 1 to 3.
+   * How tall this tile's patch is drawn, 1 to 3.
    *
-   * Height is remaining fuel and nothing else, so a fire visibly gutters as it runs
+   * Height is remaining life and nothing else, so a fire visibly gutters as it runs
    * down and the player can read how long they have left to walk through it. Three
    * levels rather than a continuous scale because the world is drawn in texels and a
    * smoothly shrinking sprite in a pixel-art scene reads as a bug.
    */
   level(i: number): 1 | 2 | 3 {
-    const t = this.fire.get(i) ?? 0;
-    if (t > FIRE_TURNS * 0.6) return 3;
-    if (t > FIRE_TURNS * 0.25) return 2;
+    const p = this.patch.get(i);
+    if (!p) return 1;
+    const full = p.what === 'fire' ? FIRE_TURNS : SPILL_TURNS;
+    if (p.turns > full * 0.6) return 3;
+    if (p.turns > full * 0.25) return 2;
     return 1;
   }
 
-  /** One round older. Tiles that run out stop burning. */
+  /** One round older. Tiles that run out are bare again. */
   age(): void {
-    for (const [i, turns] of [...this.fire]) {
-      if (turns <= 1) this.fire.delete(i);
-      else this.fire.set(i, turns - 1);
+    for (const [i, p] of [...this.patch]) {
+      if (p.turns <= 1) this.patch.delete(i);
+      else p.turns--;
     }
   }
 
-  clear(): void { this.fire.clear(); }
+  clear(): void { this.patch.clear(); }
 }

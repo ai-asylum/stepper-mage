@@ -25,6 +25,9 @@
 import * as THREE from 'three';
 import { Pix, rgba } from '../art/pixel';
 import { ppu } from '../art/steps';
+import type { Substance } from '../game/ground';
+
+const SUBSTANCES: readonly Substance[] = ['fire', 'oil', 'water'];
 
 const FRAMES = 4;
 
@@ -59,16 +62,23 @@ const CARD_LEVEL = [0.34, 0.64, 1] as const;
  * reads as a decal of a fire rather than as a fire. Bright core, darker crust,
  * black rim.
  */
-function emberTile(n: number, frame: number): Pix {
+const PALETTE = {
+  fire: { core: rgba(255, 214, 92), mid: rgba(255, 122, 32), crust: rgba(126, 38, 16) },
+  // Oil is nearly black and reads by its SHEEN rather than its colour — a dark tile
+  // on a dark floor needs a highlight to exist at all, which is also exactly what
+  // oil looks like.
+  oil: { core: rgba(122, 106, 62), mid: rgba(52, 42, 26), crust: rgba(24, 18, 12) },
+  water: { core: rgba(150, 214, 240), mid: rgba(58, 122, 168), crust: rgba(28, 62, 96) },
+} as const;
+
+function emberTile(n: number, frame: number, what: Substance): Pix {
   const p = new Pix(n, n);
   const rnd = (x: number, y: number): number => {
     const s = Math.sin((x * 12.9898 + y * 78.233 + frame * 37.719)) * 43758.5453;
     return s - Math.floor(s);
   };
 
-  const core = rgba(255, 214, 92);
-  const mid = rgba(255, 122, 32);
-  const crust = rgba(126, 38, 16);
+  const { core, mid, crust } = PALETTE[what];
   const rim = rgba(18, 8, 6);
 
   for (let y = 0; y < n; y++) {
@@ -97,8 +107,18 @@ function emberTile(n: number, frame: number): Pix {
  * Drawn as tongues rather than as one blob, because a single silhouette reads as a
  * cone of light and three tongues at different heights read as burning.
  */
-function flameCard(n: number, frame: number): Pix {
+function flameCard(n: number, frame: number, what: Substance): Pix {
   const p = new Pix(n, n);
+  /**
+   * Only FIRE gets a standing card.
+   *
+   * A puddle has no height, and a billboard of a puddle is a wall of brown standing
+   * up in the room — it would read as an obstacle rather than as something lying on
+   * the ground. Liquids are their floor decal and nothing else, which is also how
+   * the player tells at a glance which of the three tiles in front of them is the
+   * one that is going to hurt.
+   */
+  if (what !== 'fire') return p;
   const core = rgba(255, 240, 170);
   const mid = rgba(255, 168, 46);
   const outer = rgba(214, 74, 20);
@@ -131,7 +151,7 @@ function flameCard(n: number, frame: number): Pix {
 
 export class FireView {
   readonly group = new THREE.Group();
-  private frames: THREE.Texture[] = [];
+  private frames = new Map<Substance, THREE.Texture[]>();
   private cards: THREE.Texture[] = [];
   private geo: THREE.PlaneGeometry;
   private cardGeo: THREE.PlaneGeometry;
@@ -140,6 +160,8 @@ export class FireView {
   private cardPool: THREE.Mesh[] = [];
   private live = 0;
   private phase: number[] = [];
+  /** What each pooled quad is currently showing, so `update` picks the right frames. */
+  private kind: Substance[] = [];
 
   constructor() {
     this.geo = new THREE.PlaneGeometry(1, 1);
@@ -149,20 +171,21 @@ export class FireView {
 
   private build(): void {
     const n = Math.max(8, Math.round(ppu()));
-    this.frames = [];
+    this.frames.clear();
     this.cards = [];
-    for (let f = 0; f < FRAMES; f++) {
-      this.frames.push(emberTile(n, f).toTexture());
-      this.cards.push(flameCard(n, f).toTexture());
+    for (const what of SUBSTANCES) {
+      const set: THREE.Texture[] = [];
+      for (let f = 0; f < FRAMES; f++) set.push(emberTile(n, f, what).toTexture());
+      this.frames.set(what, set);
     }
+    for (let f = 0; f < FRAMES; f++) this.cards.push(flameCard(n, f, 'fire').toTexture());
   }
 
   /** Re-author the frames at a new texel density. See `DungeonView.restep`. */
   restep(): void {
-    for (const t of this.frames) t.dispose();
+    this.disposeFrames();
     for (const t of this.cards) t.dispose();
     this.build();
-    for (const m of this.pool) (m.material as THREE.MeshBasicMaterial).map = this.frames[0];
     for (const m of this.cardPool) (m.material as THREE.MeshBasicMaterial).map = this.cards[0];
   }
 
@@ -173,22 +196,33 @@ export class FireView {
    * tiny, it changes every round, and a diff is a second copy of the truth that can
    * drift from `Ground`.
    */
-  sync(flames: Iterable<{ i: number; level: 1 | 2 | 3 }>, gridW: number): void {
+  sync(
+    patches: Iterable<{ i: number; what: Substance; level: 1 | 2 | 3 }>, gridW: number,
+  ): void {
     let i = 0;
-    for (const { i: t, level } of flames) {
+    for (const { i: t, what, level } of patches) {
       const x = t % gridW, y = (t / gridW) | 0;
       this.take(i).position.set(x, LIFT, y);
       this.pool[i].visible = true;
+      this.kind[i] = what;
+
       /**
        * The card is SCALED to the flame's height rather than swapped for a shorter
        * drawing, and anchored so it grows off the floor instead of about its middle
        * — a flame that shrank toward its own centre would lift off the ground.
+       *
+       * Liquids have no card at all: a billboard of a puddle would stand up in the
+       * room and read as an obstacle.
        */
-      const k = CARD_LEVEL[level - 1];
       const card = this.takeCard(i);
-      card.scale.set(1, k, 1);
-      card.position.set(x, (CARD_H * k) / 2, y);
-      card.visible = true;
+      if (what === 'fire') {
+        const k = CARD_LEVEL[level - 1];
+        card.scale.set(1, k, 1);
+        card.position.set(x, (CARD_H * k) / 2, y);
+        card.visible = true;
+      } else {
+        card.visible = false;
+      }
       i++;
     }
     for (let k = i; k < this.live; k++) {
@@ -216,7 +250,7 @@ export class FireView {
   private take(i: number): THREE.Mesh {
     if (this.pool[i]) return this.pool[i];
     const mat = new THREE.MeshBasicMaterial({
-      map: this.frames[0], transparent: true, depthWrite: false, fog: false,
+      map: this.frames.get('fire')![0], transparent: true, depthWrite: false, fog: false,
     });
     const m = new THREE.Mesh(this.geo, mat);
     // Flat on the floor. The plane is born facing +z, so it wants a quarter turn
@@ -240,8 +274,14 @@ export class FireView {
   update(time: number, cam: THREE.Vector3): void {
     for (let i = 0; i < this.live; i++) {
       const f = Math.floor(time * 7 + this.phase[i] * 3) % FRAMES;
-      (this.pool[i].material as THREE.MeshBasicMaterial).map = this.frames[f];
+      (this.pool[i].material as THREE.MeshBasicMaterial).map =
+        this.frames.get(this.kind[i] ?? 'fire')![f];
 
+      // Only fire has a card. Asked of `kind` rather than of `card.visible`,
+      // because the near-camera fade below writes `visible` every frame — reading
+      // it back here would strand a card that had faded out, since `sync` only runs
+      // on a round and would not turn it on again until the fire changed.
+      if (this.kind[i] !== 'fire') continue;
       const card = this.cardPool[i];
       const g = Math.floor(time * 9 + this.phase[i] * 5) % FRAMES;
       (card.material as THREE.MeshBasicMaterial).map = this.cards[g];
@@ -265,8 +305,12 @@ export class FireView {
     }
   }
 
+  private disposeFrames(): void {
+    for (const set of this.frames.values()) for (const t of set) t.dispose();
+  }
+
   dispose(): void {
-    for (const t of this.frames) t.dispose();
+    this.disposeFrames();
     for (const t of this.cards) t.dispose();
     for (const m of this.pool) (m.material as THREE.Material).dispose();
     for (const m of this.cardPool) (m.material as THREE.Material).dispose();

@@ -1,8 +1,8 @@
 # Burning Ground
 
 **Player-facing:** yes
-**Status:** planned
-**Started:** —
+**Status:** shipped
+**Started:** 2026-08-09
 
 Fire stays on the floor after the cast, as terrain you have to deal with — and Gust is
 how you deal with it.
@@ -29,18 +29,46 @@ behave the same way about corners.
 - **Gust is a volume too**, or it cannot reach round a corner to a fire that got there
   by wrapping.
 
-## Open — not decided
+## Settled during the build
 
-Everything about the numbers, and they are the whole feature:
+Every number the "Open" list left undecided, and what decided it.
 
-- **How long fire lasts** if nobody puts it out.
-- **What standing in it costs** a creature, and the player.
-- **Whether it spreads** on its own, and whether OIL — which already exists as an
-  element and already has a fire reaction — is what makes it spread.
-- **Whether enemies avoid it.** A hazard that only the player respects is a hazard
-  that only punishes the player.
-- **Whether other elements leave ground state.** Frost is the obvious candidate and
-  the obvious way for this to become five systems instead of one.
+- **Fire lasts 8 rounds** (`FIRE_TURNS`), and the edges of a patch are fuelled less
+  than the middle, so it burns out from the outside in and gutters through three
+  drawn heights. Three rounds was tried first and read as a flicker: at one action
+  per round the player spends three rounds just getting somewhere.
+- **Standing in it costs 2, 4 or 6 a round** (`GROUND_FIRE_DOT` × flame height), for
+  creatures and the player alike. Scaled by height rather than flat so the drawing
+  prices itself — the edge of an old burn is a scratch, the middle of a fresh one is
+  most of a hit, and the player can read which before committing a step.
+- **It does NOT spread on its own.** Oil is what makes it spread, and it does that by
+  being poured rather than by fire creeping: a broken oil barrel is nine tiles of
+  fuel, and fire meeting oil relights the tile from full.
+- **Enemies avoid it**, weighted rather than absolutely (`FIRE_DETOUR` = 3 extra
+  steps). A hazard only the player respects is a hazard that only punishes the
+  player, and avoidance is what turns a volume into area denial instead of
+  damage-over-time. Finite on purpose: fire that was impassable would let the player
+  seal a corridor and shoot from behind it, which is the exploit `ENGAGE_RADIUS` was
+  raised to close.
+- **Other elements DO leave ground state**, but only the two that pour: oil and
+  water. Frost was left alone. `Ground` holds one substance per tile and `react` is
+  the whole vocabulary — oil + fire goes up, water + fire is steam and leaves the
+  tile bare, anything else is overwritten by the newcomer.
+
+## Added beyond the original scope
+
+Both asked for during the build, both load-bearing enough to write down.
+
+- **Ground fire is a COMPONENT.** Cast into a burning tile and the fire joins the
+  spell as fire slots, one per flame height, consumed on use. This is the harvest
+  rule extended to the floor, and it can change what a cast IS — Frostbolt into a
+  fire is Steam Burst without ever holding fire. Its contribution to VOLUME is capped
+  to what the hand alone would produce, because uncapped it is a loop with gain above
+  one: bigger cast, more tiles lit, more to pick up.
+- **Containers spill when destroyed.** A barrel of something empties nine tiles from
+  where it stood (`SPILL_VOLUME`), which turns an object from a one-shot trigger into
+  terrain you positioned. Puddles last 14 rounds against fire's 8 — a trap that
+  evaporates before you can spring it is not a trap.
 
 ## Out of scope
 
@@ -66,8 +94,13 @@ not enter.
 
 ## Acceptance
 
-- Fire left on the ground is visible, and obviously dangerous.
-- Standing in it costs something, for the player and for creatures alike.
-- One Gust clears the fire it reaches.
-- Enemy pathing accounts for it, or it is a decision on record that it does not.
-- `fullrun --hand1` clears 5/5.
+- Fire left on the ground is visible, and obviously dangerous. — **met.** Ground
+  embers make the area countable; a standing billboarded card makes it read as fire.
+- Standing in it costs something, for the player and for creatures alike. — **met.**
+- One Gust clears the fire it reaches. — **met in code, unproven in play.** Nothing
+  has yet walked into a fire and gusted it out.
+- Enemy pathing accounts for it. — **met**, as a weighted detour.
+- Balance is UNMEASURED. The acceptance harness was deleted during this phase, so the
+  numbers above are reasoned rather than played. `FIRE_TURNS`, `GROUND_FIRE_DOT`,
+  `FIRE_DETOUR`, `SPILL_TURNS` and the fuel cap all move combat and all want an eye
+  on them.

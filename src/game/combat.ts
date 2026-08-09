@@ -30,7 +30,7 @@ import { faceToward, type Entity, type Floor } from './floor';
 import { affinityMult, affinityOf, type Affinities } from './affinity';
 import {
   STATUS_META, displayName, harvestOf, isFixtureElement, resolveCast,
-  isVolume,
+  GROUND_ELEMENTS,
   type CastTarget, type Element, type ResolvedCast, type StatusId,
 } from '../spells/spells';
 import { BOSS_INGREDIENTS, rollDropCount, rollIngredient, type BeltState } from '../spells/belt';
@@ -39,7 +39,7 @@ import {
   ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CONDUCTION_ARC_RANGE,
   CONDUCTION_ARC_SHARE, CONDUCTION_MULT, DAMAGE_JITTER, DECAY_DOT, DEEP_FREEZE_MULT,
   DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS,
-  FIRE_TURNS, GROUND_FIRE_DOT, REACTION_REACH, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
+  FIRE_DETOUR, GROUND_FIRE_DOT, REACTION_REACH, SPILL_VOLUME, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
   bossDamage, enemyDamage,
 } from './tuning';
 
@@ -548,20 +548,16 @@ export class Combat {
     }
 
     /**
-     * A VOLUME fills tiles, and the player is standing on one of them or is not.
+     * WHAT THE CAST LEAVES ON THE FLOOR, and whether it catches the caster.
      *
-     * The fill is thrown AWAY from the caster, so an open room takes the whole
-     * volume down the room and never reaches back. What brings it back is the room
-     * running out of anywhere else to put it — a dead end, a doorway you are
-     * standing in, a corner you backed yourself into. That is the lever the phase
-     * exists for, and it is a fact about the geometry rather than a tax on casting
-     * fire at all: the player who gets burnt made a positioning mistake and can see
-     * which one.
-     *
-     * It can kill. The same rules as an enemy, no exception carved for the person
-     * holding the book.
+     * Two separate questions that used to be one. Every element that leaves ground
+     * state fills tiles the same way — the fill is the fill — but only a HARMFUL
+     * volume is allowed to hurt the person who cast it. Soaking your own boots is
+     * not a mistake worth costing HP over, and a water cast that damaged you would
+     * be the only spell in the game punishing you for putting out a fire.
      */
-    if (isVolume(cast.elements)) {
+    const leaves = GROUND_ELEMENTS.find((el) => cast.elements.includes(el));
+    if (leaves) {
       const g = this.floor.grid;
       const away: [number, number] = [
         Math.sign(centre.x - this.playerTile.x),
@@ -569,22 +565,27 @@ export class Combat {
       ];
       const filled = g.fill(centre.x, centre.y, cast.volume, away);
       const onPlayer = g.idx(this.playerTile.x, this.playerTile.y);
-      if (filled.some((t) => t.i === onPlayer)) this.burnCaster(cast);
+      const caughtCaster = filled.some((t) => t.i === onPlayer);
 
       /**
-       * The volume LEAVES something behind, and that is also how the player finally
-       * gets to see where it went.
-       *
-       * Fire on the ground is the hazard `Roadmap/Burning_Ground.md` is about, but
-       * it is doing a second job here that is worth naming: a volume is invisible at
-       * the instant it goes off, so the burning tiles are the only readout of what
-       * the blast actually covered. Draw it before tuning it.
-       *
-       * Gust clears what it reaches, in full — the other half of the loop, and the
-       * reason gust is a volume at all.
+       * The fill is thrown AWAY from the caster, so an open room takes the whole
+       * volume down the room and never reaches back. What brings it back is the room
+       * running out of anywhere else to put it — a dead end, a doorway you are
+       * standing in, a corner you backed yourself into. That is the lever the phase
+       * exists for, and it is a fact about the geometry rather than a tax on casting
+       * fire at all: the player who gets burnt made a positioning mistake and can see
+       * which one. It can kill; the same rules as an enemy.
        */
-      if (cast.elements.includes('fire')) this.floor.ground.ignite(filled, FIRE_TURNS);
-      if (cast.elements.includes('gust')) this.floor.ground.extinguish(filled.map((t) => t.i));
+      if (leaves === 'fire' && caughtCaster) this.burnCaster(cast);
+
+      /**
+       * Gust CLEARS rather than covers — the other half of the loop, and the reason
+       * gust is a volume at all. Everything else pours itself onto the floor, where
+       * `Ground.pour` decides what a tile already holding something is left with.
+       */
+      if (leaves === 'gust') this.floor.ground.extinguish(filled.map((t) => t.i));
+      else if (leaves === 'fire') this.floor.ground.ignite(filled);
+      else this.floor.ground.spill(filled, leaves as 'oil' | 'water');
       this.syncGround();
     }
 
@@ -850,6 +851,42 @@ export class Combat {
   }
 
   /**
+   * A broken container empties onto the floor.
+   *
+   * A barrel is a barrel of SOMETHING, and until now destroying one made the
+   * something vanish — the object was a damage trigger with a flavour label. Now the
+   * contents pour out as a volume from where the barrel stood, which turns a
+   * container from a one-shot into a piece of terrain you placed: the oil is still
+   * there next round, and so is whatever you were planning to do to it.
+   *
+   * The nature comes from `harvestOf`, the same lookup the reaction table keys on, so
+   * an ale barrel and an oil drum spill by the same rule that decides what they
+   * answer to. Anything whose nature is not a liquid spills nothing; a statue is not
+   * full of statue.
+   *
+   * `Ground.pour` handles the meeting. Oil into fire goes up, water into fire is
+   * steam and leaves the tile bare — so shooting the water barrel beside a fire is a
+   * way to put it out that costs no turn, only foresight.
+   */
+  private spillContents(t: Entity): void {
+    if (t.kind !== 'prop' || t.animated) return;
+    const nature = harvestOf(t.spriteId);
+    if (nature !== 'oil' && nature !== 'water') return;
+
+    const g = this.floor.grid;
+    // Poured from the barrel outward with no directional bias: a container does not
+    // know which way it was hit, it just empties.
+    const tiles = g.fill(t.sprite.tx, t.sprite.ty, SPILL_VOLUME);
+    this.floor.ground.spill(tiles, nature);
+    this.syncGround();
+    this.onEvent({
+      kind: 'status',
+      text: nature === 'oil' ? 'THE OIL SPREADS!' : 'THE WATER SPREADS!',
+      colour: nature === 'oil' ? 0x6a5a3a : 0x5aa8d8,
+    });
+  }
+
+  /**
    * Remember that this KIND of creature answered that way.
    *
    * Keyed by sprite id, not by entity: the lesson is about bone hounds, and having
@@ -906,6 +943,7 @@ export class Combat {
     t.hostile = false;
     this.combatants.delete(t);
     this.onEvent({ kind: 'death', text: `${label(t)} falls.` });
+    this.spillContents(t);
 
     if (t.kind === 'boss') {
       this.bossDead = true;
@@ -1183,15 +1221,37 @@ export class Combat {
     const W = g.w;
     const dist = g.flood(tx, ty, 24, free);
 
+    /**
+     * ENEMIES AVOID FIRE, and this is the decision `Roadmap/Burning_Ground.md` asks
+     * to be made either way and recorded. They avoid it.
+     *
+     * A hazard only the player respects is a hazard that only punishes the player,
+     * and burning ground would otherwise be pure downside: the player pays to walk
+     * through their own fire while the room walks through it for free. Avoiding it
+     * is also what turns a volume into AREA DENIAL rather than damage-over-time — a
+     * burning doorway is worth casting because it makes the room go round.
+     *
+     * Weighted rather than forbidden. Treating fire as impassable would let a player
+     * seal a corridor and stand behind it untouchable, which is the corridor exploit
+     * this codebase has already fixed once (see `ENGAGE_RADIUS`); and a body with no
+     * legal step at all simply stops, which is the bug `stepToward` exists to fix. So
+     * a burning tile costs extra steps: a body walks round a fire when going round is
+     * comparable, and walks through it when the only other option is standing still.
+     */
+    const ground = this.floor.ground;
+    const cost = (nx: number, ny: number, d: number): number =>
+      d + (ground.burning(ny * W + nx) ? FIRE_DETOUR : 0);
+
     let best: [number, number] | null = null;
     let bestD = dist[sy * W + sx];
     if (bestD === -1) bestD = Infinity;
+    else bestD = cost(sx, sy, bestD);
     for (const [dx, dy] of DIR_VEC) {
       const nx = sx + dx, ny = sy + dy;
       if (!free(nx, ny)) continue;
       const d = dist[ny * W + nx];
       if (d === -1) continue;
-      if (d < bestD) { bestD = d; best = [nx, ny]; }
+      if (cost(nx, ny, d) < bestD) { bestD = cost(nx, ny, d); best = [nx, ny]; }
     }
     if (!best) return;
 
@@ -1256,7 +1316,7 @@ export class Combat {
 
   /** Push the ground layer at the thing that draws it. One truth, one direction. */
   private syncGround(): void {
-    this.floor.fireView.sync(this.floor.ground.flames(), this.floor.grid.w);
+    this.floor.fireView.sync(this.floor.ground.patches(), this.floor.grid.w);
   }
 
   private tickStatuses(): void {

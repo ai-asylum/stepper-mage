@@ -109,6 +109,27 @@ function viewFrom(e: Entity, cam: THREE.Vector3): [SpriteView, boolean] {
   return ['side', rel === 1];
 }
 
+/**
+ * Is this thing an OBJECT a spell can be aimed at — furniture rather than a body?
+ *
+ * One function because `main.ts` and `hud.ts` both need the answer and a comment in
+ * each asking them not to disagree is not a mechanism. They HAVE disagreed before:
+ * furniture was crossed out on the reticle and cast at happily by the rules, and
+ * object reactions make that gap load-bearing, because the barrel IS the target.
+ *
+ * A SPENT CHEST counts. Once its lid is open it has stopped being a container and
+ * become a wooden box standing in the room, which is exactly what every other prop
+ * is — and `docs/DESIGN.md` says every prop is a spell component. Excluding it made
+ * the one object the player had definitely noticed the one object they could not
+ * use. An unspent chest is excluded because tapping it opens it; that tap has a
+ * meaning already and a spell would be fighting it for the same gesture.
+ */
+export function isCastableObject(e: Entity): boolean {
+  if (e.animated) return false;
+  if (e.kind === 'prop') return true;
+  return e.kind === 'chest' && !!e.spent;
+}
+
 export class Floor {
   readonly grid: Grid;
   readonly view: DungeonView;

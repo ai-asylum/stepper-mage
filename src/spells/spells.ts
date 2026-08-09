@@ -60,6 +60,17 @@ export type Element =
  */
 export const VOLUME_ELEMENTS: ReadonlySet<Element> = new Set<Element>(['fire', 'gust']);
 
+/**
+ * The elements that LEAVE SOMETHING ON THE FLOOR, in the order a cast holding
+ * several of them resolves.
+ *
+ * Fire first because it is the one that reacts with the rest; gust before the
+ * liquids because a cast that both clears and pours is a cast that clears. A tile
+ * holds one substance, so a cast has to leave one thing, and this list is where that
+ * is decided rather than in whichever `if` happened to be written first.
+ */
+export const GROUND_ELEMENTS: readonly Element[] = ['fire', 'gust', 'oil', 'water'];
+
 /** Does this cast fill space, rather than reach a distance? */
 export function isVolume(elements: readonly Element[]): boolean {
   return elements.some((e) => VOLUME_ELEMENTS.has(e));

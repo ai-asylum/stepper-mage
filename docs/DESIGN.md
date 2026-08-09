@@ -95,7 +95,8 @@ Consequences, which are the rule and not decoration:
 - **Hand size 1 is the baseline the content is sized to** — not a tempo-neutral
   alternative to a bigger hand, which is what it was under the old rule. A hand of
   one is the weakest configuration in the game and it is meant to be: it is the floor
-  of the star tree's ladder, the acceptance criterion (`tools/fullrun.mjs --hand1`)
+  of the star tree's ladder, the acceptance criterion (once `tools/fullrun.mjs --hand1`,
+  deleted 2026-08-09 and judged by playing since)
   is that it can complete a full run, and every slot above it is a multiplier the
   player paid for. Measured, a hand of two takes a depth-5 room from 14.6 HP to 2.9.
 - **Indecision is free.** Draw a page, put it back, draw another, walk away holding

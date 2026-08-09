@@ -380,3 +380,33 @@ export const FIRE_TURNS = 8;
  * around it is a choice rather than a rule.
  */
 export const GROUND_FIRE_DOT = 2;
+
+/**
+ * How many rounds a spilled puddle lasts if nothing sets it off.
+ *
+ * Longer than a fire, because a puddle is not a threat — it is a piece of the room
+ * you positioned, and a trap that evaporates before you can spring it is not a trap.
+ * The asymmetry is the point: fire is urgent and oil is patient.
+ */
+export const SPILL_TURNS = 14;
+
+/**
+ * How many tiles a broken container empties over.
+ *
+ * Nine — the same as an empowered volume, which is deliberate: a barrel is worth
+ * about what a good cast is worth, and a player who has learnt to read volumes
+ * already knows what nine tiles looks like on the floor. Bigger made a single barrel
+ * decide a whole room; smaller and the puddle never reached anything worth reaching.
+ */
+export const SPILL_VOLUME = 9;
+
+/**
+ * How many extra steps a body will walk to keep out of a fire.
+ *
+ * Three, which makes a fire worth going round whenever going round is roughly as
+ * short — the common case in a room — and worth walking through when the detour is
+ * long or there is no detour at all. Deliberately finite: fire that was simply
+ * impassable would let the player seal a corridor and shoot from behind it, which is
+ * the same standing-in-a-corridor exploit `ENGAGE_RADIUS` was raised to close.
+ */
+export const FIRE_DETOUR = 3;
