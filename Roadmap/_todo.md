@@ -179,3 +179,46 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Step the torch sconce's resolution; it is the last thing in the world drawn at 144.
       `buildSconce` uses absolute 144-space texel offsets, so it needs rewriting per step.
 - [ ] Commit changes.
+
+## Phase 15 — Sight_And_Reach
+
+- [ ] Re-cull after every enemy round so a body that moves into view is drawn.
+- [ ] Gate splash, arcs and object reactions on line of sight from the blast centre.
+- [ ] Show hostiles within reach on the minimap whether or not they are in sight.
+- [ ] Give the threat telegraph a direction, reusing the damage chevrons.
+- [ ] Retune the balance and the acceptance gate against the shorter effective reach.
+- [ ] Commit changes.
+
+## Phase 16 — Elemental_Spread
+
+- [ ] Measure, per floor, how many creatures each element beats.
+- [ ] Reassign affinities per floor so no floor is solvable with one element.
+- [ ] Spread every floor across at least three pages; fix floor 3's four-of-four fire.
+- [ ] Look at the cast readout, discovery banner and nameplate marks at 375px.
+- [ ] Retune the gate and the `mixed` policy's page choice against the new table.
+- [ ] Commit changes.
+
+## Phase 17 — Dungeon_Shape
+
+- [ ] Spawn bosses at the centre of their room so they cannot wedge behind furniture.
+- [ ] Move the way down to the boss's position when it dies.
+- [ ] Keep the stairs off the minimap until the boss falls.
+- [ ] Verify descending both by walking in and by tapping.
+- [ ] Commit changes.
+
+## Phase 18 — First_Minutes
+
+- [ ] Lock the world to 72 texels and delete the chip, the setting and its harness.
+- [ ] Stop the camera changing pitch when the grimoire rises.
+- [ ] Hide the empty hand slots while the book plays its intro.
+- [ ] Add a movement hint that clears on the first step and never returns.
+- [ ] Trim the playable bundle to the one roster it now needs.
+- [ ] Commit changes.
+
+## Phase 19 — Altar_Screen
+
+- [ ] Lay the three offers out as columns, left to right.
+- [ ] Draw a spell offer as a spell-book page at card size.
+- [ ] Draw a non-spell offer as a scroll in the same pixel-art hand.
+- [ ] Add a gold treatment to the page face and use it wherever a golden page is drawn.
+- [ ] Commit changes.
