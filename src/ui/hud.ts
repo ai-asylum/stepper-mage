@@ -266,6 +266,14 @@ export class Hud {
   private hitFxSeed = 0;
   /** Reused low-res buffer the strike is composed in. */
   private fxBuf: HTMLCanvasElement | null = null;
+  /**
+   * How hard you were hit from each side, relative to your FACING — index 0 ahead,
+   * 1 right, 2 behind, 3 left. Each decays on its own clock, so two attackers on
+   * two sides light two chevrons and the harder one stays up longer.
+   */
+  private hurtFrom = [0, 0, 0, 0];
+  /** Reused low-res buffer the chevrons are composed in. */
+  private hurtBuf: HTMLCanvasElement | null = null;
   private descendReady = false;
   /**
    * Mirrors `Book.closed`, for LAYOUT only — everything in the bottom band is placed
@@ -489,6 +497,11 @@ export class Hud {
     // Faster than the flash. The strike is the READ — what hit me — and it wants to
     // be gone before the next round so it never overlaps the next one's telegraph.
     if (this.hitFxT > 0) this.hitFxT = Math.max(0, this.hitFxT - dt * 2.8);
+    // Slower than the strike. This is the one the player may need to act on — the
+    // strike says "ow", this says "turn round" — so it outlives the frame it fired in.
+    for (let i = 0; i < 4; i++) {
+      if (this.hurtFrom[i] > 0) this.hurtFrom[i] = Math.max(0, this.hurtFrom[i] - dt * 0.85);
+    }
     this.engine.setFlash(this.hurtFlash * 0.42, 0xd82f2f);
     // drop a dead target
     if (this.target && !this.target.alive) this.target = null;
@@ -540,6 +553,7 @@ export class Hud {
     this.drawLog(ctx, W);
     this.drawVitals(ctx, W);
     this.drawHitFx(ctx, W, H);
+    this.drawHurtFrom(ctx, W, H);
     this.drawHand(ctx);
     this.drawPin(ctx);
     this.drawParty(ctx, W);
@@ -1718,6 +1732,127 @@ export class Hud {
     });
     ctx.globalAlpha = 1;
     ctx.textAlign = 'left';
+  }
+
+  /**
+   * Record a hit from a side, relative to the way the player is facing.
+   *
+   * `amount` only sets how LOUD it is, never how long: a scratch and a maul both
+   * need to stay up long enough to be turned toward, and a big hit that vanished
+   * as fast as a small one would be the wrong way round.
+   */
+  /** Which sides are lit right now, and whether a strike is playing — harness only. */
+  hurtSides(): number[] {
+    return this.hurtFrom.map((v, i) => (v > 0 ? i : -1)).filter((i) => i >= 0);
+  }
+
+  strikePlaying(): boolean { return this.hitFxT > 0 && !!this.hitFx; }
+
+  clearHurtFrom(): void {
+    this.hurtFrom = [0, 0, 0, 0];
+    this.hitFxT = 0;
+    this.hitFx = null;
+  }
+
+  damageFrom(side: number, amount: number): void {
+    const i = ((side % 4) + 4) % 4;
+    this.hurtFrom[i] = Math.max(this.hurtFrom[i], 0.55 + Math.min(0.45, amount / 22));
+  }
+
+  /**
+   * WHERE IT CAME FROM. Four chevrons around the world view, one per side.
+   *
+   * The research is unambiguous on two points and this follows both.
+   *
+   * FIRST, use two signals, not one. Playtesting reported by Jasper Stephenson's UX
+   * analysis found half of testers missed a centre-screen damage cue and half missed
+   * a screen-edge one — different halves. So this is the edge half and the existing
+   * full-screen red flash is the centre half, and neither is asked to work alone.
+   *
+   * SECOND, do not spend the direction on colour. Every accessibility guideline
+   * says the same thing and it costs nothing here: a chevron POINTING outward says
+   * which way on its own, so the red is emphasis rather than information.
+   *
+   * The 2D-around-the-centre form is the one that analysis rates highest and
+   * Destiny 2's world-space markers lowest, because a flat ring is read without
+   * being interpreted. This game gets that for free and then some: it is a grid
+   * stepper, so there are only ever FOUR directions a blow can come from, and four
+   * discrete chevrons are unambiguous where a continuous arc has to be estimated.
+   *
+   * Two placement decisions are this game's own. They sit around the WORLD view
+   * rather than the screen, because the bottom third of the screen is the grimoire
+   * and an indicator behind it does not exist. And they are drawn into the same
+   * low-res buffer as the strike, because a smooth vector arc over pixel-art stone
+   * is the thing that keeps getting pulled out of this game.
+   */
+  private drawHurtFrom(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    if (!this.hurtFrom.some((v) => v > 0)) return;
+    const top = 46;
+    // Clamped to the VIEWPORT as well as to the book. `bookTop` is the book's real
+    // measured edge and sits below the screen while the book is down — which is most
+    // of the time, since it only rises for a selected target — so trusting it alone
+    // put the "behind" chevron off the bottom of the phone, which is precisely the
+    // one direction the player cannot otherwise see.
+    const bot = Math.min(H - 26, Math.max(top + 80, this.bookTop - 10));
+    const cx = W / 2, cy = (top + bot) / 2;
+    const rx = W * 0.42, ry = (bot - top) * 0.44;
+
+    // Same low-res buffer treatment as the strike: composed at about a sixth scale
+    // and blitted with smoothing off, so the chevrons are built out of the same size
+    // of block as the stone behind them.
+    // Four, not the strike's six. A chevron has to keep a POINT to say which way it
+    // means, and at a sixth scale the sideways ones lost theirs and read as bars.
+    const S = 4;
+    const bw = Math.max(24, Math.round(W / S)), bh = Math.max(24, Math.round(H / S));
+    if (!this.hurtBuf) this.hurtBuf = document.createElement('canvas');
+    const buf = this.hurtBuf;
+    if (buf.width !== bw || buf.height !== bh) { buf.width = bw; buf.height = bh; }
+    const b = buf.getContext('2d')!;
+    b.clearRect(0, 0, bw, bh);
+
+    for (let i = 0; i < 4; i++) {
+      const v = this.hurtFrom[i];
+      if (v <= 0) continue;
+      // Fresh hits flash; the tail is steady so it can be read rather than chased.
+      const flash = v > 0.8 ? 0.7 + Math.sin(this.engine.time * 30) * 0.3 : 1;
+      b.globalAlpha = Math.min(1, v * 1.15) * flash;
+      b.fillStyle = '#ff3a2a';
+      b.strokeStyle = 'rgba(20,8,10,0.9)';
+      b.lineWidth = 0.6;
+
+      // Size carries how hard it was, which is the other thing the analysis singles
+      // out — Overwatch scales the indicator by the hit rather than only fading it.
+      const k = 0.7 + v * 0.5;
+      // Deep relative to its span, so the point is unmistakable at this size.
+      const half = (30 * k) / S, depth = (24 * k) / S;
+      // 0 ahead, 1 right, 2 behind, 3 left — then the chevron points AWAY from the
+      // middle, so it reads as "from over there" and not "go this way".
+      const ax = (i === 1 ? cx + rx : i === 3 ? cx - rx : cx) / S;
+      const ay = (i === 0 ? cy - ry : i === 2 ? cy + ry : cy) / S;
+      const horizontal = i === 1 || i === 3;
+      const out = i === 1 || i === 2 ? 1 : -1;
+
+      b.beginPath();
+      if (horizontal) {
+        b.moveTo(ax + depth * out, ay);
+        b.lineTo(ax - depth * out * 0.4, ay - half);
+        b.lineTo(ax - depth * out * 0.05, ay);
+        b.lineTo(ax - depth * out * 0.4, ay + half);
+      } else {
+        b.moveTo(ax, ay + depth * out);
+        b.lineTo(ax - half, ay - depth * out * 0.4);
+        b.lineTo(ax, ay - depth * out * 0.05);
+        b.lineTo(ax + half, ay - depth * out * 0.4);
+      }
+      b.closePath();
+      b.fill();
+      b.stroke();
+    }
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(buf, 0, 0, bw, bh, 0, 0, W, H);
+    ctx.restore();
   }
 
   /**

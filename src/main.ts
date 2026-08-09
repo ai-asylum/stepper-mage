@@ -1522,8 +1522,29 @@ async function boot(): Promise<void> {
       hud.addLog(ev.text, ev.colour ?? 0xd8c9a0);
     };
 
-    combat.onPlayerHurt = (_amount, by) => {
-      hud.playerHurt(by ? hitFxFor(by.spriteId) : null);
+    combat.onPlayerHurt = (amount, by) => {
+      /**
+       * The STRIKE only plays for something you are looking at.
+       *
+       * A claw rake across the screen is a first-person shot of the thing hitting
+       * you, and playing it for a creature behind you shows a blow that is not in
+       * frame — the effect claims to be the world and is not. So it is gated on the
+       * attacker being directly ahead AND visible, which is the same pair of
+       * questions the renderer asks before drawing the creature at all.
+       *
+       * The DIRECTION is reported for every hit regardless, because the case the
+       * strike cannot cover is exactly the case the player most needs told about.
+       */
+      const ahead = !!by && directlyAhead(by)
+        && floor.visible.has(floor.grid.idx(by.sprite.tx, by.sprite.ty));
+      hud.playerHurt(ahead && by ? hitFxFor(by.spriteId) : null);
+      if (by) {
+        // Relative to the way the player is FACING, not to the compass: the screen
+        // is the player's frame of reference and north means nothing to it.
+        const dx = by.sprite.tx - stepper.x, dy = by.sprite.ty - stepper.y;
+        const world = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
+        hud.damageFrom((world - stepper.dir + 4) % 4, amount);
+      }
       fx.shake = Math.min(1.3, fx.shake + 0.5);
     };
 

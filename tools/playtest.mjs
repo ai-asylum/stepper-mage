@@ -400,6 +400,61 @@ check('nothing resists without also being weak to something',
 check('nothing is known before anything is hit', aff.loreBefore === null,
   JSON.stringify(aff.loreBefore));
 
+console.log('\n=== 3h. you are told which side the blow came from ===');
+/**
+ * The strike VFX only plays for an attacker you are LOOKING at, so the direction
+ * indicator is the only thing covering the case that matters most — hit from behind
+ * by something off the edge of the screen. It therefore has to fire every time,
+ * whichever way the player is turned.
+ */
+const dmg = await ev(async () => {
+  const g = window.__game;
+  const grid = g.floor.grid;
+  const dirs = [[0, 0, 1], [1, -1, 0], [2, 0, -1], [3, 1, 0]];
+  const home = { x: g.stepper.x, y: g.stepper.y, dir: g.stepper.dir };
+  const e = g.floor.entities.find((x) => x.alive && x.hostile);
+  if (!e) return null;
+  const out = [];
+  // More than one hostile can be in reach, and each lights its own side, so the
+  // check is against every attacker that could actually have swung — not against an
+  // assumption that there is only ever one.
+  const sideOf = (h) => {
+    const dx = h.sprite.tx - g.stepper.x, dy = h.sprite.ty - g.stepper.y;
+    const w = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
+    return (w - g.stepper.dir + 4) % 4;
+  };
+  for (const [d, dx, dy] of dirs) {
+    const px = e.sprite.tx + dx, py = e.sprite.ty + dy;
+    if (!grid.walkable(px, py) || g.floor.solidAt(px, py)) continue;
+    for (let face = 0; face < 4; face++) {
+      g.place(px, py, face);
+      g.hud.clearHurtFrom();
+      await g.combat.playerStepped(px, py);
+      const swingers = g.floor.entities.filter((h) => h.alive && h.hostile
+        && Math.abs(h.sprite.tx - g.stepper.x) + Math.abs(h.sprite.ty - g.stepper.y) <= 1);
+      out.push({
+        facing: face,
+        lit: g.hud.hurtSides(),
+        expected: [...new Set(swingers.map(sideOf))].sort(),
+        aheadSwinger: swingers.some((h) => sideOf(h) === 0),
+        strike: g.hud.strikePlaying(),
+      });
+    }
+    break;
+  }
+  g.place(home.x, home.y, home.dir);
+  return out;
+});
+console.log(dmg);
+check('a hit always lights a side', !!dmg && dmg.every((r) => r.lit.length > 0),
+  JSON.stringify(dmg));
+check('every lit side has a real attacker on it',
+  !!dmg && dmg.every((r) => r.lit.every((i) => r.expected.includes(i))), JSON.stringify(dmg));
+check('the side is relative to facing, so all four get used',
+  !!dmg && new Set(dmg.flatMap((r) => r.lit)).size === 4, JSON.stringify(dmg));
+check('the strike never plays without an attacker in front',
+  !!dmg && dmg.every((r) => !r.strike || r.aheadSwinger), JSON.stringify(dmg));
+
 console.log('\n=== 4. one cast, one turn: Fireball on the furniture ===');
 const solo = await ev(async () => {
   const g = window.__game;

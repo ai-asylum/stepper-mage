@@ -130,6 +130,12 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Teach a creature's element by fighting it, without a tooltip.
 - [x] Commit changes.
 
+### Post-review fixes (Run 1)
+
+- [x] Play the attack strike only for an attacker directly ahead and visible.
+- [x] Add a directional damage indicator, researched against how other games do it.
+- [x] Commit changes.
+
 ## Phase 10 — Corpse_Raising_And_Golem_Persistence
 
 - [ ] Carry the nearest surviving golem through the stairs when the node is owned.
