@@ -455,6 +455,29 @@ check('the side is relative to facing, so all four get used',
 check('the strike never plays without an attacker in front',
   !!dmg && dmg.every((r) => !r.strike || r.aheadSwinger), JSON.stringify(dmg));
 
+console.log('\n=== 3i. no attack effect is too dark to see ===');
+/**
+ * The effect is drawn over a dungeon that is almost entirely dark brown, lit by one
+ * torch. A dark effect there is not subtle, it is invisible — the ink wretch shipped
+ * a near-black slash nobody could see had happened. This is the rule made a test, so
+ * the next creature added cannot quietly reintroduce it.
+ */
+const fxlum = await ev(async () => {
+  const m = await import('/src/game/hitfx.ts');
+  const all = m.allHitFx();
+  return {
+    count: all.length,
+    floor: m.MIN_FX_LUMA,
+    dark: all.filter((f) => m.fxLuma(f.colour) < m.MIN_FX_LUMA)
+      .map((f) => `#${f.colour.toString(16)}`),
+    kinds: [...new Set(all.map((f) => f.kind))].sort(),
+  };
+});
+console.log(fxlum);
+check('every attack effect clears the brightness floor', fxlum.dark.length === 0,
+  fxlum.dark.join(','));
+check('all three effect kinds are in use', fxlum.kinds.length === 3, fxlum.kinds.join(','));
+
 console.log('\n=== 4. one cast, one turn: Fireball on the furniture ===');
 const solo = await ev(async () => {
   const g = window.__game;

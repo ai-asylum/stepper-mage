@@ -18,9 +18,35 @@
  * twenty things to tell apart at a glance during a fight, and the read the player
  * needs is coarse: was that a swipe, a blast, or something that reached me. The
  * COLOUR carries the rest and is per creature.
+ *
+ * ## Every colour here is BRIGHT, and that is a rule
+ *
+ * The effect is drawn over a dungeon that is almost entirely dark brown, in a room
+ * lit by one torch. A dark effect on a dark room is not subtle, it is invisible: the
+ * ink wretch's first colour was #2b3f46 at luminance 58, a near-black slash nobody
+ * could see it had happened.
+ *
+ * So a creature's fx colour is NOT its body colour. It is the brightest thing about
+ * that creature — the ink wretch's teal highlights rather than its black ink, the
+ * cleaver skeleton's bone rather than its filthy apron. `MIN_FX_LUMA` is the floor
+ * and a harness check holds every entry above it, because "make sure none of the
+ * VFX are dark" is a rule that only stays true if something enforces it.
  */
 
 export type HitFxKind = 'rake' | 'burst' | 'lash';
+
+/**
+ * The luminance an fx colour must clear, on the usual 0-255 perceptual weighting.
+ *
+ * 150 is not arbitrary: it is above every wall tone the game draws, so an effect at
+ * this floor separates from the stone in the darkest room on the darkest floor.
+ */
+export const MIN_FX_LUMA = 150;
+
+/** Perceptual brightness of a packed RGB, for the floor above. */
+export function fxLuma(rgb: number): number {
+  return 0.299 * ((rgb >> 16) & 255) + 0.587 * ((rgb >> 8) & 255) + 0.114 * (rgb & 255);
+}
 
 export interface HitFx {
   kind: HitFxKind;
@@ -35,27 +61,28 @@ export interface HitFx {
  */
 const FX: Record<string, HitFx> = {
   // I — the library. Paper, ink and candle-flame.
-  f1_enemy_ink: { kind: 'lash', colour: 0x2b3f46 },
+  // Teal, not ink-black: the fx takes a creature's BRIGHTEST note, not its body.
+  f1_enemy_ink: { kind: 'lash', colour: 0x6fe4d8 },
   f1_enemy_moth: { kind: 'burst', colour: 0xf5b83c },
   f1_enemy_wraith: { kind: 'burst', colour: 0xd8caa8 },
-  f1_boss: { kind: 'burst', colour: 0x9a5fc4 },
+  f1_boss: { kind: 'burst', colour: 0xcf94ff },
 
   // II — the kitchens. Cleavers, grease and bone.
   f2_enemy_cleaver: { kind: 'rake', colour: 0xc7c0a8 },
   f2_enemy_imp: { kind: 'burst', colour: 0xd8a53a },
   f2_enemy_hound: { kind: 'rake', colour: 0xe0d6b4 },
-  f2_boss: { kind: 'rake', colour: 0xc44a3a },
+  f2_boss: { kind: 'rake', colour: 0xff7a5c },
 
   // III — the fungal deep. Spores, thorns and threads.
   f3_enemy_hulk: { kind: 'burst', colour: 0x8fbf5a },
-  f3_enemy_creeper: { kind: 'lash', colour: 0x7a6a3a },
+  f3_enemy_creeper: { kind: 'lash', colour: 0xd6bf62 },
   f3_enemy_priest: { kind: 'lash', colour: 0xd8e8c0 },
   f3_boss: { kind: 'burst', colour: 0xb98cff },
 
   // IV — the foundry. Everything here is vented, thrown or driven.
   f4_enemy_slag: { kind: 'burst', colour: 0xff8a3a },
   f4_enemy_bellows: { kind: 'burst', colour: 0xffb23a },
-  f4_enemy_wasp: { kind: 'rake', colour: 0xff6a2a },
+  f4_enemy_wasp: { kind: 'rake', colour: 0xff9a4a },
   f4_boss: { kind: 'burst', colour: 0xffd08a },
 
   // V — the observatory. Starlight and glass.
@@ -65,7 +92,12 @@ const FX: Record<string, HitFx> = {
   f5_boss: { kind: 'burst', colour: 0xffd76a },
 };
 
-const FALLBACK: HitFx = { kind: 'rake', colour: 0xd8452f };
+const FALLBACK: HitFx = { kind: 'rake', colour: 0xff7a60 };
+
+/** Every entry, for the harness that holds the brightness floor. */
+export function allHitFx(): HitFx[] {
+  return [...Object.values(FX), FALLBACK];
+}
 
 export function hitFxFor(spriteId: string): HitFx {
   return FX[spriteId] ?? FALLBACK;

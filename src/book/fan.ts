@@ -104,8 +104,18 @@ export class Fan {
     goldenSparkle(wp, 10, 0.14, 0.028);
   }
 
-  /** Fan slot transform for page i of n. */
-  private slot(i: number, n: number): { pos: THREE.Vector3; rotZ: number } {
+  /**
+   * How many slots the fan lays out, whether or not they are filled.
+   *
+   * Set from hand size. The fan used to lay out against the number of cards HELD, so
+   * one card of two sat dead centre and the second appeared by pushing the first
+   * aside. Slots are fixed places now and cards fill them left to right, which is
+   * the only way an empty slot can be drawn in the position its card will occupy.
+   */
+  capacity = 1;
+
+  /** Fan slot transform for page i of n. PUBLIC so the empty slots share it. */
+  slot(i: number, n: number): { pos: THREE.Vector3; rotZ: number } {
     const c = (n - 1) / 2;
     const off = i - c;
     return {
@@ -193,7 +203,7 @@ export class Fan {
       p.born = Math.min(FLY_DUR, p.born + dt);
       const k = clamp01(p.born / FLY_DUR);
       const e = easeOutBack(k);
-      const s = this.slot(i, n);
+      const s = this.slot(i, Math.max(this.capacity, n));
       // hover life once landed
       const hoverY = Math.sin(t * 1.9 + p.phase) * 0.004 * k;
       const hoverR = Math.sin(t * 1.4 + p.phase * 2) * 0.03 * k;

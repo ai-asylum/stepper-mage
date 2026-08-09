@@ -24,6 +24,8 @@ import type { BeltSlot } from '../spells/belt';
 import { drawBeltIcon } from './beltIcons';
 import { BELT_ENABLED } from '../flags';
 import type { HitFx } from '../game/hitfx';
+import { Pix, hex } from '../art/pixel';
+import { drawCentered, CELL_H } from '../art/bitfont';
 import * as THREE from 'three';
 import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
 import { spriteTexture } from '../dungeon/sprites';
@@ -250,6 +252,40 @@ export class Hud {
   threats: ReadonlySet<Entity> = new Set();
   /** What the run has learned about a creature, bound from `Combat`. */
   loreFor: ((spriteId: string) => { weak: boolean; resist: boolean } | null) | null = null;
+  /** What the run knows about one species against one element, bound from `Combat`. */
+  knownFor: ((spriteId: string, element: string) => string | null) | null = null;
+  /**
+   * A discovery to announce, and its clock. One at a time: two banners at once is
+   * two things to read in a fight where there was already too much to read.
+   */
+  private discovery: { text: string; colour: number } | null = null;
+  private discoveryT = 0;
+
+  /**
+   * How the hand in front of you lands on the creature you have selected.
+   *
+   * `null` when there is nothing to say — no target, no hand, or a target with no
+   * affinities at all. `???` when ANY element in the hand is untested on this
+   * species: a partly-known cast is an unknown cast, and claiming otherwise would be
+   * the one thing this readout must never do.
+   */
+  castEffect(): { label: string; colour: number } | null {
+    const t = this.target;
+    if (!t || !this.knownFor) return null;
+    const cast = this.currentCast();
+    if (!cast || cast.refusal || !cast.elements.length || cast.damage <= 0) return null;
+    const seen = cast.elements.map((el) => this.knownFor!(t.spriteId, el));
+    if (seen.some((k) => k === null)) return { label: '???', colour: 0x9a8f80 };
+    if (seen.includes('weak')) return { label: 'EFFECTIVE', colour: 0xffd166 };
+    if (seen.every((k) => k === 'resist')) return { label: 'RESISTED', colour: 0x8aa0b8 };
+    return { label: 'NORMAL', colour: 0xb9a88a };
+  }
+
+  /** Announce a newly discovered matchup. Called from `Combat.onDiscover`. */
+  discovered(text: string, colour: number): void {
+    this.discovery = { text, colour };
+    this.discoveryT = 1;
+  }
   /** Page ids currently torn out — decides which candidates are highlighted. */
   tornIds: string[] = [];
 
@@ -364,6 +400,11 @@ export class Hud {
    * cannot be taken back, so it must not look tappable.
    */
   handCards: HandCard[] = [];
+  /**
+   * The slots the hand has NOT filled, projected from the same fan transform the
+   * real cards are. See `drawEmptySlots` for why they cannot be laid out here.
+   */
+  emptySlots: HandCard[] = [];
 
   /**
    * Does this body belong on the minimap right now?
@@ -502,6 +543,9 @@ export class Hud {
     for (let i = 0; i < 4; i++) {
       if (this.hurtFrom[i] > 0) this.hurtFrom[i] = Math.max(0, this.hurtFrom[i] - dt * 0.85);
     }
+    // Slow. This is the only moment in the loop that is worth stopping for, and the
+    // complaint that started it was that everything flashes past too fast to read.
+    if (this.discoveryT > 0) this.discoveryT = Math.max(0, this.discoveryT - dt * 0.34);
     this.engine.setFlash(this.hurtFlash * 0.42, 0xd82f2f);
     // drop a dead target
     if (this.target && !this.target.alive) this.target = null;
@@ -547,6 +591,7 @@ export class Hud {
     this.drawBelt(ctx, W);
     // Before the CAST bar, so that where a card's box and the bar's touch, CAST wins:
     // `hit` scans backwards, so whatever is pushed last is on top.
+    this.drawEmptySlots(ctx, W);
     this.drawFanCards(ctx, W);
     this.drawCastBar(ctx, W);
     this.drawBigCast(ctx, W);
@@ -554,6 +599,7 @@ export class Hud {
     this.drawVitals(ctx, W);
     this.drawHitFx(ctx, W, H);
     this.drawHurtFrom(ctx, W, H);
+    this.drawDiscovery(ctx, W);
     this.drawHand(ctx);
     this.drawPin(ctx);
     this.drawParty(ctx, W);
@@ -814,6 +860,27 @@ export class Hud {
       ctx.globalAlpha = 1;
       ctx.textAlign = 'left';
     }
+    /**
+     * THE STAIRS ARE TAPPABLE, and they were not.
+     *
+     * They are not a `candidate` — `targetsInView` answers "what can I aim a spell
+     * at", and a staircase is not that — so nothing above ever gave them a hit box
+     * and tapping the door did nothing at all. Pushed here rather than by making
+     * them targetable, because targetable is exactly what they must not be:
+     * selecting a staircase would open the grimoire at it.
+     */
+    if (this.descendReady) {
+      const st = this.map?.().floor.entities.find((e) => e.kind === 'stairs');
+      if (st?.sprite.group.visible) {
+        const box = st.sprite.screenBox(project);
+        if (box) {
+          this.hits.push({
+            rect: [box.x - 8, box.y - 8, box.w + 16, box.h + 16],
+            action: { kind: 'descend' },
+          });
+        }
+      }
+    }
   }
 
   private drawTopBar(ctx: CanvasRenderingContext2D, W: number): void {
@@ -1060,45 +1127,47 @@ export class Hud {
         ? 'Tap an object (violet ring) to animate it'
         : 'No object in sight — find furniture to animate';
     }
-    const label = ok ? `${cast.name}  ·  CAST` : hint;
-    ctx.font = ok ? 'bold 13px ui-monospace, monospace' : '9.5px ui-monospace, monospace';
-    const tw = Math.min(W - 32, ctx.measureText(label).width + 44);
-    // Directly beneath the torn pages: the button is the end of the gesture
-    // chain, so it sits tight under the hand you just assembled rather than
-    // floating in its own band.
-    // Clear of the chapter tabs, which poke up past the book's top edge — and now
-    // clear of the belt strip too, which took the 33px immediately above that edge.
-    // `BELT_BAND` is what the two agree on, so neither can drift into the other.
-    const bx = (W - tw) / 2, by = this.bookTop - BELT_BAND - 34;
-    rr(ctx, bx, by, tw, 32, 16);
-    ctx.fillStyle = ok ? 'rgba(28,18,12,0.9)' : 'rgba(70,26,26,0.86)';
-    ctx.fill();
-    ctx.strokeStyle = ok ? hexCss(cast.colour, 0.95) : 'rgba(255,120,120,0.7)';
-    ctx.lineWidth = 1.6;
-    ctx.stroke();
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = ok ? '#fff6df' : '#ffb0a0';
-    ctx.fillText(label, W / 2, by + 16.5);
-    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    if (ok) this.hits.push({ rect: [bx, by, tw, 32], action: { kind: 'cast' } });
+    if (!ok) {
+      // A refusal is a sentence, not a button. It keeps the plain pill.
+      ctx.font = '9.5px ui-monospace, monospace';
+      const tw = Math.min(W - 32, ctx.measureText(hint).width + 44);
+      const bx = (W - tw) / 2, by = this.bookTop - BELT_BAND - 34;
+      rr(ctx, bx, by, tw, 32, 16);
+      ctx.fillStyle = 'rgba(64,24,24,0.92)';
+      ctx.fill();
+      rr(ctx, bx, by, tw, 32, 16);
+      ctx.strokeStyle = 'rgba(255,120,120,0.7)';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffb0a0';
+      ctx.fillText(hint, W / 2, by + 16);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      return;
+    }
+
+    /**
+     * NAME ON TOP, BUTTON UNDER. They used to be one pill reading "Gust · CAST",
+     * which asks the player to read a label and press a label in the same glance —
+     * and the thing you press was the same size as the thing you read.
+     */
+    const scale = 3;
+    const btnW = Math.min(W - 72, 176);
+    // Anchored to the same edge the pill was, so nothing else in the band moves.
+    // Lifted clear of the book. At `- 34` the key's bottom edge landed exactly on
+    // the grimoire's top and read as one welded object rather than a control.
+    const by = this.bookTop - BELT_BAND - 84;
+    // Stack: heading, then the key. `by` is the TOP of the group, and the button's
+    // height is derived rather than assumed so the two cannot drift apart.
+    this.drawCastHeading(ctx, W / 2, by + 10, cast.name.toUpperCase(), cast.colour);
+    const btn = this.castButton(ctx, W / 2, by + 24, btnW, scale);
+    this.hits.push({ rect: [btn.x, btn.y, btn.w, btn.h], action: { kind: 'cast' } });
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
   }
 
-  /**
-   * The LARGE CAST, in the space the grimoire just left.
-   *
-   * A full hand can do exactly two things — release it or put a card back — so the
-   * book has nothing left to offer and the one remaining verb gets the whole of its
-   * footprint. Placed against the screen rather than against `bookTop`, deliberately:
-   * `bookTop` collapses to 0.90H while the book is away, and a button laid out off it
-   * would sit in the last few pixels of the frame instead of where the cover was.
-   *
-   * It NAMES what it will cast, from the same `currentCast()` the small pill reads, and
-   * when the hand cannot legally cast it says so instead and takes no hit region at
-   * all — a button this size that swallows a tap is worse than one that is not there.
-   * The ✕ line under it is the other half of that: at hand size 1 the book is away
-   * after every single tear, so putting the page back is the commonest thing a player
-   * needs from this state and it must not be a badge they have to find.
-   */
   private drawBigCast(ctx: CanvasRenderingContext2D, W: number): void {
     if (!this.handFull() || this.offers) return;
     const cast = this.currentCast();
@@ -1107,34 +1176,43 @@ export class Hud {
 
     // `bookTop` IS this button's top while the hand is full — see `draw`. One number,
     // so the band above cannot be laid out against a different edge than this occupies.
-    const bw = Math.min(W - 32, 420), bh = 76;
+    // Tall enough to HOLD the stack. It was 76 with a 68px button pushed into it,
+    // so the key hung out of the bottom of its own panel and over the hint under it.
+    const bw = Math.min(W - 32, 420), bh = 92;
     const bx = (W - bw) / 2, by = this.bookTop;
-    const pulse = 0.72 + Math.sin(this.engine.time * 3.2) * 0.22;
-
-    ctx.save();
-    if (ok) {
-      ctx.shadowColor = hexCss(cast.colour, 0.35 + pulse * 0.3);
-      ctx.shadowBlur = 10 + pulse * 12;
+    /**
+     * NO PANEL when the cast is legal. The name and the key carry themselves — the
+     * key is already a raised gold object with its own keyline — and a rounded pill
+     * around them boxed a pixel-art button inside a piece of vector chrome.
+     *
+     * The refusal still gets one, because a refusal is a sentence and a sentence off
+     * a dark dungeon floor needs something to sit on.
+     */
+    if (!ok) {
+      rr(ctx, bx, by, bw, bh, 20);
+      ctx.fillStyle = 'rgba(64,24,24,0.92)';
+      ctx.fill();
+      rr(ctx, bx, by, bw, bh, 20);
+      ctx.strokeStyle = 'rgba(255,120,120,0.7)';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
     }
-    rr(ctx, bx, by, bw, bh, 20);
-    ctx.fillStyle = ok ? 'rgba(28,18,12,0.94)' : 'rgba(64,24,24,0.92)';
-    ctx.fill();
-    ctx.restore();
-    rr(ctx, bx, by, bw, bh, 20);
-    ctx.strokeStyle = ok ? hexCss(cast.colour, 0.95) : 'rgba(255,120,120,0.7)';
-    ctx.lineWidth = ok ? 2.2 : 1.6;
-    ctx.stroke();
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     if (ok) {
-      ctx.font = 'bold 26px ui-monospace, monospace';
-      ctx.fillStyle = '#fff6df';
-      ctx.fillText('CAST', W / 2, by + 30);
-      ctx.font = '10px ui-monospace, monospace';
-      ctx.fillStyle = hexCss(cast.colour);
-      ctx.fillText(cast.name.toUpperCase(), W / 2, by + 56);
-      this.hits.push({ rect: [bx, by, bw, bh], action: { kind: 'cast' } });
+      /**
+       * Same stack as the small control — what it IS on top, what you PRESS beneath.
+       *
+       * The chip is the one place in the loop the player is already looking at while
+       * the decision is still reversible. WEAK!/RESISTED prints at the moment of
+       * impact, which is after the choice and among the damage number, the screen
+       * flash and the shake: accurate, and unreadable.
+       */
+      this.drawCastHeading(ctx, W / 2, by + 14, cast.name.toUpperCase(), cast.colour);
+      // Bigger than the small one — this is the whole turn, and the book is gone.
+      const btn = this.castButton(ctx, W / 2, by + 30, Math.min(bw - 56, 248), 3);
+      this.hits.push({ rect: [btn.x, btn.y, btn.w, btn.h], action: { kind: 'cast' } });
     } else {
       ctx.font = 'bold 13px ui-monospace, monospace';
       ctx.fillStyle = '#ffb0a0';
@@ -1208,6 +1286,64 @@ export class Hud {
    * that cannot be misread as "cast this one", which is the misreading that would
    * cost the player a hand.
    */
+  /**
+   * EMPTY SPELL SLOTS, and what to do about them.
+   *
+   * With nothing torn, the band above the grimoire was blank — so a player who does
+   * not already know that pages are torn OUT and held has no way to find out. The
+   * book is open and beautiful and reads as scenery.
+   *
+   * The boxes come from `main`, projected from the FAN'S OWN slot transform, which
+   * is the same function that places the real cards. That matters and the first
+   * version got it wrong: it laid the outlines out independently in screen pixels,
+   * so an outline was not where its card would land and putting a card in made the
+   * row jump. One source of truth for the row, or the two disagree the instant
+   * anything fills.
+   *
+   * Only the unfilled ones are ever in the list, so a filled slot never gets a box
+   * drawn behind the card standing in it.
+   */
+  private drawEmptySlots(ctx: CanvasRenderingContext2D, W: number): void {
+    if (this.offers || this.bookClosed || !this.emptySlots.length) return;
+
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    let lowest = 0;
+    for (const b of this.emptySlots) {
+      const pulse = 0.5 + Math.sin(this.engine.time * 2.4 + b.index * 0.7) * 0.5;
+      ctx.save();
+      // Leaning with the fan, because the slot leans and the card that lands in it
+      // will lean — an upright box in a fanned row reads as a different object.
+      ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
+      ctx.rotate(-b.rot);
+      ctx.globalAlpha = 0.3 + pulse * 0.28;
+      ctx.setLineDash([5, 4]);
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = PARCH;
+      rr(ctx, -b.w / 2, -b.h / 2, b.w, b.h, 5);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 0.5 + pulse * 0.3;
+      ctx.font = `${Math.round(b.h * 0.28)}px ui-monospace, monospace`;
+      ctx.fillStyle = PARCH;
+      ctx.fillText('+', 0, 0);
+      ctx.restore();
+      lowest = Math.max(lowest, b.y + b.h);
+    }
+
+    ctx.globalAlpha = 0.85;
+    ctx.font = 'bold 9px ui-monospace, monospace';
+    ctx.fillStyle = PARCH;
+    ctx.fillText(
+      this.handHeld > 0 ? 'TAP ANOTHER PAGE' : 'TAP A PAGE IN THE BOOK TO TEAR IT OUT',
+      W / 2, lowest + 13,
+    );
+    ctx.restore();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+
   private drawFanCards(ctx: CanvasRenderingContext2D, W: number): void {
     if (this.offers) return;            // the modal owns every tap; see drawBelt
     /**
@@ -1732,6 +1868,145 @@ export class Hud {
     });
     ctx.globalAlpha = 1;
     ctx.textAlign = 'left';
+  }
+
+  /**
+   * The spell's name and how it will land, as ONE centred group on one line.
+   *
+   * They were laid out independently — name centred on the panel, chip pinned to the
+   * right edge — and at a glance that reads as two unrelated things at two different
+   * heights rather than as a heading. Measuring both and centring the pair is the
+   * whole fix, and it means the chip sits where the eye already is instead of in the
+   * corner it has no reason to look at.
+   */
+  private drawCastHeading(
+    ctx: CanvasRenderingContext2D, cx: number, y: number, name: string, colour: number,
+  ): void {
+    const eff = this.castEffect();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 17px ui-monospace, monospace';
+    const nw = ctx.measureText(name).width;
+    ctx.font = 'bold 9px ui-monospace, monospace';
+    const cw = eff ? ctx.measureText(eff.label).width + 14 : 0;
+    const gap = eff ? 8 : 0;
+    let x = cx - (nw + gap + cw) / 2;
+
+    ctx.font = 'bold 17px ui-monospace, monospace';
+    ctx.fillStyle = hexCss(colour);
+    ctx.fillText(name, x, y);
+    x += nw + gap;
+
+    if (eff) {
+      ctx.font = 'bold 9px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(10,7,12,0.82)';
+      rr(ctx, x, y - 8, cw, 16, 7); ctx.fill();
+      ctx.strokeStyle = hexCss(eff.colour, 0.9);
+      ctx.lineWidth = 1.1; ctx.stroke();
+      ctx.fillStyle = hexCss(eff.colour);
+      ctx.textAlign = 'center';
+      ctx.fillText(eff.label, x + cw / 2, y);
+    }
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  /**
+   * The gold CAST button, built as REAL pixel art and blitted at an integer scale.
+   *
+   * Not a rounded rectangle with a system font in it. It is composed in a `Pix` — the
+   * same buffer the grimoire's pages and the tree's pictograms are drawn in — with a
+   * one-texel keyline, a one-texel bevel lit from the top left, and the game's own
+   * bitmap face. Then it goes up at a whole-number scale with smoothing off, so every
+   * edge lands on the grid the rest of the game is drawn on.
+   *
+   * `scale` is a texel size, not a font size. Everything inside is authored in texels
+   * and multiplied once, which is why the bevel stays exactly one texel wide whether
+   * the button is the small one under the hand or the big one under the book.
+   */
+  private castButton(
+    ctx: CanvasRenderingContext2D, cx: number, y: number, wPx: number, scale: number,
+  ): { x: number; y: number; w: number; h: number } {
+    const bw = Math.max(24, Math.round(wPx / scale));
+    const bh = CELL_H + 8;
+    const p = new Pix(bw, bh);
+
+    const GOLD = hex(0xe8b53a);
+    const LIT = hex(0xffe089);
+    const DARK = hex(0x8a5f14);
+    const KEY = hex(0x140a12);
+    const INK = hex(0x2a1a06);
+
+    p.rect(1, 1, bw - 2, bh - 2, GOLD);
+    // Bevel: lit along the top and left, shadow along the bottom and right. One
+    // texel each, which is what makes it read as a raised key rather than a panel.
+    p.rect(1, 1, bw - 2, 1, LIT);
+    p.rect(1, 1, 1, bh - 2, LIT);
+    p.rect(1, bh - 2, bw - 2, 1, DARK);
+    p.rect(bw - 2, 1, 1, bh - 2, DARK);
+    // Keyline, with the corners knocked out so it reads as a rounded key.
+    p.rect(0, 1, 1, bh - 2, KEY);
+    p.rect(bw - 1, 1, 1, bh - 2, KEY);
+    p.rect(1, 0, bw - 2, 1, KEY);
+    p.rect(1, bh - 1, bw - 2, 1, KEY);
+
+    drawCentered(p, 'CAST', bw / 2, 4, INK, { scale: 1, tracking: 1 });
+
+    const cv = p.toCanvas();
+    const w = bw * scale, h = bh * scale;
+    const x = Math.round(cx - w / 2);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(cv, 0, 0, bw, bh, x, Math.round(y), w, h);
+    ctx.restore();
+    return { x, y: Math.round(y), w, h };
+  }
+
+  /**
+   * THE DISCOVERY BANNER — the one thing in this loop worth stopping for.
+   *
+   * Everything else about a hit is transient by design: the damage number, the
+   * WEAK!/RESISTED flash, the screen shake. That is right for the ninetieth hit and
+   * wrong for the first, and they looked identical, which is why the mechanic was
+   * invisible in play. This fires ONCE per species-and-element pair, holds about
+   * three seconds, and names both — the creature and what it did to that element.
+   *
+   * Placed just above the book rather than at the top of the screen: the top is
+   * where the depth label and the minimap live and nothing there ever moves, so
+   * nothing there is looked at mid-fight. The band above the grimoire is where the
+   * player's eyes already are.
+   */
+  private drawDiscovery(ctx: CanvasRenderingContext2D, W: number): void {
+    if (!this.discovery || this.discoveryT <= 0) return;
+    // Snaps in, holds, fades out — so the hold is flat and readable rather than a
+    // ramp the player is chasing.
+    const t = this.discoveryT;
+    const a = t > 0.85 ? (1 - t) / 0.15 : t < 0.25 ? t / 0.25 : 1;
+    const y = this.bookTop - 96 - (1 - Math.min(1, t * 6)) * 8;
+
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, a));
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.font = 'bold 9px ui-monospace, monospace';
+    const head = 'DISCOVERED';
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    const bw = Math.max(ctx.measureText(this.discovery.text).width + 34, 190);
+    const bx = (W - bw) / 2;
+
+    ctx.fillStyle = 'rgba(12,8,14,0.92)';
+    rr(ctx, bx, y, bw, 40, 10); ctx.fill();
+    ctx.strokeStyle = hexCss(this.discovery.colour, 0.95);
+    ctx.lineWidth = 1.6; ctx.stroke();
+
+    ctx.font = 'bold 8px ui-monospace, monospace';
+    ctx.fillStyle = hexCss(this.discovery.colour, 0.75);
+    ctx.fillText(head, W / 2, y + 12);
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    ctx.fillStyle = hexCss(this.discovery.colour);
+    ctx.fillText(this.discovery.text, W / 2, y + 27);
+    ctx.restore();
   }
 
   /**

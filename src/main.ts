@@ -737,6 +737,30 @@ async function boot(): Promise<void> {
     return out;
   };
 
+  /**
+   * The slots the hand has NOT filled, in screen space.
+   *
+   * Projected from the fan's own `slot()` transform — the same function that places
+   * the real cards — so an outline is exactly where its card will land, at exactly
+   * its size and lean. The first version laid the outlines out independently in
+   * screen pixels, which is two sources of truth for one row and was visibly wrong
+   * the moment a card went in.
+   */
+  const emptySlotBoxes = (): HandCard[] => {
+    const cap = Math.max(handSize(), 1);
+    const out: HandCard[] = [];
+    const mid = { x: 0, y: 0 }, top = { x: 0, y: 0 };
+    for (let i = fan.pages.length; i < cap; i++) {
+      const s = fan.slot(i, cap);
+      if (!projectToScreen(s.pos.x, s.pos.y, s.pos.z, mid)) continue;
+      if (!projectToScreen(s.pos.x, s.pos.y + PAGE_H * 0.5, s.pos.z, top)) continue;
+      const h = Math.abs(mid.y - top.y) * 2;
+      const w = h * (PAGE_W / PAGE_H);
+      out.push({ index: i, x: mid.x - w / 2, y: mid.y - h / 2, w, h, rot: s.rotZ });
+    }
+    return out;
+  };
+
   // The ported book throws its own sparkles and shakes; route them at the game.
   // The book works in hand-scale units (~0.4m from the eye); CastFx works in
   // dungeon scale, so these are scaled up to stay visible.
@@ -1615,6 +1639,25 @@ async function boot(): Promise<void> {
     hud.pixelStep = pixelStep();
     hud.bindMap(() => ({ floor, x: stepper.x, y: stepper.y, dir: stepper.dir }));
     hud.loreFor = (id) => combat.lore(id);
+    hud.knownFor = (id, el) => combat.known(id, el as SpellElement);
+    /**
+     * A discovery is announced by NAME — both the creature and the element.
+     *
+     * Explicit on purpose, and a change of mind: the first version showed only THAT
+     * a weakness existed and made the player remember which, on the theory that it
+     * felt more earned. In play it was invisible, and a lesson nobody notices is not
+     * earned, it is lost. Discovery is still earned — nothing is shown that has not
+     * been hit — but recall is free.
+     */
+    combat.onDiscover = (spriteId, element, kind) => {
+      if (kind === 'plain') return;             // "nothing special" is not news
+      const who = displayName(spriteId).toUpperCase();
+      const what = element.toUpperCase();
+      hud.discovered(
+        kind === 'weak' ? `${who} · WEAK TO ${what}` : `${who} · RESISTS ${what}`,
+        kind === 'weak' ? 0xffd166 : 0x8aa0b8,
+      );
+    };
     wireCombat();
 
     stepper.canAct = () => !busy && !dead && !hud.offers;
@@ -1661,6 +1704,21 @@ async function boot(): Promise<void> {
       busy = false;
       refreshTargets();
       checkDeath();
+      /**
+       * WALKING IN IS DESCENDING. The stairs are the one thing in the dungeon you
+       * can stand on — `SOLID` leaves them out on purpose — and standing on a
+       * staircase and then having to find a button is the game asking twice.
+       *
+       * After the round and after the death check, both deliberately: the step that
+       * carried you onto the stairs is still a turn the room answers, and dying on
+       * it should not be overtaken by the next floor loading.
+       */
+      if (state.hp > 0) {
+        const st = floor.entities.find((e) => e.kind === 'stairs');
+        if (st && st.sprite.group.visible && st.sprite.tx === x && st.sprite.ty === y) {
+          await descend();
+        }
+      }
     };
     stepper.onTurnDone = () => refreshTargets();
     stepper.onBump = () => { fx.shake = Math.min(1, fx.shake + 0.22); };
@@ -2065,7 +2123,9 @@ async function boot(): Promise<void> {
     // The fan's cards, projected so one of them can be tapped back. Nothing while the
     // hand is merging: a card already flying into the cast cannot be taken back, and
     // the fan cannot un-merge.
+    fan.capacity = Math.max(handSize(), 1);
     hud.handCards = fan.busy ? [] : handCardBoxes();
+    hud.emptySlots = fan.busy ? [] : emptySlotBoxes();
     // Named on the page it belongs to, so "not learned" never has to share a
     // channel with "hand full".
     hud.sealedPage = !book.closed && !state.pages.includes(book.currentSpell.gameId)
@@ -2160,6 +2220,10 @@ async function boot(): Promise<void> {
       case 'target':
         if (a.entity.kind === 'altar') { takeFromAltar(a.entity); break; }
         if (a.entity.kind === 'chest' && !a.entity.spent) { openChest(a.entity); break; }
+        // The stairs are a door, not a target. Tapping them is the same gesture as
+        // tapping an altar or a chest — the thing under your finger is the thing you
+        // meant, and selecting a staircase to cast at it was never useful.
+        if (a.entity.kind === 'stairs') { void descend(); break; }
         hud.target = a.entity;
         break;
       case 'cycle': cycleTarget(); break;

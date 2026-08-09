@@ -27,7 +27,7 @@
 import { Rng } from '../core/rng';
 import { DIR_VEC, type Grid } from '../dungeon/grid';
 import { faceToward, type Entity, type Floor } from './floor';
-import { affinityMult } from './affinity';
+import { affinityMult, affinityOf, type Affinities } from './affinity';
 import {
   STATUS_META, displayName, harvestOf, isFixtureElement, resolveCast,
   type CastTarget, type Element, type ResolvedCast, type StatusId,
@@ -282,7 +282,12 @@ export class Combat {
    * On the COMBAT and not on the entity, because the entity dies and the lesson
    * should not die with it.
    */
-  private learned = new Map<string, { weak: boolean; resist: boolean }>();
+  private learned = new Map<string, Map<Element, Affinities>>();
+  /**
+   * Fired the first time a species/element pair is found out, and never again for
+   * that pair. The HUD turns it into the discovery banner.
+   */
+  onDiscover: (spriteId: string, element: Element, kind: Affinities) => void = () => {};
   /**
    * A boss's ingredient drop, one call per vial.
    *
@@ -557,15 +562,18 @@ export class Combat {
      * alone, which is exactly backwards: a fusion is supposed to be the answer to a
      * body you cannot solve with one page.
      */
+    // Learn EVERY element the cast carried, including the ones that changed nothing.
+    // An ordinary result is a result: it is the difference between "I tried frost on
+    // these and it was nothing special" and "I have never tried frost on these".
+    if (damage > 0) for (const el of cast.elements) {
+      this.learn(t, el, affinityOf(t.spriteId, el));
+    }
     const mult = cast.elements.length
       ? Math.max(...cast.elements.map((el) => affinityMult(t.spriteId, el)))
       : 1;
     if (mult !== 1 && damage > 0) {
       damage = Math.max(1, Math.round(damage * mult));
       const weak = mult > 1;
-      // The lesson is taught HERE and nowhere else — no tooltip, no bestiary. You
-      // hit it, the number is bigger or smaller, and the word says which.
-      this.learn(t, weak);
       this.onEvent({
         kind: 'status',
         text: weak ? 'WEAK!' : 'RESISTED',
@@ -680,15 +688,32 @@ export class Combat {
    * "you have found a weakness"; finding it again is the player's memory, which is
    * the part worth having.
    */
-  private learn(t: Entity, weak: boolean): void {
-    const s = this.learned.get(t.spriteId) ?? { weak: false, resist: false };
-    if (weak) s.weak = true; else s.resist = true;
-    this.learned.set(t.spriteId, s);
+  private learn(t: Entity, element: Element, kind: Affinities): void {
+    let m = this.learned.get(t.spriteId);
+    if (!m) { m = new Map(); this.learned.set(t.spriteId, m); }
+    if (m.has(element)) return;                 // already known; not a discovery
+    m.set(element, kind);
+    this.onDiscover(t.spriteId, element, kind);
+  }
+
+  /**
+   * What this run knows about one species and one element, or null for unknown.
+   *
+   * PLAIN is recorded as well as weak and resist, which it was not at first. Without
+   * it a matchup you have already tested and found ordinary looks exactly like one
+   * you have never tried, so the player re-tests it — and the whole point of showing
+   * `???` is that the unknown is legible.
+   */
+  known(spriteId: string, element: Element): Affinities | null {
+    return this.learned.get(spriteId)?.get(element) ?? null;
   }
 
   /** What the player has discovered about this creature, for the HUD. */
   lore(spriteId: string): { weak: boolean; resist: boolean } | null {
-    return this.learned.get(spriteId) ?? null;
+    const m = this.learned.get(spriteId);
+    if (!m) return null;
+    const vals = [...m.values()];
+    return { weak: vals.includes('weak'), resist: vals.includes('resist') };
   }
 
   damage(t: Entity, amount: number, colour = 0xffffff): void {
