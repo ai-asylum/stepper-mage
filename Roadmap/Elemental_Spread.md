@@ -29,12 +29,16 @@ phase's own criterion not actually being met.
 - **No floor is solvable with one element.** The hard rule, and the one worth a test.
 - **Every floor spreads across at least three of the five pages.** Enough that a
   hand of one has to change between rooms, not only between floors.
-- **Fire stays the floor-1 answer.** It is the page everyone starts with and floor 1
-  is the tutorial; making the first floor punish the starting page teaches the wrong
-  thing. The lesson lands on floor 2, which is bone.
-- **Two of five bosses resisting fire stays.** That was measured in Enemy_Identity —
-  three makes the starting loadout wrong more often than right with no way to know
-  beforehand.
+## Open — not decided
+
+Two questions this phase must answer and must not answer by assumption:
+
+- **Whether floor 1 stays fire-friendly.** The argument for is that fire is the page
+  everyone starts with and floor 1 is the tutorial. The argument against is that it is
+  still a floor and still needs a strategy. Not settled.
+- **How many bosses may resist the starting page.** Enemy_Identity measured that three
+  of five made the opening loadout wrong more often than right; that measurement was
+  against the old table and does not automatically survive this one.
 
 ## Out of scope
 

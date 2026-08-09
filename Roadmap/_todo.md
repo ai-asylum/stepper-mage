@@ -169,7 +169,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 ## Phase 14 — Polish_Pass
 
 - [x] Stop target markers drawing through walls. (Closed early by Casting_And_Movement.)
-- [ ] Re-cull after every enemy round; a body that moves into view is currently never drawn.
+- [x] Re-cull after every enemy round; a body that moves into view is currently never drawn.
 - [ ] Fix golems stalling instead of following.
 - [ ] Break the monochrome orange cast; make each floor read as its own palette.
 - [ ] Add a chest golem sprite and let Animate target chests.
@@ -183,7 +183,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 15 — Spell_Reach
 
-- [ ] Gate splash, arcs and object reactions on line of sight from the blast centre.
+- [ ] Flood the grid from the blast centre by path distance; splash, arcs and reactions.
 - [ ] Retune the balance and the acceptance gate against the shorter effective reach.
 - [ ] Commit changes.
 
@@ -210,7 +210,6 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Stop the camera changing pitch when the grimoire rises.
 - [ ] Hide the empty hand slots while the book plays its intro.
 - [ ] Add a movement hint that clears on the first step and never returns.
-- [ ] Trim the playable bundle to the one roster it now needs.
 - [ ] Commit changes.
 
 ## Phase 19 — Altar_Screen

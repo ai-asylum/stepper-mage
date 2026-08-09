@@ -906,6 +906,28 @@ export class Combat {
     }
 
     this.tickStatuses();
+    /**
+     * Re-cull, because bodies MOVED.
+     *
+     * `Floor.cull` does two things in one pass: it computes the set of visible tiles,
+     * and it sets each sprite's visibility from where that sprite is at that instant.
+     * It was only ever called before a round. So a creature that walked into the open
+     * during its own round kept the `false` it was given while it was still behind a
+     * wall, and stood there lit and undrawn until the player next stepped.
+     *
+     * The symptom names the bug: it appeared ON THE MINIMAP and not on screen. The map
+     * tests the creature's CURRENT tile against the tile set and said yes; the sprite
+     * carried a flag from before it moved and said no.
+     *
+     * Here rather than at the call sites because casting runs a round too — fixing
+     * only the movement path would leave it broken for exactly the turns the player
+     * spends standing still.
+     */
+    // Guarded: a round can be driven before the player has been placed on a tile,
+    // and an exception here would abort the whole cast path rather than merely skip
+    // a redraw — which is how it first showed up, as casts dealing zero damage.
+    const pt = this.playerTile;
+    if (pt && this.floor.grid.inside(pt.x, pt.y)) this.floor.cull(pt.x, pt.y);
     if (engaged) await delay(ROUND_PACE_MS);
     return engaged;
   }
