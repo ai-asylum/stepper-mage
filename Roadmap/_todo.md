@@ -183,11 +183,22 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 15 — Spell_Reach
 
+- [ ] Decide which spells are volumes and which are radii, and write the table.
 - [ ] Flood the grid from the blast centre by path distance; splash, arcs and reactions.
+- [ ] Let a volume reach and damage the player.
 - [ ] Retune the balance and the acceptance gate against the shorter effective reach.
 - [ ] Commit changes.
 
-## Phase 16 — Elemental_Spread
+## Phase 16 — Burning_Ground
+
+- [ ] Add a floor layer that holds burning tiles and ages them each round.
+- [ ] Draw burning ground so it is unmistakable at 72 texels on a brown floor.
+- [ ] Make standing in fire cost something, for creatures and the player alike.
+- [ ] Let one Gust clear the fire it reaches.
+- [ ] Decide whether enemies avoid burning tiles, and record the decision either way.
+- [ ] Commit changes.
+
+## Phase 17 — Elemental_Spread
 
 - [ ] Measure, per floor, how many creatures each element beats.
 - [ ] Reassign affinities per floor so no floor is solvable with one element.
@@ -196,7 +207,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Retune the gate and the `mixed` policy's page choice against the new table.
 - [ ] Commit changes.
 
-## Phase 17 — Dungeon_Shape
+## Phase 18 — Dungeon_Shape
 
 - [ ] Spawn bosses at the centre of their room so they cannot wedge behind furniture.
 - [ ] Move the way down to the boss's position when it dies.
@@ -204,7 +215,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Verify descending both by walking in and by tapping.
 - [ ] Commit changes.
 
-## Phase 18 — First_Minutes
+## Phase 19 — First_Minutes
 
 - [ ] Lock the world to 72 texels and delete the chip, the setting and its harness.
 - [ ] Stop the camera changing pitch when the grimoire rises.
@@ -212,7 +223,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Add a movement hint that clears on the first step and never returns.
 - [ ] Commit changes.
 
-## Phase 19 — Altar_Screen
+## Phase 20 — Altar_Screen
 
 - [ ] Lay the three offers out as columns, left to right.
 - [ ] Draw a spell offer as a spell-book page at card size.
