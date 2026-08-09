@@ -10,7 +10,7 @@ import { Hud, type AltarOffer, type HandCard } from './ui/hud';
 import { TreeScreen, type TreeAction } from './ui/tree';
 import { routeCost, routeTo } from './ui/treeCommon';
 import { Book } from './book/book';
-import { Fan } from './book/fan';
+import { Fan, FAN_SCALE } from './book/fan';
 import {
   bookScene, camera as bookCam, projectToScreen, tickBook, resizeBook, sinks, sfx,
 } from './book/bridge';
@@ -751,9 +751,14 @@ async function boot(): Promise<void> {
     const out: HandCard[] = [];
     const mid = { x: 0, y: 0 }, top = { x: 0, y: 0 };
     for (let i = fan.pages.length; i < cap; i++) {
+      // The fan's own slot transform and its own settled scale, so neither where a
+      // card lands nor how big it ends up is duplicated here. The position is
+      // camera-local, which is the space `projectToScreen` already takes for the
+      // real cards — converting it to world first produced points that would not
+      // project at all.
       const s = fan.slot(i, cap);
       if (!projectToScreen(s.pos.x, s.pos.y, s.pos.z, mid)) continue;
-      if (!projectToScreen(s.pos.x, s.pos.y + PAGE_H * 0.5, s.pos.z, top)) continue;
+      if (!projectToScreen(s.pos.x, s.pos.y + PAGE_H * 0.5 * FAN_SCALE, s.pos.z, top)) continue;
       const h = Math.abs(mid.y - top.y) * 2;
       const w = h * (PAGE_W / PAGE_H);
       out.push({ index: i, x: mid.x - w / 2, y: mid.y - h / 2, w, h, rot: s.rotZ });

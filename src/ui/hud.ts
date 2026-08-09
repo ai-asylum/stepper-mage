@@ -1336,7 +1336,10 @@ export class Hud {
     ctx.font = 'bold 9px ui-monospace, monospace';
     ctx.fillStyle = PARCH;
     ctx.fillText(
-      this.handHeld > 0 ? 'TAP ANOTHER PAGE' : 'TAP A PAGE IN THE BOOK TO TEAR IT OUT',
+      // DRAG, not tap. The gesture is a rip, and naming the wrong verb sends a
+      // player to tap the book, get nothing, and conclude the game is broken
+      // rather than that they used the wrong gesture.
+      this.handHeld > 0 ? 'DRAG ANOTHER PAGE OUT' : 'DRAG A PAGE OUT OF THE BOOK',
       W / 2, lowest + 13,
     );
     ctx.restore();

@@ -25,7 +25,14 @@ const FAN_CENTER = new THREE.Vector3(0, -0.026, -0.38);
 const MERGE_POINT = new THREE.Vector3(0, -0.022, -0.38);
 const FLY_DUR = 0.55;
 /** floating pages shrink to card size so they don't dominate the screen */
-const FAN_SCALE = 0.26;
+/**
+ * The scale a card settles at in the fan.
+ *
+ * EXPORTED because the empty slots are drawn at it too, and they have to be: they
+ * were projected at scale 1 and came out nearly four times the size of a real card.
+ * One number, imported, rather than an assumption copied into the HUD.
+ */
+export const FAN_SCALE = 0.26;
 
 interface FloatPage {
   spell: SpellDef;
