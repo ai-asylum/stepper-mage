@@ -169,6 +169,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 ## Phase 14 — Polish_Pass
 
 - [x] Stop target markers drawing through walls. (Closed early by Casting_And_Movement.)
+- [ ] Re-cull after every enemy round; a body that moves into view is currently never drawn.
 - [ ] Fix golems stalling instead of following.
 - [ ] Break the monochrome orange cast; make each floor read as its own palette.
 - [ ] Add a chest golem sprite and let Animate target chests.
@@ -186,14 +187,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Retune the balance and the acceptance gate against the shorter effective reach.
 - [ ] Commit changes.
 
-## Phase 16 — Unseen_Threats
-
-- [ ] Re-cull after every enemy round so a body that moves into view is drawn.
-- [ ] Show hostiles within reach on the minimap whether or not they are in sight.
-- [ ] Give the threat telegraph a direction, reusing the damage chevrons.
-- [ ] Commit changes.
-
-## Phase 17 — Elemental_Spread
+## Phase 16 — Elemental_Spread
 
 - [ ] Measure, per floor, how many creatures each element beats.
 - [ ] Reassign affinities per floor so no floor is solvable with one element.
@@ -202,7 +196,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Retune the gate and the `mixed` policy's page choice against the new table.
 - [ ] Commit changes.
 
-## Phase 18 — Dungeon_Shape
+## Phase 17 — Dungeon_Shape
 
 - [ ] Spawn bosses at the centre of their room so they cannot wedge behind furniture.
 - [ ] Move the way down to the boss's position when it dies.
@@ -210,7 +204,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Verify descending both by walking in and by tapping.
 - [ ] Commit changes.
 
-## Phase 19 — First_Minutes
+## Phase 18 — First_Minutes
 
 - [ ] Lock the world to 72 texels and delete the chip, the setting and its harness.
 - [ ] Stop the camera changing pitch when the grimoire rises.
@@ -219,7 +213,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Trim the playable bundle to the one roster it now needs.
 - [ ] Commit changes.
 
-## Phase 20 — Altar_Screen
+## Phase 19 — Altar_Screen
 
 - [ ] Lay the three offers out as columns, left to right.
 - [ ] Draw a spell offer as a spell-book page at card size.
