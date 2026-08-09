@@ -163,17 +163,19 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Keep the stairs off the minimap until the boss falls. `Floor.stairsOpen`.
 - [x] Stop a corpse blocking the tile its own staircase opened on. Found by walking it.
 - [ ] Verify descending both by walking in and by tapping.
-      Walk-in did NOT descend with every guard condition true — see the phase doc.
-      Not reproduced by playing yet, so it is a suspicion rather than a defect.
+      Still unverified. The first attempt reported a failure that was the TEST — the
+      Browser pane was hidden, rAF was throttled, and the render loop never ran. See
+      the phase doc; check `engine.time` is advancing before believing an input is dead.
 - [x] Commit changes.
 
 ## Phase 13 — First_Minutes
 
-- [ ] Lock the world to 72 texels and delete the chip, the setting and its harness.
+- [x] Lock the world to 72 texels and delete the chip, the setting and its harness.
 - [ ] Stop the camera changing pitch when the grimoire rises.
-- [ ] Hide the empty hand slots while the book plays its intro.
-- [ ] Add a movement hint that clears on the first step and never returns.
-- [ ] Commit changes.
+      Needs the settled `frameShift` read off a running loop — see the phase doc.
+- [x] Hide the empty hand slots while the book plays its intro. `Hud.bookBusy`.
+- [x] Add a movement hint that clears on the first step and never returns.
+- [x] Commit changes.
 
 ## Phase 14 — Altar_Screen
 

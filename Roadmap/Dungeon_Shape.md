@@ -63,21 +63,25 @@ touches the stairs, so it is the phase that should prove both.
 - Both descending by walking in and descending by tapping are verified. — **NOT MET,
   and this is the phase's open question.** See below.
 
-## The descent is still unverified, and it may be broken
+## The descent is still unverified — but the alarm was mine, not the game's
 
-The task said this path had never been checked. It still has not passed.
+The task said this path had never been checked. It still has not been, and the first
+attempt produced a false alarm worth recording so nobody chases it.
 
-Walking onto the open stairs did not descend. All three of the walk-in guard's
-conditions were true at the moment of arrival — the player standing on the stairs
-tile, the stairs sprite visible, HP above zero — and the floor did not change. Either
-`onStepDone` is not running for that arrival, or it is running and the descent is
-being dropped somewhere after the guard.
+Walking onto the open stairs appeared not to descend, with all three of the walk-in
+guard's conditions true. It was the TEST that was broken: the Browser pane driving it
+was hidden, so `requestAnimationFrame` was throttled to a standstill and the render
+loop never ran — `engine.time` sat frozen at 0.11 for a second and a half of
+wall clock. A step that never animates never completes, so `onStepDone` never fires
+and no descent was ever reached. Screenshots still looked correct because a screenshot
+renders a frame on demand.
 
-What is NOT yet ruled out is the test itself. The player was positioned with the
-debug `place()` and moved with a synthetic `stepper.press`, and a teleport does not
-go through `onStepDone` at all. So this is a genuine suspicion rather than a
-confirmed defect, and the next session should reproduce it by playing rather than by
-poking.
+The lesson for anything driven through the dev server: **check that `engine.time` is
+advancing before concluding an interaction is broken.** A frozen loop looks exactly
+like a dead input.
+
+So the walk-in and the tap paths remain genuinely unverified, and there is no evidence
+either way about whether they work.
 
 **One real bug was found and fixed on the way there.** A body at zero HP stays
 `alive` until its death animation finishes, and `solidAt` counted it as solid for

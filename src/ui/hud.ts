@@ -146,7 +146,6 @@ export type UiAction =
    * minimap, which is the other readout that is up from the first frame and stays up
    * over the run-end card.
    */
-  | { kind: 'pixels' }
   | { kind: 'none' };
 
 /**
@@ -320,6 +319,27 @@ export class Hud {
    * control that used to toggle it is gone, on purpose — see `Roadmap/Casting_And_Movement.md`.
    */
   bookClosed = false;
+  /**
+   * Is the book mid-animation — flying in, leafing itself, flipping?
+   *
+   * Separate from `bookClosed`, which asks whether the book is DOWN. A book that is
+   * on its way up is neither closed nor usable, and the empty hand slots are an
+   * instruction: "drag a page out of the book". Drawn over a book that is still
+   * arriving, that instruction cannot be followed, which makes the opening read as
+   * unresponsive rather than as animated (`Roadmap/First_Minutes.md`).
+   */
+  bookBusy = false;
+
+  /**
+   * Has the player taken a single step yet?
+   *
+   * Nothing in the game says how to move. The book teaches itself — it flies in, it
+   * says to drag a page — and then the player is standing in a corridor with no idea
+   * that the world responds to a swipe at all. This is the one sentence that fixes
+   * it, and it goes away the moment it has been obeyed: a hint that persists is a
+   * hint that failed (`Roadmap/First_Minutes.md`).
+   */
+  hasMoved = false;
 
   /**
    * This floor's name, beside the depth in the top-left.
@@ -352,7 +372,6 @@ export class Hud {
    * answer lives in `src/art/steps.ts` and `main.ts` writes it here on every change,
    * exactly as it does for the banked stars and the pinned goal.
    */
-  pixelStep = 144;
 
   /**
    * How the run ended, or null while it is still live.
@@ -573,7 +592,6 @@ export class Hud {
     this.drawMiniMap(ctx, W);
     // Above the run-end return below, so the one control that is not about the run
     // stays reachable on a run that has ended.
-    this.drawPixelChip(ctx, W);
 
     /**
      * A finished run keeps its world and its readouts and loses its controls.
@@ -602,6 +620,7 @@ export class Hud {
     this.drawBelt(ctx, W);
     // Before the CAST bar, so that where a card's box and the bar's touch, CAST wins:
     // `hit` scans backwards, so whatever is pushed last is on top.
+    this.drawMoveHint(ctx, W, H);
     this.drawEmptySlots(ctx, W);
     this.drawFanCards(ctx, W);
     this.drawCastBar(ctx, W);
@@ -1060,29 +1079,6 @@ export class Hud {
     ctx.stroke();
   }
 
-  /**
-   * The texel-density chip, right-hand column under the minimap.
-   *
-   * There is nowhere else for it. The left column is the depth, the health bar, the
-   * hand and the pinned goal; the centre is the party bar and the shout; the bottom
-   * two-thirds is the grimoire's. The strip under the minimap is the only piece of
-   * this screen nothing else claims, and it puts the chip next to the other readout
-   * that is neither the world nor the book.
-   *
-   * A control, so it takes a hit region and so `UI_CONTROLS` in `main.ts` names it.
-   * `▦` is a hatched square — the pixel grid it changes, at a glance.
-   */
-  private drawPixelChip(ctx: CanvasRenderingContext2D, W: number): void {
-    const label = `▦ ${this.pixelStep}`;
-    ctx.font = '8px ui-monospace, monospace';
-    const w = ctx.measureText(label).width + 14;
-    // Under the minimap when there is one, under the star total when there is not.
-    const y = this.map ? 140 : 40;
-    const x = W - w - 10;
-    this.pill(ctx, x, y, label, 'rgba(200,186,214,0.9)', 'rgba(170,150,200,0.45)');
-    this.hits.push({ rect: [x - 6, y - 6, w + 12, 26], action: { kind: 'pixels' } });
-  }
-
   private drawShout(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     if (this.discover) {
       const k = this.discover.t / 2.4;
@@ -1332,7 +1328,7 @@ export class Hud {
    * drawn behind the card standing in it.
    */
   private drawEmptySlots(ctx: CanvasRenderingContext2D, W: number): void {
-    if (this.offers || this.bookClosed || !this.emptySlots.length) return;
+    if (this.offers || this.bookClosed || this.bookBusy || !this.emptySlots.length) return;
 
     ctx.save();
     ctx.textAlign = 'center';
@@ -1370,6 +1366,43 @@ export class Hud {
       this.handHeld > 0 ? 'DRAG ANOTHER PAGE OUT' : 'DRAG A PAGE OUT OF THE BOOK',
       W / 2, lowest + 13,
     );
+    ctx.restore();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  /**
+   * SWIPE TO MOVE, until the player does.
+   *
+   * Placed in the world strip well above the book rather than beside the hand,
+   * because it is about the DUNGEON and everything near the book is about the book.
+   * Held back until the book has finished arriving, for the same reason the empty
+   * slots are: two instructions competing during the opening animation is how a
+   * player ends up following neither.
+   */
+  private drawMoveHint(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    if (this.hasMoved || this.offers) return;
+
+    /**
+     * Positioned off the CANVAS, not off the book.
+     *
+     * `bookTop` is 0 until the book has been measured, and the book is not measured
+     * until it has finished arriving — so anchoring to it put this hint at y = -74
+     * for the whole of the opening, which is exactly the stretch it exists for. The
+     * world strip is a stable fraction of the frame whatever the book is doing.
+     */
+    const y = H * 0.60;
+
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // The same slow pulse the empty slots breathe at, so the two instructions on
+    // screen read as one voice rather than as two things blinking at each other.
+    const pulse = 0.5 + Math.sin(this.engine.time * 2.4) * 0.5;
+    ctx.globalAlpha = 0.45 + pulse * 0.4;
+    ctx.font = 'bold 9px ui-monospace, monospace';
+    ctx.fillStyle = PARCH;
+    ctx.fillText('SWIPE TO MOVE  ·  TAP A CREATURE TO AIM', W / 2, y);
     ctx.restore();
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';

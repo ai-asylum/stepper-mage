@@ -25,8 +25,6 @@
  * a rivet's drop shadow, the vault's fluting and its inner floor ring.
  */
 
-import { isPlayableBundle } from 'playable-kit/runtime';
-
 /** Every density the world can be built at, coarsest last. */
 export const PIXEL_STEPS = [144, 72, 36, 18] as const;
 export type PixelStep = (typeof PIXEL_STEPS)[number];
@@ -65,9 +63,16 @@ export function isPixelStep(v: unknown): v is PixelStep {
  * The chip still works and still says what it is showing; there is simply one fewer
  * position on it, which is a smaller lie than a chip that 404s the dungeon.
  */
-export function availableSteps(): readonly PixelStep[] {
-  return isPlayableBundle() ? PIXEL_STEPS.filter((s) => s !== 144) : PIXEL_STEPS;
-}
+/**
+ * DEAD as of `Roadmap/First_Minutes.md`. The world is locked to `DEFAULT_STEP` and
+ * there is no way to change it, so there is nothing to enumerate.
+ *
+ * `PIXEL_STEPS` and `STEP_ART` stay, because the ROSTERS stay: the art at every
+ * density is still generated and still in the repo, and the tooling that authors it
+ * reads this table. What was removed is the player-facing CHOICE — three of the four
+ * steps are worse than the default and one draws creatures at a different density
+ * from the stone it stands on.
+ */
 
 /** Noise applied per texel: frequency is in 1/texels, so it moves with the step. */
 export interface GrainArt { freq: number; amount: number }
@@ -814,6 +819,10 @@ let active: PixelStep = DEFAULT_STEP;
 export function pixelStep(): PixelStep { return active; }
 
 /** Set the density. The CALLER rebuilds — see `Floor.restep`. */
+/**
+ * DEAD. Kept as the seam the art tooling sets when it renders a roster at another
+ * density; nothing in the GAME calls it, and the setting it used to back is gone.
+ */
 export function setPixelStep(s: PixelStep): void { active = s; }
 
 /** Texels per world unit, at the current step. */
