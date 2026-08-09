@@ -126,8 +126,8 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Pick the drawn frame from the angle between a creature's facing and the camera.
 - [x] Telegraph an enemy that is about to act, before it acts.
 - [x] Play an attack pose and a screen effect when an enemy hits the player.
-- [ ] Give creatures elemental weaknesses and resistances that change damage taken.
-- [ ] Teach a creature's element by fighting it, without a tooltip.
+- [x] Give creatures elemental weaknesses and resistances that change damage taken.
+- [x] Teach a creature's element by fighting it, without a tooltip.
 - [ ] Commit changes.
 
 ## Phase 10 — Corpse_Raising_And_Golem_Persistence

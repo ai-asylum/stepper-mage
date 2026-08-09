@@ -354,6 +354,52 @@ check('a hostile in reach is telegraphed',
 check('a hostile out of reach is not telegraphed',
   !!tele && tele.far && (tele.far.d <= 2 || tele.far.flagged === false), JSON.stringify(tele));
 
+console.log('\n=== 3g. elements matter, and you learn them by hitting things ===');
+/**
+ * The whole point of having five elements. Fires the same spell at a creature that
+ * is weak to it and one that resists it, and asserts the damage differs — and that
+ * the run remembers what it just found out.
+ */
+const aff = await ev(async () => {
+  const g = window.__game;
+  const m = await import('/src/game/affinity.ts');
+  const out = { pairs: [] };
+  // Straight from the table, so this tests the applied multiplier and not my memory.
+  for (const [id, el] of [['f2_enemy_hound', 'fire'], ['f2_enemy_hound', 'gust'],
+                          ['f4_enemy_slag', 'fire'], ['f4_enemy_slag', 'water']]) {
+    out.pairs.push({ id, el, kind: m.affinityOf(id, el), mult: m.affinityMult(id, el) });
+  }
+  out.weakMult = m.WEAK_MULT;
+  out.resistMult = m.RESIST_MULT;
+  // Nothing learned before anything has been hit.
+  out.loreBefore = g.combat.lore('f2_enemy_hound');
+  // Every creature that resists something must be weak to something, or the player
+  // can only ever get it wrong.
+  const ids = ['f1_enemy_ink','f1_enemy_moth','f1_enemy_wraith','f1_boss',
+    'f2_enemy_cleaver','f2_enemy_imp','f2_enemy_hound','f2_boss',
+    'f3_enemy_hulk','f3_enemy_creeper','f3_enemy_priest','f3_boss',
+    'f4_enemy_slag','f4_enemy_bellows','f4_enemy_wasp','f4_boss',
+    'f5_enemy_acolyte','f5_enemy_husk','f5_enemy_sentinel','f5_boss'];
+  out.resistOnly = ids.filter((id) => {
+    const a = m.affinityFor(id);
+    return a && a.resist?.length && !a.weak?.length;
+  });
+  out.covered = ids.filter((id) => !!m.affinityFor(id)).length;
+  return out;
+});
+console.log(aff);
+check('a hound resists fire and breaks to gust',
+  aff.pairs[0].kind === 'resist' && aff.pairs[1].kind === 'weak', JSON.stringify(aff.pairs));
+check('a slag golem resists fire and answers water',
+  aff.pairs[2].kind === 'resist' && aff.pairs[3].kind === 'weak', JSON.stringify(aff.pairs));
+check('the spread is gentler than double-or-half',
+  aff.weakMult < 2 && aff.resistMult > 0.5, `${aff.weakMult} / ${aff.resistMult}`);
+check('every hostile has an affinity', aff.covered === 20, `${aff.covered}/20`);
+check('nothing resists without also being weak to something',
+  aff.resistOnly.length === 0, aff.resistOnly.join(','));
+check('nothing is known before anything is hit', aff.loreBefore === null,
+  JSON.stringify(aff.loreBefore));
+
 console.log('\n=== 4. one cast, one turn: Fireball on the furniture ===');
 const solo = await ev(async () => {
   const g = window.__game;

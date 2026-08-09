@@ -33,6 +33,8 @@ import { Rng } from './core/rng';
 import { DIR_VEC, type Dir } from './dungeon/grid';
 import { THEMES } from './art/theme';
 import { hitFxFor } from './game/hitfx';
+import { affinityOf } from './game/affinity';
+import type { Element as SpellElement } from './spells/spells';
 import {
   DEFAULT_STEP, availableSteps, isPixelStep, pixelStep, setPixelStep, stepArt,
   type PixelStep,
@@ -1591,6 +1593,7 @@ async function boot(): Promise<void> {
     hud.pinGoal = pinReadout();
     hud.pixelStep = pixelStep();
     hud.bindMap(() => ({ floor, x: stepper.x, y: stepper.y, dir: stepper.dir }));
+    hud.loreFor = (id) => combat.lore(id);
     wireCombat();
 
     stepper.canAct = () => !busy && !dead && !hud.offers;
@@ -2721,6 +2724,14 @@ async function boot(): Promise<void> {
     cyclePixels: async () => { await cyclePixels(); return pixelStep(); },
     /** Rebuild at a given depth. Floor 4 is the only place an oil drum exists. */
     goToDepth: (depth: number) => enterFloor(Math.max(1, Math.min(THEMES.length, depth))),
+    /**
+     * How a creature answers an element, for the balance harness.
+     *
+     * Exposed because a policy that models "a player who has read the table" cannot
+     * model it without the table. Read-only, and it is the same function combat
+     * scales damage by, so a policy cannot be tuned against a copy that drifts.
+     */
+    affinityOf: (spriteId: string, element: string) => affinityOf(spriteId, element as SpellElement),
     targetKind: (kind: string) => {
       const e = floor.entities.find((x) => x.alive && x.kind === kind);
       if (e) hud.target = e;

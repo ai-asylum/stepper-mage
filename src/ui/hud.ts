@@ -248,6 +248,8 @@ export class Hud {
    * not from three, and nothing about it changed in between.
    */
   threats: ReadonlySet<Entity> = new Set();
+  /** What the run has learned about a creature, bound from `Combat`. */
+  loreFor: ((spriteId: string) => { weak: boolean; resist: boolean } | null) | null = null;
   /** Page ids currently torn out — decides which candidates are highlighted. */
   tornIds: string[] = [];
 
@@ -720,6 +722,23 @@ export class Hud {
         ctx.stroke();
         ctx.fillStyle = plate;
         ctx.fillText(label, mx, ty - 23);
+
+        /**
+         * What you have found out about this creature, on the creature.
+         *
+         * Only ever what you have ALREADY hit it with — the table is never shown,
+         * and a creature you have not fought says nothing. It is two marks rather
+         * than a list of elements on purpose: the game remembers that a weakness
+         * exists, and remembering WHICH one is the player's job. That is the part
+         * that makes the knowledge feel earned instead of issued.
+         */
+        const lore = this.loreFor?.(e.spriteId) ?? null;
+        if (lore && (lore.weak || lore.resist)) {
+          const marks = `${lore.weak ? '▲' : ''}${lore.resist ? '▼' : ''}`;
+          ctx.font = 'bold 9px ui-monospace, monospace';
+          ctx.fillStyle = lore.weak ? '#ffd166' : '#8aa0b8';
+          ctx.fillText(marks, mx + w / 2 + 7, ty - 23);
+        }
         ctx.textAlign = 'left';
 
         // Furniture gets a bar too, but only once it has been hit — otherwise

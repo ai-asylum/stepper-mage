@@ -275,7 +275,12 @@ const BEST_PAGE = `
  *              one round in three — the cap, which `lock` never reaches. Counting
  *              CASTS is what makes this exact now: a cast is a round, so "two casts
  *              ago" and "two rounds ago" are the same sentence.
- *           3. Otherwise, cast Fireball.
+ *           3. Otherwise, cast the best DAMAGE page against this boss — the owned
+ *              page with the highest affinity, which is Fireball unless the boss
+ *              resists fire. Three of the five do, and casting into a resistance to
+ *              reach the shatter pays 40% of the damage for a denial the bolt buys
+ *              anyway. This clause is what "has read the interaction table" means
+ *              now that a body is made of something.
  *         Steady state is a THREE-cast cycle, [frost, fire, fire] on repeat: frost
  *         denies the next round and sets brace 2, the two fires spend the brace out,
  *         and the next frost lands exactly as it expires. 33% of the boss's rounds
@@ -303,11 +308,25 @@ const POLICY = `
       // approach round, so the very first round of the fight is denied and the boss
       // spends it standing at the far end of the room.
       let sinceFrost = 2;
+      // The damage page is chosen against the BOSS rather than fixed at Fireball.
+      // Reading the table now includes reading what a body is made of: three of the
+      // five bosses resist fire, and casting into a resistance to reach the shatter
+      // pays 40% of the damage for a denial the bolt was going to buy anyway.
+      const rank = (boss, id) => {
+        const k = g.affinityOf(boss.spriteId, id);
+        return k === 'weak' ? 2 : k === 'plain' ? 1 : 0;
+      };
+      // Frost is excluded on purpose: it is the DENIAL page, and letting it win the
+      // damage slot collapses the three-cast cycle into the lock line, which is a measured
+      // and worse line. The choice is which bolt to spend the non-frost casts on.
+      const hitPage = (boss) => ['fire', 'spark']
+        .filter(owns)
+        .sort((a, b) => rank(boss, b) - rank(boss, a))[0] ?? 'fire';
       return (boss) => {
-        if (g.combat.has(boss, 'frozen')) { sinceFrost++; return 'fire'; }
+        if (g.combat.has(boss, 'frozen')) { sinceFrost++; return hitPage(boss); }
         if (sinceFrost >= 2) { sinceFrost = 0; return 'frost'; }
         sinceFrost++;
-        return 'fire';
+        return hitPage(boss);
       };
     }
     return () => fallback;

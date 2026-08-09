@@ -27,6 +27,7 @@
 import { Rng } from '../core/rng';
 import { DIR_VEC, type Grid } from '../dungeon/grid';
 import { faceToward, type Entity, type Floor } from './floor';
+import { affinityMult } from './affinity';
 import {
   STATUS_META, displayName, harvestOf, isFixtureElement, resolveCast,
   type CastTarget, type Element, type ResolvedCast, type StatusId,
@@ -275,6 +276,13 @@ export class Combat {
    */
   onReactionFx: (fx: ReactionFx) => void = () => {};
   onPlayerHurt: (amount: number, by: Entity | null) => void = () => {};
+  /**
+   * What the player has learned this run, by sprite id.
+   *
+   * On the COMBAT and not on the entity, because the entity dies and the lesson
+   * should not die with it.
+   */
+  private learned = new Map<string, { weak: boolean; resist: boolean }>();
   /**
    * A boss's ingredient drop, one call per vial.
    *
@@ -540,6 +548,32 @@ export class Combat {
       }
     }
 
+    /**
+     * AFFINITY, applied last so it scales the whole cast — combos included.
+     *
+     * A cast can carry several elements (Meteor is fire and stone), and the BEST of
+     * them wins rather than the product. Multiplying them would make a two-element
+     * cast against a creature that resists one of them worse than either element
+     * alone, which is exactly backwards: a fusion is supposed to be the answer to a
+     * body you cannot solve with one page.
+     */
+    const mult = cast.elements.length
+      ? Math.max(...cast.elements.map((el) => affinityMult(t.spriteId, el)))
+      : 1;
+    if (mult !== 1 && damage > 0) {
+      damage = Math.max(1, Math.round(damage * mult));
+      const weak = mult > 1;
+      // The lesson is taught HERE and nowhere else — no tooltip, no bestiary. You
+      // hit it, the number is bigger or smaller, and the word says which.
+      this.learn(t, weak);
+      this.onEvent({
+        kind: 'status',
+        text: weak ? 'WEAK!' : 'RESISTED',
+        colour: weak ? 0xffd166 : 0x8aa0b8,
+      });
+      glow = weak ? 0xffd166 : glow;
+    }
+
     this.damage(t, damage, glow);
 
     if (cast.shove) this.shove(t, cast.shove);
@@ -632,6 +666,29 @@ export class Combat {
       t.sprite.tx = nx; t.sprite.ty = ny;
       t.sprite.setTileLight(g.lightAt(nx, ny));
     }
+  }
+
+  /**
+   * Remember that this KIND of creature answered that way.
+   *
+   * Keyed by sprite id, not by entity: the lesson is about bone hounds, and having
+   * to re-learn it on the second hound in the same room would teach nothing except
+   * that the game is not paying attention. It lasts the run — the persistent version
+   * is the bestiary, which is Guidance_And_Blessings.
+   *
+   * Only WHICH WAY it went is stored, not which element did it. The nameplate says
+   * "you have found a weakness"; finding it again is the player's memory, which is
+   * the part worth having.
+   */
+  private learn(t: Entity, weak: boolean): void {
+    const s = this.learned.get(t.spriteId) ?? { weak: false, resist: false };
+    if (weak) s.weak = true; else s.resist = true;
+    this.learned.set(t.spriteId, s);
+  }
+
+  /** What the player has discovered about this creature, for the HUD. */
+  lore(spriteId: string): { weak: boolean; resist: boolean } | null {
+    return this.learned.get(spriteId) ?? null;
   }
 
   damage(t: Entity, amount: number, colour = 0xffffff): void {
