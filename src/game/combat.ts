@@ -39,7 +39,7 @@ import {
   ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CONDUCTION_ARC_RANGE,
   CONDUCTION_ARC_SHARE, CONDUCTION_MULT, DAMAGE_JITTER, DECAY_DOT, DEEP_FREEZE_MULT,
   DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS,
-  REACTION_REACH, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
+  FIRE_TURNS, REACTION_REACH, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
   bossDamage, enemyDamage,
 } from './tuning';
 
@@ -500,6 +500,22 @@ export class Combat {
       ];
       const filled = g.fill(centre.x, centre.y, cast.volume, away);
       if (filled.includes(g.idx(this.playerTile.x, this.playerTile.y))) this.burnCaster(cast);
+
+      /**
+       * The volume LEAVES something behind, and that is also how the player finally
+       * gets to see where it went.
+       *
+       * Fire on the ground is the hazard `Roadmap/Burning_Ground.md` is about, but
+       * it is doing a second job here that is worth naming: a volume is invisible at
+       * the instant it goes off, so the burning tiles are the only readout of what
+       * the blast actually covered. Draw it before tuning it.
+       *
+       * Gust clears what it reaches, in full — the other half of the loop, and the
+       * reason gust is a volume at all.
+       */
+      if (cast.elements.includes('fire')) this.floor.ground.ignite(filled, FIRE_TURNS);
+      if (cast.elements.includes('gust')) this.floor.ground.extinguish(filled);
+      this.syncGround();
     }
 
     await this.enemyRound();
@@ -993,6 +1009,7 @@ export class Combat {
     }
 
     this.tickStatuses();
+    this.tickGround();
     /**
      * Re-cull, because bodies MOVED.
      *
@@ -1113,6 +1130,23 @@ export class Combat {
     e.sprite.tx = best[0]; e.sprite.ty = best[1];
     e.sprite.setTileLight(g.lightAt(best[0], best[1]));
     e.sprite.play('walk');
+  }
+
+  /**
+   * Ground state ages one round, and the view is told.
+   *
+   * After `tickStatuses` rather than before, so a body that is standing in fire is
+   * burnt by ground that is still alight this round and only then finds out the
+   * fire went out. The other order gives the last round of every fire away free.
+   */
+  private tickGround(): void {
+    this.floor.ground.age();
+    this.syncGround();
+  }
+
+  /** Push the ground layer at the thing that draws it. One truth, one direction. */
+  private syncGround(): void {
+    this.floor.fireView.sync(this.floor.ground.fires(), this.floor.grid.w);
   }
 
   private tickStatuses(): void {

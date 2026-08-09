@@ -990,6 +990,23 @@ export class Hud {
           : g.visited[g.idx(tx, ty)] ? '#c9b590'
           : '#6a5c48';
         ctx.fillRect(cx + 1, cy + 1, CELL - 2, CELL - 2);
+
+        /**
+         * Burning ground, over the floor colour and under everything that moves.
+         *
+         * On the map at all because the world view cannot show you fire that is
+         * behind you or round a corner, and a hazard you have to turn around to
+         * check is a hazard you walk into. It is the only floor state the map
+         * draws, so it does not need a legend — nothing else up there is orange.
+         *
+         * Gated on SIGHT rather than on explored, the same rule creatures get
+         * (`Hud.onMap`): remembering where a fire was is remembering something
+         * that has probably gone out.
+         */
+        if (!wall && floor.ground.burning(g.idx(tx, ty)) && floor.visible.has(g.idx(tx, ty))) {
+          ctx.fillStyle = '#ff7a20';
+          ctx.fillRect(cx + 1, cy + 1, CELL - 2, CELL - 2);
+        }
       }
     }
 

@@ -13,6 +13,8 @@ import { viewsFor, type SpriteView } from '../art/views';
 import { populate, spriteIdsFor, type Placed, type PlacedKind } from './populate';
 import { themeForDepth, type Theme } from '../art/theme';
 import { bossHp, enemyHp } from './tuning';
+import { Ground } from './ground';
+import { FireView } from '../dungeon/fireView';
 
 export interface Entity {
   sprite: Sprite;
@@ -119,12 +121,21 @@ export class Floor {
    * Empty until the first cull, which happens on spawn before anything draws.
    */
   visible: ReadonlySet<number> = new Set();
+  /**
+   * What is on the FLOOR — burning tiles today, and the seam any future ground
+   * state uses. On the floor and not on `Combat` because it is a property of the
+   * PLACE: it is drawn with the room, it is thrown away with the room, and a
+   * descent should not need combat's help to forget it.
+   */
+  readonly ground = new Ground();
+  readonly fireView = new FireView();
 
   private constructor(readonly depth: number, readonly seed: string) {
     this.theme = themeForDepth(depth);
     this.grid = generate({ depth, seed });
     this.view = new DungeonView(this.grid, this.theme, seed);
     this.group.add(this.view.group);
+    this.group.add(this.fireView.group);
   }
 
   /** Build a floor, preloading every sprite it needs before returning. */
@@ -221,6 +232,7 @@ export class Floor {
    */
   async restep(): Promise<void> {
     this.view.restep();
+    this.fireView.restep();
     // Fetch the whole roster at the new step before touching a single sprite, so
     // the floor changes density all at once instead of creature by creature as
     // each PNG lands. `Sprite.id` is authoritative here rather than `spriteId` —
@@ -318,6 +330,7 @@ export class Floor {
 
   update(dt: number, time: number, cam: THREE.Vector3): void {
     this.view.update(time, cam);
+    this.fireView.update(time, cam);
     for (const e of this.entities) {
       const [v, flip] = viewFrom(e, cam);
       e.sprite.setView(v, flip);
@@ -333,6 +346,7 @@ export class Floor {
     for (const e of this.entities) e.sprite.dispose();
     this.entities.length = 0;
     this.view.dispose();
+    this.fireView.dispose();
     this.group.clear();
   }
 }

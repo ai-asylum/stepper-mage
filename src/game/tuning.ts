@@ -351,3 +351,19 @@ export const CHEST_HEAL_SPREAD = 4;
  */
 export const healable = (hp: number, maxHp: number, amount: number): number =>
   Math.max(0, Math.min(amount, maxHp - hp));
+
+/**
+ * How many rounds fire stays on the ground if nobody puts it out.
+ *
+ * Long enough that a burning doorway is a route you have to plan around for the
+ * rest of the fight rather than an inconvenience you wait out — three rounds was
+ * tried first and read as a flicker, because at one action per round the player
+ * spends three rounds just getting somewhere. Eight is about two thirds of a room
+ * fight, so fire cast early is still there when the fight ends.
+ *
+ * It is also what makes the other half of the loop worth a turn. Gust costs a whole
+ * round, and clearing a fire that was about to go out by itself is the failure mode
+ * that would make casting it pointless; the fire has to outlive the player's
+ * patience before putting it out is a real decision.
+ */
+export const FIRE_TURNS = 8;
