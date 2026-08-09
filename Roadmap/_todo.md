@@ -163,9 +163,8 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Keep the stairs off the minimap until the boss falls. `Floor.stairsOpen`.
 - [x] Stop a corpse blocking the tile its own staircase opened on. Found by walking it.
 - [ ] Verify descending both by walking in and by tapping.
-      Still unverified. The first attempt reported a failure that was the TEST — the
-      Browser pane was hidden, rAF was throttled, and the render loop never ran. See
-      the phase doc; check `engine.time` is advancing before believing an input is dead.
+      WALK-IN VERIFIED: depth 1 -> 2 on a real step. Tapping still unverified — both
+      attempts were invalid tests, not evidence. See the phase doc.
 - [x] Commit changes.
 
 ## Phase 13 — First_Minutes

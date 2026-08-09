@@ -60,28 +60,37 @@ touches the stairs, so it is the phase that should prove both.
 - The minimap shows no stairs marker before the boss falls, and one after. — **met.**
   `Hud.onMap` reads `Floor.stairsOpen`, which is a fact about the floor rather than
   about whether a mesh happens to be drawn.
-- Both descending by walking in and descending by tapping are verified. — **NOT MET,
-  and this is the phase's open question.** See below.
+- Both descending by walking in and descending by tapping are verified. — **HALF
+  MET.** Walking in is verified end to end. Tapping is not. See below.
 
-## The descent is still unverified — but the alarm was mine, not the game's
+## Walking in DESCENDS. Tapping is still unverified.
 
-The task said this path had never been checked. It still has not been, and the first
-attempt produced a false alarm worth recording so nobody chases it.
+The task said neither path had ever been checked. One of them now has.
 
-Walking onto the open stairs appeared not to descend, with all three of the walk-in
-guard's conditions true. It was the TEST that was broken: the Browser pane driving it
-was hidden, so `requestAnimationFrame` was throttled to a standstill and the render
-loop never ran — `engine.time` sat frozen at 0.11 for a second and a half of
-wall clock. A step that never animates never completes, so `onStepDone` never fires
-and no descent was ever reached. Screenshots still looked correct because a screenshot
-renders a frame on demand.
+**Walk-in: verified.** Boss killed, stairs opened on its tile, player stepped onto
+them with a real animated step, floor changed from depth 1 to depth 2 and the new
+floor came up with `stairsOpen` correctly false again.
 
-The lesson for anything driven through the dev server: **check that `engine.time` is
-advancing before concluding an interaction is broken.** A frozen loop looks exactly
-like a dead input.
+Getting there took two false alarms, both mine, and they are worth recording because
+anything driven through the dev server will hit them:
 
-So the walk-in and the tap paths remain genuinely unverified, and there is no evidence
-either way about whether they work.
+1. **A throttled render loop looks exactly like a dead input.** The Browser pane was
+   hidden, so `requestAnimationFrame` was throttled to nothing and `engine.time` sat
+   frozen. A step that never animates never completes, so `onStepDone` never fires and
+   nothing downstream of it can happen. The fix is to pump the loop by hand —
+   `engine.onUpdate(1/60)` in a loop, advancing `engine.time` alongside it.
+2. **`descend()` is async.** Pumping the loop synchronously is not enough; the block
+   has to yield to real macrotasks between batches or nothing awaited inside can
+   settle. Depth changed only once the pump was interleaved with `setTimeout`.
+
+**Tap: still unverified.** Two attempts, both invalid tests rather than evidence. The
+first called the debug `tapHud` with an action object when it takes SCREEN
+COORDINATES. The second projected the stairs with `worldToUi` and got an off-screen x
+for a staircase directly ahead of a correctly-facing player, which is a projection
+that cannot be trusted in a pane that is not composited. So there is still no evidence
+either way about the tap path, which is exactly what the doc suspected: it was added
+with a hit rect pushed outside the candidate loop and only the walk-in path was
+tested.
 
 **One real bug was found and fixed on the way there.** A body at zero HP stays
 `alive` until its death animation finishes, and `solidAt` counted it as solid for
