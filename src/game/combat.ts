@@ -39,7 +39,7 @@ import {
   ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CONDUCTION_ARC_RANGE,
   CONDUCTION_ARC_SHARE, CONDUCTION_MULT, DAMAGE_JITTER, DECAY_DOT, DEEP_FREEZE_MULT,
   DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS,
-  FIRE_TURNS, REACTION_REACH, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
+  FIRE_TURNS, GROUND_FIRE_DOT, REACTION_REACH, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
   bossDamage, enemyDamage,
 } from './tuning';
 
@@ -378,6 +378,41 @@ export class Combat {
   }
 
   /**
+   * FIRE ON THE GROUND IS A COMPONENT.
+   *
+   * Cast into a burning tile and the fire already there joins the spell as extra
+   * fire slots — one per flame level, so a fresh full-height fire is worth three and
+   * a guttering one is worth one. They go through `resolveCast` as ordinary fire
+   * ids, which means this does not merely make a cast bigger: it can change what the
+   * cast IS. Frostbolt into a fire is Steam Burst, and the player never had to be
+   * holding fire to get there.
+   *
+   * This is the harvest rule (`docs/DESIGN.md` — every prop is a spell component)
+   * extended to the floor, and it is what stops burning ground being purely a
+   * penalty. Fire you laid down last round is fuel you can spend this round, which
+   * gives a volume a second reason to exist beyond area denial.
+   *
+   * PUBLIC because the HUD has to preview the same spell the cast will produce. A
+   * fusion the player only discovers after committing the turn reads as the game
+   * having changed its mind, which is the same defect the reaction verbs exist to
+   * avoid — see `ReactionDef.verb`.
+   */
+  withGroundFuel(
+    pages: string[], targetEntity: Entity | null,
+  ): { pages: string[]; fuel: number; at: number } {
+    const g = this.floor.grid;
+    const at = targetEntity
+      ? g.idx(targetEntity.sprite.tx, targetEntity.sprite.ty)
+      : g.idx(this.playerTile.x, this.playerTile.y);
+    const fuel = this.floor.ground.burning(at) ? this.floor.ground.level(at) : 0;
+    return {
+      pages: fuel ? [...pages, ...Array<string>(fuel).fill('fire')] : pages,
+      fuel,
+      at,
+    };
+  }
+
+  /**
    * Release the assembled cast — **the one place a spell costs a turn.**
    *
    * Returns true if the spell actually went off, and true is therefore also "a
@@ -411,10 +446,44 @@ export class Combat {
         }
       : { kind: 'none' };
 
-    const cast = this.preview(pages, target);
+    const { pages: withFuel, fuel, at: fuelAt } = this.withGroundFuel(pages, targetEntity);
+
+    const cast = this.preview(withFuel, target);
+
+    /**
+     * Scavenged fire feeds the cast but never inflates its VOLUME.
+     *
+     * Without this the mechanic is a runaway with gain greater than one: fire picked
+     * up off a tile made the cast bigger, a bigger cast lit more tiles, and more
+     * tiles meant more to pick up next round. Measured, it took the gated line from
+     * clearing 5 of 5 seeds to 1, dying as early as floor 1 — the volume outgrew the
+     * room and caught the caster every time.
+     *
+     * Capped to the volume the hand alone would have produced, so the fire still
+     * folds into the cast's IDENTITY and its damage — a Frostbolt thrown into a fire
+     * is still a Steam Burst, which is the whole point — and only the area is held
+     * where the player put it. The loop keeps its payoff and loses its gain.
+     */
+    if (fuel) cast.volume = Math.min(cast.volume, this.preview(pages, target).volume);
+
     if (cast.refusal) {
       this.onEvent({ kind: 'deny', text: cast.refusal });
       return false;
+    }
+
+    /**
+     * The fire is CONSUMED. A tile that could be re-harvested every round would make
+     * standing beside a fire strictly better than anything else in the game, and
+     * spending it is what makes "when do I cash this in" a decision.
+     */
+    if (fuel) {
+      this.floor.ground.extinguish([fuelAt]);
+      this.syncGround();
+      this.onEvent({
+        kind: 'status',
+        text: fuel > 1 ? `THE FIRE FEEDS IT \u00d7${fuel}!` : 'THE FIRE FEEDS IT!',
+        colour: 0xff7a2b,
+      });
     }
 
     this.onEvent({
@@ -499,7 +568,8 @@ export class Combat {
         Math.sign(centre.y - this.playerTile.y),
       ];
       const filled = g.fill(centre.x, centre.y, cast.volume, away);
-      if (filled.includes(g.idx(this.playerTile.x, this.playerTile.y))) this.burnCaster(cast);
+      const onPlayer = g.idx(this.playerTile.x, this.playerTile.y);
+      if (filled.some((t) => t.i === onPlayer)) this.burnCaster(cast);
 
       /**
        * The volume LEAVES something behind, and that is also how the player finally
@@ -514,7 +584,7 @@ export class Combat {
        * reason gust is a volume at all.
        */
       if (cast.elements.includes('fire')) this.floor.ground.ignite(filled, FIRE_TURNS);
-      if (cast.elements.includes('gust')) this.floor.ground.extinguish(filled);
+      if (cast.elements.includes('gust')) this.floor.ground.extinguish(filled.map((t) => t.i));
       this.syncGround();
     }
 
@@ -1140,13 +1210,53 @@ export class Combat {
    * fire went out. The other order gives the last round of every fire away free.
    */
   private tickGround(): void {
+    this.scorchStanders();
     this.floor.ground.age();
     this.syncGround();
   }
 
+  /**
+   * Everything standing in fire pays for it, creature and player alike.
+   *
+   * Scaled by the flame's HEIGHT rather than flat, so the same number that draws a
+   * guttering fire also prices it: walking through the edge of an old burn is a
+   * scratch, and standing in the middle of a fresh one is most of a hit. That gives
+   * the player something to read before they commit a step, which a flat number
+   * would not — every burning tile would look equally bad and the drawing would be
+   * decoration.
+   *
+   * Deliberately NOT the `burning` status. That is a thing a spell does to a body
+   * and it follows the body around; this is a property of the TILE, and a creature
+   * that steps out of a fire has stepped out of it. Two channels that both mean
+   * "on fire" would also stack into a number nobody predicted.
+   */
+  private scorchStanders(): void {
+    const g = this.floor.grid;
+    const ground = this.floor.ground;
+    if (!ground.count) return;
+
+    for (const e of [...this.floor.entities]) {
+      // BODIES only. An altar, a chest or a stair is furniture standing on a tile,
+      // not something that can be hurt by it — and `damage` would happily kill an
+      // altar, which quietly ends a run's progression without ending the run.
+      if (!e.alive || !(e.hostile || e.animated)) continue;
+      const i = g.idx(e.sprite.tx, e.sprite.ty);
+      if (!ground.burning(i)) continue;
+      this.damage(e, GROUND_FIRE_DOT * ground.level(i), 0xff7a2b);
+    }
+
+    const pi = g.idx(this.playerTile.x, this.playerTile.y);
+    if (ground.burning(pi)) {
+      const dmg = GROUND_FIRE_DOT * ground.level(pi);
+      this.state.hp -= dmg;
+      this.onPlayerHurt(dmg, null);
+      this.onEvent({ kind: 'hit', text: `The burning ground sears you for ${dmg}.`, colour: 0xff7a2b });
+    }
+  }
+
   /** Push the ground layer at the thing that draws it. One truth, one direction. */
   private syncGround(): void {
-    this.floor.fireView.sync(this.floor.ground.fires(), this.floor.grid.w);
+    this.floor.fireView.sync(this.floor.ground.flames(), this.floor.grid.w);
   }
 
   private tickStatuses(): void {

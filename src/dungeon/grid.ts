@@ -49,6 +49,9 @@ export interface LightSource {
   face: number;
 }
 
+/** A tile a fill reached, and how many steps away it was. */
+export interface FillTile { i: number; d: number; }
+
 export class Grid {
   readonly w: number;
   readonly h: number;
@@ -163,17 +166,22 @@ export class Grid {
    * volume against a wall pools sideways instead of stopping short. It never
    * crosses a wall; that is the whole rule and the only rule.
    *
-   * Returns tile indices, origin first, at most `volume` of them.
+   * Returns each tile with its PATH DISTANCE from the origin, nearest first, at
+   * most `volume` of them. The distance is carried out rather than left for the
+   * caller to re-derive, because the flood is the only thing that knows it — a fill
+   * wraps corners, so a tile three steps down a hallway is at distance 3 and two
+   * tiles apart on the map.
    */
-  fill(x: number, y: number, volume: number, away?: [number, number]): number[] {
+  fill(x: number, y: number, volume: number, away?: [number, number]): FillTile[] {
     if (volume <= 0 || !this.inside(x, y)) return [];
     const origin = this.idx(x, y);
     const seen = new Uint8Array(this.w * this.h);
-    const out: number[] = [];
+    const out: FillTile[] = [];
 
     // The frontier is grown one tile at a time and always from a tile already
     // taken, so the fill is connected however the bias reorders it.
     const frontier: number[] = [origin];
+    const step = new Int16Array(this.w * this.h);
     seen[origin] = 1;
 
     /**
@@ -197,7 +205,7 @@ export class Grid {
         if (rank(frontier[k]) < rank(frontier[best])) best = k;
       }
       const i = frontier.splice(best, 1)[0];
-      out.push(i);
+      out.push({ i, d: step[i] });
       const cx = i % this.w, cy = (i / this.w) | 0;
       for (const [dx, dy] of DIR_VEC) {
         const nx = cx + dx, ny = cy + dy;
@@ -205,6 +213,7 @@ export class Grid {
         const ni = this.idx(nx, ny);
         if (seen[ni] || !this.walkable(nx, ny)) continue;
         seen[ni] = 1;
+        step[ni] = step[i] + 1;
         frontier.push(ni);
       }
     }

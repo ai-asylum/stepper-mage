@@ -43,6 +43,15 @@ const CARD_FADE_IN = 0.55;
 const CARD_FADE_BAND = 0.7;
 
 /**
+ * Height multiplier per flame level, guttering to a third.
+ *
+ * Three fixed steps rather than a continuous scale: the world is drawn in texels,
+ * and a sprite that shrinks smoothly through them shimmers in a way that reads as a
+ * rendering fault rather than as a dying fire.
+ */
+const CARD_LEVEL = [0.34, 0.64, 1] as const;
+
+/**
  * One frame of burning ground, authored at the current texel density.
  *
  * Drawn as embers rather than as flames: this is ground that is on fire, seen from
@@ -164,15 +173,22 @@ export class FireView {
    * tiny, it changes every round, and a diff is a second copy of the truth that can
    * drift from `Ground`.
    */
-  sync(tiles: Iterable<number>, gridW: number): void {
+  sync(flames: Iterable<{ i: number; level: 1 | 2 | 3 }>, gridW: number): void {
     let i = 0;
-    for (const t of tiles) {
+    for (const { i: t, level } of flames) {
       const x = t % gridW, y = (t / gridW) | 0;
       this.take(i).position.set(x, LIFT, y);
       this.pool[i].visible = true;
-      // The card stands on the tile centre, its base on the floor.
-      this.takeCard(i).position.set(x, CARD_H / 2, y);
-      this.cardPool[i].visible = true;
+      /**
+       * The card is SCALED to the flame's height rather than swapped for a shorter
+       * drawing, and anchored so it grows off the floor instead of about its middle
+       * — a flame that shrank toward its own centre would lift off the ground.
+       */
+      const k = CARD_LEVEL[level - 1];
+      const card = this.takeCard(i);
+      card.scale.set(1, k, 1);
+      card.position.set(x, (CARD_H * k) / 2, y);
+      card.visible = true;
       i++;
     }
     for (let k = i; k < this.live; k++) {

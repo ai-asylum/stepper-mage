@@ -518,7 +518,9 @@ export class Hud {
     const ids = this.selectedIds();
     if (!ids.length) return null;
     const t = this.target;
-    return this.combat.preview(ids, t
+    // Ground fire the target is standing in joins the cast, so the preview has to
+    // include it or the spell changes identity the moment the player commits.
+    return this.combat.preview(this.combat.withGroundFuel(ids, t).pages, t
       ? {
           kind: t.animated ? 'golem' : t.kind === 'prop' ? 'prop'
             : t.kind === 'boss' ? 'boss' : t.kind === 'chest' ? 'chest' : 'enemy',

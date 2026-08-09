@@ -367,3 +367,16 @@ export const healable = (hp: number, maxHp: number, amount: number): number =>
  * patience before putting it out is a real decision.
  */
 export const FIRE_TURNS = 8;
+
+/**
+ * Damage per round PER FLAME LEVEL for standing in fire — so 2, 4 or 6 depending on
+ * how tall the flame still is.
+ *
+ * Sized against the bar in hits rather than against enemy damage, which is the rule
+ * the rest of this file follows: a full-height fire costs 6, a depth-1 mook hits for
+ * 3, so standing in a fresh fire is worth about two hits a round and is never the
+ * right answer. Crossing a guttering one for 2 usually is. That gap is the whole
+ * mechanic — fire has to be bad enough to route around and cheap enough that routing
+ * around it is a choice rather than a rule.
+ */
+export const GROUND_FIRE_DOT = 2;
