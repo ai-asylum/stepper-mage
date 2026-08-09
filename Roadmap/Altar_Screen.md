@@ -1,8 +1,8 @@
 # Altar Screen
 
 **Player-facing:** yes
-**Status:** planned
-**Started:** —
+**Status:** shipped
+**Started:** 2026-08-10
 
 The altar's three offers, as objects you are choosing between rather than rows in a
 list.
@@ -57,7 +57,33 @@ committing to three.
 
 ## Acceptance
 
-- The three offers are side by side and read as peers.
-- A spell offer is visibly a page from the book; a non-spell offer is visibly a scroll.
-- A golden page is gold on the altar and gold in the book for the rest of the run.
-- All three columns are legible at 375px wide.
+- The three offers are side by side and read as peers. — **met.**
+- A spell offer is visibly a page from the book; a non-spell offer is visibly a
+  scroll. — **met.** The spell offer is not *like* a page, it IS one: `actionPage`,
+  the same call the grimoire makes, seeded with the same book index so the sheet
+  offered and the sheet torn are the same down to the foxing.
+- A golden page is gold on the altar and gold in the book for the rest of the run. —
+  **met.** `giltify` tone-maps the finished face onto a gilt ramp, and `setGilded`
+  applies it to the run's gifted page so the book draws it gilded too.
+- All three columns are legible at 375px wide. — **met**, with the card sized to the
+  column rather than the column to the card.
+
+## What the first attempt got wrong
+
+Worth keeping, because it is the mistake this phase is *about*.
+
+The first version authored a small lookalike — a sigil in a ring on a parchment
+rectangle at 56×74, drawn at 2× so the texels stayed square. The reasoning was that
+the book page is 128 texels wide, three columns on a 375px screen are about 110, and
+scaling pixel art fractionally shimmers.
+
+It was wrong, and Kalvin said so in five words: the pages are too small and look
+nothing like the actual pages. The settled decision above says a spell offer IS a
+spell-book page, and the whole argument for that is that the player already knows
+what the object is. A card that merely RESEMBLES a page has to be learnt from
+scratch, and looks like a worse version of something already familiar. Protecting
+integer scaling at the cost of the object's identity traded the wrong thing away.
+
+The fix was to call `actionPage` directly and let the layout size the card to
+whatever the column can give it. The fractional scale is invisible; the book draws
+these same pages on a 3D quad at an arbitrary size already.

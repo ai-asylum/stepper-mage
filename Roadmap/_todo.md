@@ -178,11 +178,13 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 14 — Altar_Screen
 
-- [ ] Lay the three offers out as columns, left to right.
-- [ ] Draw a spell offer as a spell-book page at card size.
-- [ ] Draw a non-spell offer as a scroll in the same pixel-art hand.
-- [ ] Add a gold treatment to the page face and use it wherever a golden page is drawn.
-- [ ] Commit changes.
+- [x] Lay the three offers out as columns, left to right.
+- [x] Draw a spell offer as a spell-book page at card size. It is the REAL page —
+      `actionPage`, the same call the book makes. A lookalike was tried and rejected.
+- [x] Draw a non-spell offer as a scroll in the same pixel-art hand.
+- [x] Add a gold treatment to the page face and use it wherever a golden page is drawn.
+      `giltify` in `book/giltify.ts`; `setGilded` puts it in the book for the run.
+- [x] Commit changes.
 
 ## Phase 15 — Corpse_Raising_And_Golem_Persistence
 

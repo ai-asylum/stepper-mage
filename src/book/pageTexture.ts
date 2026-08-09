@@ -30,6 +30,7 @@ import { CHAPTERS, type SpellDef } from '../spells/pages';
 import { chapters } from '../style/palette';
 import { hex, mix, Pix, Ramp, resolveLevels, rgba, shade, slopeSoft, unpack, type Col } from '../art/pixel';
 import { CELL_H, drawCentered, fitCentered, wrap } from '../art/bitfont';
+import { giltify } from './giltify';
 
 /** The canvas the ported `SigilFn` table is authored against. */
 const W = 512;
@@ -1164,13 +1165,37 @@ export interface PageArt {
 const artCache = new Map<string, PageArt>();
 let blankTex: THREE.Texture | null = null;
 
+/**
+ * The pages of the book that are GILDED, by spell id.
+ *
+ * A golden page is a one-run gift, and `Roadmap/Altar_Screen.md` is specific that it
+ * should look like one for the whole run rather than only on the altar that offered
+ * it — it used to arrive in the book looking like every other page, which made the
+ * rarest thing in the roll the least remarkable thing in the grimoire.
+ *
+ * A set rather than a flag on the spell, because gilding is a property of THIS RUN's
+ * copy: the same Fireball is an ordinary page in the next one.
+ */
+const gilded = new Set<string>();
+
+export function setGilded(id: string | null): void {
+  gilded.clear();
+  if (id) {
+    gilded.add(id);
+    // The art is cached per spell, and this one has to be re-authored in gold.
+    artCache.delete(id);
+  }
+}
+
 export function pageArt(spell: SpellDef, index: number): PageArt {
   let art = artCache.get(spell.id);
   if (!art) {
-    const action = actionPage(spell, index);
+    const gild = gilded.has(spell.gameId);
+    const action = gild ? giltify(actionPage(spell, index)) : actionPage(spell, index);
+    const lore = gild ? giltify(lorePage(spell, index)) : lorePage(spell, index);
     art = {
       action: action.toTexture(),
-      lore: lorePage(spell, index).toTexture(),
+      lore: lore.toTexture(),
       torn: tornVariant(action).toTexture(),
     };
     artCache.set(spell.id, art);

@@ -39,6 +39,7 @@ import { DEFAULT_STEP, setPixelStep } from './art/steps';
 import {
   CHEST_HEAL_SPREAD, PLAYER_MAX_HP, THREAT_REACH, chestHealBase, descendHeal, healable,
 } from './game/tuning';
+import { setGilded } from './book/pageTexture';
 import {
   NODE_BY_ID, TREE, derivedBeltSlots, derivedGolemInfusion, derivedGolemsKept,
   derivedHandSize, derivedSlots, buyBlocker, isNodeId, migrateOwned, owns,
@@ -276,6 +277,12 @@ async function boot(): Promise<void> {
   };
   /** Kept for the log line the first floor raises: a gift has to be announced. */
   const gifted = takeGift();
+  /**
+   * The gilded page is gold in the BOOK too, for the whole run — not just on the
+   * altar that offered it. It is the one thing that crosses a run boundary, and it
+   * used to arrive in the grimoire looking like every other page.
+   */
+  setGilded(gifted);
   const startPages = gifted ? [...meta.loadout, gifted] : [...meta.loadout];
 
   const state: PlayerState = {

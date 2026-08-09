@@ -30,6 +30,8 @@ import * as THREE from 'three';
 import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
 import { spriteTexture } from '../dungeon/sprites';
 import type { Floor } from '../game/floor';
+import { CARD_H, CARD_W, pageCard, scrollCard } from '../book/offerCard';
+import { ALL_PAGES } from '../spells/pages';
 
 /**
  * What an altar can put on a card.
@@ -59,6 +61,14 @@ export type AltarOfferKind =
  * is a card that can quietly disagree with what taking it actually does. The
  * offer is built once, at roll time, and it is the whole truth about itself.
  */
+/**
+ * The mark on a non-spell offer's scroll — a glyph, not a word, because the copy
+ * under the card already says it and a scroll with a sentence on it is a page.
+ */
+const OFFER_GLYPH: Record<string, string> = {
+  heal: '+', stars: '*', reroll: '~', rank: '^', sacrifice: 'X',
+};
+
 export interface AltarOffer {
   kind: AltarOfferKind;
   /**
@@ -329,6 +339,9 @@ export class Hud {
    * unresponsive rather than as animated (`Roadmap/First_Minutes.md`).
    */
   bookBusy = false;
+
+  /** Rasterised offer objects, keyed on what makes one look different. */
+  private offerArt = new Map<string, HTMLCanvasElement>();
 
   /**
    * Has the player taken a single step yet?
@@ -1400,9 +1413,15 @@ export class Hud {
     // screen read as one voice rather than as two things blinking at each other.
     const pulse = 0.5 + Math.sin(this.engine.time * 2.4) * 0.5;
     ctx.globalAlpha = 0.45 + pulse * 0.4;
-    ctx.font = 'bold 9px ui-monospace, monospace';
+    /**
+     * ONE instruction, not two. The aiming half was a second thing to learn at the
+     * moment the player has learnt nothing, and a hint that lists options is a hint
+     * nobody finishes reading — the reticle teaches aiming on its own the first time
+     * something is in front of you.
+     */
+    ctx.font = 'bold 13px ui-monospace, monospace';
     ctx.fillStyle = PARCH;
-    ctx.fillText('SWIPE TO MOVE  ·  TAP A CREATURE TO AIM', W / 2, y);
+    ctx.fillText('SWIPE TO MOVE', W / 2, y);
     ctx.restore();
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
@@ -2566,189 +2585,174 @@ export class Hud {
     ctx.textAlign = 'center';
     ctx.font = 'bold 12px ui-monospace, monospace';
     ctx.fillStyle = '#b98cff';
-    ctx.fillText('THE ALTAR OFFERS', W / 2, H * 0.16);
+    ctx.fillText('THE ALTAR OFFERS', W / 2, H * 0.13);
     ctx.font = '9px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(232,217,176,0.55)';
-    ctx.fillText('choose one', W / 2, H * 0.16 + 16);
+    ctx.fillText('choose one', W / 2, H * 0.13 + 16);
 
-    const cw = W - 48, x = 24, gap = 12;
     /**
-     * Cards are MEASURED, not fixed. A card with a two-line body and a price has
-     * half again the content of a bare one, and one shared height either clips the
-     * long card or hollows out the short ones — on the only screen in the game
-     * that is meant to be read.
+     * THREE COLUMNS, LEFT TO RIGHT. Not a list.
+     *
+     * A vertical stack reads as a ranking — first place, second, third — and these
+     * are peers. Side by side is the shape of a choice.
+     *
+     * The card is drawn at exactly `CARD_SCALE`, never fitted to the column, because
+     * it is pixel art: a fractional scale shimmers and reads as a rendering fault
+     * rather than as a small page. The COLUMN flexes around the card instead.
      */
-    ctx.font = '9px ui-monospace, monospace';
-    const bodies = offers.map((o) => wrapLines(ctx, o.detail, cw - 40));
-    ctx.font = 'bold 8.5px ui-monospace, monospace';
-    const prices = offers.map((o) => (o.cost ? wrapLines(ctx, o.cost, cw - 52) : []));
-    const heights = offers.map((_, i) =>
-      50 + bodies[i].length * 12 + (prices[i].length ? 17 + prices[i].length * 11 : 8));
-
-    let y = H / 2 - (heights.reduce((a, b) => a + b, 0) + (offers.length - 1) * gap) / 2;
+    const gap = 8;
+    const margin = 10;
+    /**
+     * The card fills whatever the column can give it, rather than sitting at a fixed
+     * scale inside one.
+     *
+     * The first version drew at a fixed 2× of a small authored card, and it was too
+     * small on every screen — a page you have to lean toward is not the object the
+     * grimoire taught you. So the width is whatever three columns and their gutters
+     * leave, and the height follows the page's own aspect. Also capped against the
+     * available HEIGHT, because the modal still has to fit a headline, a body and a
+     * price under each card.
+     */
+    const byWidth = (W - margin * 2 - gap * (offers.length - 1)) / offers.length;
+    const byHeight = (H * 0.42) * (CARD_W / CARD_H);
+    const cardW = Math.floor(Math.min(byWidth, byHeight));
+    const cardH = Math.round(cardW * (CARD_H / CARD_W));
+    const rowW = cardW * offers.length + gap * (offers.length - 1);
+    const x0 = (W - rowW) / 2;
+    const top = H * 0.24;
 
     offers.forEach((o, i) => {
-      const ch = heights[i];
-      /** Top of the price band, or 0 when this offer is free. */
-      const py = prices[i].length ? y + 54 + bodies[i].length * 12 : 0;
-      /**
-       * The sacrifice is the only offer that destroys a page you own, and it wears
-       * that page's colour — which on Frostbolt is the same cold blue as a reroll
-       * charge, the most harmless card in the roll. So the frame stops being the
-       * page's colour and becomes an alarm; the leading edge keeps the colour,
-       * because WHICH page is still what the offer is about.
-       */
-      const danger = o.kind === 'sacrifice';
+      const x = x0 + i * (cardW + gap);
+      const sel = o.golden;
 
-      if (o.golden) {
-        // The only card in the game that glows. A golden page is the one thing that
-        // crosses a run boundary at all, and it shows up in maybe half of a full
-        // run's altars — it cannot be a card you skim.
+      /**
+       * The golden card is the only one that glows, and it is worth the exception:
+       * it is the one thing in a roll that crosses a run boundary at all, and it
+       * shows up in maybe half a run's altars. It cannot be a card you skim.
+       */
+      if (sel) {
         const pulse = 0.6 + Math.sin(this.engine.time * 2.4) * 0.4;
         ctx.save();
         ctx.shadowColor = `rgba(255,207,92,${0.35 + pulse * 0.35})`;
-        ctx.shadowBlur = 9 + pulse * 11;
+        ctx.shadowBlur = 10 + pulse * 12;
       }
-      rr(ctx, x, y, cw, ch, 8);
-      if (o.golden) {
-        const g = ctx.createLinearGradient(x, y, x, y + ch);
-        g.addColorStop(0, 'rgba(78,56,20,0.97)');
-        g.addColorStop(1, 'rgba(30,22,13,0.97)');
-        ctx.fillStyle = g;
-      } else ctx.fillStyle = danger ? 'rgba(40,16,13,0.96)' : 'rgba(26,18,32,0.96)';
-      ctx.fill();
-      ctx.strokeStyle = o.golden ? GOLD : danger ? '#ff6a3c' : hexCss(o.colour, 0.9);
-      ctx.lineWidth = o.golden ? 2.2 : danger ? 1.8 : 1.6;
-      // Perforated, and nothing else on the modal is: an alarm colour alone cannot
-      // carry "this destroys a page" when a fire page's own colour is that orange.
-      // A tear-here line is what the offer literally does.
-      if (danger) ctx.setLineDash([7, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      if (o.golden) ctx.restore();
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(this.offerCanvas(o), x, top, cardW, cardH);
+      if (sel) ctx.restore();
 
-      if (o.golden) {
-        // A gilded edge: double rule and picked-out corners, the two marks a
-        // hand-illuminated page has and a printed one does not.
-        rr(ctx, x + 4.5, y + 4.5, cw - 9, ch - 9, 5);
-        ctx.strokeStyle = 'rgba(255,207,92,0.38)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.strokeStyle = GOLD;
-        ctx.beginPath();
-        for (const [cx, cy, sx, sy] of [
-          [x + 4.5, y + 4.5, 1, 1], [x + cw - 4.5, y + 4.5, -1, 1],
-          [x + 4.5, y + ch - 4.5, 1, -1], [x + cw - 4.5, y + ch - 4.5, -1, -1],
-        ] as const) {
-          ctx.moveTo(cx + sx * 7, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + sy * 7);
-        }
-        ctx.stroke();
-      }
-
-      // A colour flash down the leading edge, so the three read as distinct. Held
-      // clear of the frame on the two cards whose frame is not a plain line — the
-      // gilded rule and the tear line both chop a strip drawn under them into
-      // something that looks like a rendering fault. Stopped above the price band
-      // for the same reason: run behind it, it reads as a bar half full of mud.
-      const inset = o.golden || danger;
-      const flashTop = y + (inset ? 14 : 10);
-      const flashEnd = py ? py - 4 : y + ch - (inset ? 14 : 10);
-      ctx.fillStyle = hexCss(o.colour, 0.85);
-      ctx.fillRect(x + (inset ? 8 : 1), flashTop, inset ? 3 : 4, flashEnd - flashTop);
-
-      ctx.textAlign = 'left';
+      /**
+       * The tag above and the body below, both centred on the card's own column.
+       * Copy that used to sit INSIDE the row now sits under the object it describes,
+       * which is what lets the object be the thing the eye lands on first.
+       */
+      ctx.textAlign = 'center';
       ctx.font = '8px ui-monospace, monospace';
-      ctx.fillStyle = danger ? 'rgba(255,150,110,0.95)'
+      ctx.fillStyle = o.kind === 'sacrifice' ? 'rgba(255,150,110,0.95)'
         : o.golden ? 'rgba(255,207,92,0.9)'
-        : hexCss(o.colour, 0.8);
-      ctx.fillText(o.tag, x + 18, y + 12);
+        : hexCss(o.colour, 0.85);
+      ctx.fillText(o.tag.toUpperCase(), x + cardW / 2, top - 8);
 
-      // The headline carries the whole card: serif, big, and the only bright thing
-      // on it, so the eye lands on WHAT this is before the small print.
-      ctx.font = 'bold 16px ui-serif, Georgia, serif';
+      let ty = top + cardH + 14;
+      ctx.font = 'bold 10px ui-serif, Georgia, serif';
       ctx.fillStyle = o.golden ? GOLD : '#fff4dc';
-      ctx.fillText(o.name, x + 18, y + 26);
-
-      // NEXT RUN and not PERMANENT: the seal is the card's one-word summary, and
-      // the whole of what a golden page is now is WHEN it pays out.
-      if (o.golden) this.drawSeal(ctx, x + cw - 14, y + 10, 'NEXT RUN');
-      else if (o.toRank > 0) this.drawRankPips(ctx, x + cw - 14, y + 13, o);
-
-      ctx.font = '9px ui-monospace, monospace';
-      // Warmer and brighter on the gilded card: the same grey on its lit ground is
-      // the one place the body copy loses its contrast.
-      ctx.fillStyle = o.golden ? 'rgba(255,240,206,0.88)' : 'rgba(226,216,200,0.72)';
-      bodies[i].forEach((ln, k) => ctx.fillText(ln, x + 18, y + 50 + k * 12));
-
-      // The price, on the card, BEFORE it is taken — only the rank-3 sacrifice has
-      // one, because it is the only offer that takes something away for good.
-      // A banded row with a warning disc rather than one more line of body text:
-      // a player who meets this price in the log afterwards was tricked by the UI.
-      if (py) {
-        ctx.save();
-        rr(ctx, x, y, cw, ch, 8);
-        ctx.clip();
-        ctx.fillStyle = 'rgba(96,30,16,0.58)';
-        ctx.fillRect(x, py, cw, ch - (py - y));
-        ctx.restore();
-        ctx.strokeStyle = 'rgba(255,120,70,0.5)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x + 1, py + 0.5); ctx.lineTo(x + cw - 1, py + 0.5);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(x + 24, py + 12, 5.5, 0, Math.PI * 2);
-        ctx.fillStyle = '#ff6a3c';
-        ctx.fill();
-        ctx.font = 'bold 9px ui-monospace, monospace';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#1c0b06';
-        ctx.fillText('!', x + 24, py + 12.5);
-        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-        ctx.font = 'bold 8.5px ui-monospace, monospace';
-        ctx.fillStyle = '#ffc0a4';
-        prices[i].forEach((ln, k) => ctx.fillText(ln, x + 34, py + 7 + k * 11));
+      for (const ln of wrapLines(ctx, o.name, cardW - 2)) {
+        ctx.fillText(ln, x + cardW / 2, ty);
+        ty += 12;
       }
 
-      this.hits.push({ rect: [x, y, cw, ch], action: { kind: 'offer', offer: o } });
-      y += ch + gap;
+      ctx.font = '8px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(226,216,200,0.72)';
+      for (const ln of wrapLines(ctx, o.detail, cardW - 2)) {
+        ctx.fillText(ln, x + cardW / 2, ty);
+        ty += 10;
+      }
+
+      /**
+       * The price, in an alarm colour under the card it belongs to. Only the rank-3
+       * sacrifice has one — it is the only offer that takes something away for good
+       * — and a player who meets that price in the log afterwards was tricked.
+       */
+      if (o.cost) {
+        ty += 4;
+        ctx.font = 'bold 8px ui-monospace, monospace';
+        ctx.fillStyle = '#ffc0a4';
+        for (const ln of wrapLines(ctx, o.cost, cardW - 2)) {
+          ctx.fillText(ln, x + cardW / 2, ty);
+          ty += 10;
+        }
+      }
+
+      /**
+       * The seal and the pips sit at the FOOT of the object, not its head. A scroll's
+       * top is a rolled end — a solid bar — and a badge landing on it read as damage
+       * to the drawing rather than as a mark on it.
+       */
+      if (o.golden) this.drawSeal(ctx, x + cardW - 6, top + cardH - 20, 'NEXT RUN');
+      else if (o.toRank > 0) this.drawRankPips(ctx, x + cardW - 6, top + cardH - 18, o);
+
+      // The whole column is the target, card and copy alike — a tap that lands on
+      // the words describing a thing meant to choose that thing.
+      this.hits.push({ rect: [x - gap / 2, top - 18, cardW + gap, ty - top + 18], action: { kind: 'offer', offer: o } });
     });
 
-    // A reroll charge is spendable HERE and nowhere else, so the modal is the only
-    // place it can be reached.
-    if (this.state.rerolls > 0) {
-      const label = `↻  REROLL  ×${this.state.rerolls}`;
-      ctx.font = 'bold 10px ui-monospace, monospace';
-      const tw = ctx.measureText(label).width + 36;
-      const bx = (W - tw) / 2, by = y + 8, bh = 28;
-      rr(ctx, bx, by, tw, bh, 14);
-      ctx.fillStyle = 'rgba(18,30,50,0.94)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(140,200,255,0.85)';
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#d6ecff';
-      ctx.fillText(label, W / 2, by + bh / 2 + 0.5);
-      ctx.font = '8px ui-monospace, monospace';
-      ctx.fillStyle = 'rgba(140,200,255,0.55)';
-      ctx.textBaseline = 'top';
-      ctx.fillText('spends a charge · turns all three over', W / 2, by + bh + 6);
-      // Padded, because it is the one small control on a screen of large ones.
-      this.hits.push({ rect: [bx - 8, by - 8, tw + 16, bh + 16], action: { kind: 'reroll' } });
-    }
     ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    this.drawReroll(ctx, W, H);
   }
 
   /**
-   * Rank as a MOVE, not a destination.
-   *
-   * The pips you hold are the page's own dimmed colour, then a caret, then the
-   * ones this offer adds in bright gold — so the card says "you have one, this
-   * makes two" at a glance, which a bare "Rank 2" never does. The caret carries
-   * that on its own: Spark's colour IS gold, so hue alone cannot be the
-   * difference between owned and gained. Anchored to the card's right edge.
+   * A reroll charge is spendable HERE and nowhere else, so the modal is the only
+   * place it can be reached. Below the row rather than beside it: it acts on all
+   * three offers, and a control that sat in line with them would read as a fourth.
    */
+  private drawReroll(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    if (this.state.rerolls <= 0) return;
+    const label = `\u21bb  REROLL  \u00d7${this.state.rerolls}`;
+    ctx.font = 'bold 10px ui-monospace, monospace';
+    const tw = ctx.measureText(label).width + 36;
+    const bx = (W - tw) / 2, by = H - 88, bh = 28;
+    rr(ctx, bx, by, tw, bh, 14);
+    ctx.fillStyle = 'rgba(18,30,50,0.94)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(140,200,255,0.85)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#d6ecff';
+    ctx.fillText(label, W / 2, by + bh / 2 + 0.5);
+    ctx.font = '8px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(140,200,255,0.55)';
+    ctx.textBaseline = 'top';
+    ctx.fillText('spends a charge \u00b7 turns all three over', W / 2, by + bh + 6);
+    // Padded, because it is the one small control on a screen of large ones.
+    this.hits.push({ rect: [bx - 8, by - 8, tw + 16, bh + 16], action: { kind: 'reroll' } });
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+
+  /**
+   * The offer's object, rasterised once and kept.
+   *
+   * Cached on the offer's identity because a roll is stable while the modal is open
+   * and this redraws every frame — re-authoring three cards at 60Hz would be the
+   * most expensive thing on the screen by a wide margin.
+   */
+  private offerCanvas(o: AltarOffer): HTMLCanvasElement {
+    const key = `${o.kind}:${o.id}:${o.golden}:${o.toRank}`;
+    let c = this.offerArt.get(key);
+    if (!c) {
+      const spell = o.id ? ALL_PAGES.find((pg) => pg.gameId === o.id) : undefined;
+      // A SPELL is a page; everything else is a scroll. The shape answers "is this a
+      // spell?" before a word of the copy is read. A sacrifice is a scroll even though
+      // it names a page, because what it hands over is a transaction and not a sheet.
+      const pix = spell && o.kind !== 'sacrifice'
+        ? pageCard(spell, ALL_PAGES.indexOf(spell), o.golden)
+        : scrollCard(o.colour, OFFER_GLYPH[o.kind] ?? '\u2726', o.kind, o.golden);
+      c = pix.toCanvas();
+      this.offerArt.set(key, c);
+    }
+    return c;
+  }
+
   private drawRankPips(ctx: CanvasRenderingContext2D, right: number, top: number, o: AltarOffer): void {
     const S = 8, G = 4, CARET = 8;
     // No caret on a page you do not hold yet: there is nothing to its left for the
