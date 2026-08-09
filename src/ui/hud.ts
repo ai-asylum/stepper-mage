@@ -23,6 +23,7 @@ import {
 import type { BeltSlot } from '../spells/belt';
 import { drawBeltIcon } from './beltIcons';
 import { BELT_ENABLED } from '../flags';
+import type { HitFx } from '../game/hitfx';
 import * as THREE from 'three';
 import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
 import { spriteTexture } from '../dungeon/sprites';
@@ -239,6 +240,14 @@ export class Hud {
   target: Entity | null = null;
   /** Candidates the player can tap, refreshed by the game each turn. */
   candidates: Entity[] = [];
+  /**
+   * Hostiles that can hit you before you act again — see `THREAT_REACH`.
+   *
+   * A SET rather than a flag on the entity because it is a fact about the player's
+   * position, not about the creature: the same body is a threat from one tile and
+   * not from three, and nothing about it changed in between.
+   */
+  threats: ReadonlySet<Entity> = new Set();
   /** Page ids currently torn out — decides which candidates are highlighted. */
   tornIds: string[] = [];
 
@@ -249,6 +258,12 @@ export class Hud {
   /** Cached hit rects, rebuilt every draw so hit-testing matches what is drawn. */
   private hits: { rect: [number, number, number, number]; action: UiAction }[] = [];
   private hurtFlash = 0;
+  /** The strike currently playing across the screen, and its 1->0 clock. */
+  private hitFx: HitFx | null = null;
+  private hitFxT = 0;
+  private hitFxSeed = 0;
+  /** Reused low-res buffer the strike is composed in. */
+  private fxBuf: HTMLCanvasElement | null = null;
   private descendReady = false;
   /**
    * Mirrors `Book.closed`, for LAYOUT only — everything in the bottom band is placed
@@ -424,8 +439,14 @@ export class Hud {
     this.discover = { text, colour, t: 0 };
   }
 
-  playerHurt(): void {
+  playerHurt(fx: HitFx | null = null): void {
     this.hurtFlash = 1;
+    // A fresh strike restarts the effect rather than blending with the last one.
+    // Two hostiles hitting in the same round is common, and two half-faded rakes
+    // crossing each other reads as noise instead of as being hit twice.
+    this.hitFx = fx;
+    this.hitFxT = fx ? 1 : 0;
+    this.hitFxSeed = Math.random() * 1000;
   }
 
   setDescendReady(v: boolean): void {
@@ -463,6 +484,9 @@ export class Hud {
     if (this.shout) { this.shout.t += dt; if (this.shout.t > 1.5) this.shout = null; }
     if (this.discover) { this.discover.t += dt; if (this.discover.t > 2.4) this.discover = null; }
     if (this.hurtFlash > 0) this.hurtFlash = Math.max(0, this.hurtFlash - dt * 2.2);
+    // Faster than the flash. The strike is the READ — what hit me — and it wants to
+    // be gone before the next round so it never overlaps the next one's telegraph.
+    if (this.hitFxT > 0) this.hitFxT = Math.max(0, this.hitFxT - dt * 2.8);
     this.engine.setFlash(this.hurtFlash * 0.42, 0xd82f2f);
     // drop a dead target
     if (this.target && !this.target.alive) this.target = null;
@@ -513,6 +537,7 @@ export class Hud {
     this.drawBigCast(ctx, W);
     this.drawLog(ctx, W);
     this.drawVitals(ctx, W);
+    this.drawHitFx(ctx, W, H);
     this.drawHand(ctx);
     this.drawPin(ctx);
     this.drawParty(ctx, W);
@@ -626,6 +651,29 @@ export class Hud {
         : interactive ? '#ffcf5c'
         : animatable ? (BELT_ENABLED ? '#b98cff' : '#b08c5a')
         : '#ff7a5c';
+
+      /**
+       * THE TELEGRAPH. A body that can reach you this round wears a red ring that
+       * pulses, whether it is the selected target or not.
+       *
+       * It is drawn under the marker rather than replacing it, so it reads as a
+       * state the creature is in rather than a different kind of creature — and it
+       * survives every other colour this loop paints, because the one thing it must
+       * never be is subtle. Before hostiles could move and attack in the same round
+       * nothing needed this: a creature two tiles off could not touch you. Now it
+       * can, and without the ring the only way to learn that is to lose the HP.
+       */
+      if (this.threats.has(e)) {
+        const pulse = 0.55 + Math.sin(t * 7) * 0.45;
+        const r = 13 + pulse * 3;
+        ctx.globalAlpha = 0.35 + pulse * 0.45;
+        ctx.strokeStyle = '#ff3a2a';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(mx, my, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
 
       // the down triangle
       const bob = isTarget ? Math.sin(t * 5) * 2.2 : 0;
@@ -1653,6 +1701,111 @@ export class Hud {
     ctx.textAlign = 'left';
   }
 
+  /**
+   * The strike, drawn across the whole overlay — as PIXEL ART.
+   *
+   * It is composed into a small offscreen buffer and blitted up with smoothing off,
+   * so every edge lands on the same kind of chunky grid the world is drawn on. The
+   * first version drew straight onto the full-resolution overlay with radial
+   * gradients and a shadow blur, and it looked like a slick vector effect pasted
+   * over a pixel-art game — the exact failure the belt icons were pulled for.
+   *
+   * Everything below is therefore written in BUFFER pixels, of which there are
+   * about sixty across, and shapes are sized so they survive that.
+   *
+   * Three kinds share one vocabulary — arrive fast, leave faster, carry the
+   * creature's colour rather than blood red — so they read as one language.
+   */
+  private drawHitFx(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    const fx = this.hitFx;
+    if (!fx || this.hitFxT <= 0) return;
+    const k = 1 - this.hitFxT;              // 0 at impact, 1 when spent
+    const fade = Math.sin(this.hitFxT * Math.PI * 0.9);
+    const col = hexCss(fx.colour);
+    const rnd = (n: number): number => {
+      const x = Math.sin(this.hitFxSeed + n * 12.9898) * 43758.5453;
+      return x - Math.floor(x);
+    };
+
+    // ~6 overlay pixels per buffer pixel, which is close enough to the world's own
+    // texel size at the default step that the two do not look like different games.
+    const bw = Math.max(24, Math.round(W / 6));
+    const bh = Math.max(24, Math.round(H / 6));
+    if (!this.fxBuf) this.fxBuf = document.createElement('canvas');
+    const buf = this.fxBuf;
+    if (buf.width !== bw || buf.height !== bh) { buf.width = bw; buf.height = bh; }
+    const b = buf.getContext('2d')!;
+    b.clearRect(0, 0, bw, bh);
+    b.fillStyle = col;
+    b.strokeStyle = col;
+    b.lineCap = 'butt';
+    b.lineJoin = 'miter';
+
+    if (fx.kind === 'rake') {
+      // Three strokes sweeping across, each a little behind the last, so the eye
+      // reads one hand rather than three unrelated cuts.
+      const ang = -0.75 + rnd(1) * 0.5;
+      const cx = bw * (0.3 + rnd(2) * 0.4), cy = bh * (0.3 + rnd(3) * 0.2);
+      // Nearly together, and thin. Staggered too far apart only ever showed one
+      // stroke at a time, which reads as a beam rather than as a hand.
+      for (let i = 0; i < 3; i++) {
+        const lead = Math.max(0, Math.min(1, k * 2.4 - i * 0.09));
+        if (lead <= 0) continue;
+        const off = (i - 1) * Math.round(bw * 0.11);
+        const len = bh * 0.72 * lead;
+        b.globalAlpha = fade * (1 - i * 0.16);
+        b.lineWidth = 1.6 - i * 0.25;
+        b.beginPath();
+        b.moveTo(cx - Math.cos(ang) * len * 0.5 + off, cy - Math.sin(ang) * len * 0.5 - off * 0.3);
+        b.lineTo(cx + Math.cos(ang) * len * 0.5 + off, cy + Math.sin(ang) * len * 0.5 - off * 0.3);
+        b.stroke();
+      }
+    } else if (fx.kind === 'burst') {
+      // Thrown or vented AT you. Concentric hard rings rather than a gradient —
+      // a gradient is the one thing that cannot survive being called pixel art.
+      const cx = Math.round(bw * 0.5), cy = Math.round(bh * 0.34);
+      const r = Math.max(bw, bh) * (0.04 + k * 0.5);
+      for (let i = 0; i < 3; i++) {
+        const rr2 = r * (1 - i * 0.26);
+        if (rr2 <= 0) continue;
+        b.globalAlpha = fade * (0.16 + i * 0.16);
+        b.beginPath();
+        b.arc(cx, cy, rr2, 0, Math.PI * 2);
+        b.fill();
+      }
+      b.globalAlpha = fade;
+      b.lineWidth = 2;
+      for (let i = 0; i < 7; i++) {
+        const a = rnd(10 + i) * Math.PI * 2;
+        b.beginPath();
+        b.moveTo(cx + Math.cos(a) * r * 0.5, cy + Math.sin(a) * r * 0.5);
+        b.lineTo(cx + Math.cos(a) * r * 1.5, cy + Math.sin(a) * r * 1.5);
+        b.stroke();
+      }
+    } else {
+      // Something LONG reached you: one whipping curve that overshoots and recoils.
+      const y0 = bh * (0.25 + rnd(4) * 0.3);
+      const dir = rnd(5) > 0.5 ? 1 : -1;
+      const reach = k < 0.45 ? k / 0.45 : 1 - (k - 0.45) / 0.55 * 0.35;
+      b.globalAlpha = fade;
+      b.lineWidth = 4 - k * 2;
+      b.beginPath();
+      const x0 = dir > 0 ? -3 : bw + 3;
+      b.moveTo(x0, y0);
+      b.quadraticCurveTo(
+        x0 + dir * bw * 0.55 * reach, y0 - bh * 0.16 * reach,
+        x0 + dir * bw * 1.05 * reach, y0 + bh * 0.1 * reach,
+      );
+      b.stroke();
+    }
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalAlpha = 0.8;
+    ctx.drawImage(buf, 0, 0, bw, bh, 0, 0, W, H);
+    ctx.restore();
+  }
+
   private drawVitals(ctx: CanvasRenderingContext2D, W: number): void {
     // Top-left, under the depth label. Anchoring this to the book put it right
     // where the torn pages fan out.
@@ -1663,9 +1816,35 @@ export class Hud {
     const frac = Math.max(0, this.state.hp / this.state.maxHp);
     ctx.fillStyle = frac > 0.34 ? '#c9382a' : '#ff5a3c';
     rr(ctx, 13, y + 1, Math.max(0, (bw - 2) * frac), 7, 3); ctx.fill();
+    /**
+     * THE OTHER HALF OF THE TELEGRAPH: the bar itself pulses while anything can
+     * reach you, and says how many.
+     *
+     * The ring drawn on a creature only works for a creature you can SEE, and the
+     * threat that most needs announcing is the one around the corner — two tiles
+     * away, closing and swinging in the same round, with nothing on screen. This
+     * carries that case without leaking where it is, which the minimap deliberately
+     * will not do either.
+     */
+    const n = this.threats.size;
+    if (n > 0) {
+      const pulse = 0.5 + Math.sin(this.engine.time * 7) * 0.5;
+      ctx.globalAlpha = 0.45 + pulse * 0.55;
+      ctx.strokeStyle = '#ff3a2a';
+      ctx.lineWidth = 1.5;
+      rr(ctx, 12, y, bw, 9, 4); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
     ctx.font = '8px ui-monospace, monospace';
     ctx.fillStyle = PARCH;
     ctx.fillText(`${Math.max(0, this.state.hp)}/${this.state.maxHp}`, 14, y + 12);
+    if (n > 0) {
+      const label = `${n} IN REACH`;
+      ctx.font = 'bold 8px ui-monospace, monospace';
+      ctx.fillStyle = '#ff6a55';
+      ctx.fillText(label, 14 + ctx.measureText(`${Math.max(0, this.state.hp)}/${this.state.maxHp}`).width + 10, y + 12);
+    }
     void W;
 
   }

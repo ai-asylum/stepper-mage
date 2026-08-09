@@ -32,12 +32,13 @@ import { BELT_ENABLED } from './flags';
 import { Rng } from './core/rng';
 import { DIR_VEC, type Dir } from './dungeon/grid';
 import { THEMES } from './art/theme';
+import { hitFxFor } from './game/hitfx';
 import {
   DEFAULT_STEP, availableSteps, isPixelStep, pixelStep, setPixelStep, stepArt,
   type PixelStep,
 } from './art/steps';
 import {
-  CHEST_HEAL_SPREAD, PLAYER_MAX_HP, chestHealBase, descendHeal, healable,
+  CHEST_HEAL_SPREAD, PLAYER_MAX_HP, THREAT_REACH, chestHealBase, descendHeal, healable,
 } from './game/tuning';
 import {
   NODE_BY_ID, TREE, derivedBeltSlots, derivedGolemInfusion, derivedGolemsKept,
@@ -865,6 +866,20 @@ async function boot(): Promise<void> {
 
   const refreshTargets = (): void => {
     hud.candidates = targetsInView(floor.grid, floor, stepper.x, stepper.y, stepper.dir);
+    /**
+     * Who can hit you before you act again.
+     *
+     * Computed here, off `combat`, because "alerted" is a decision the ROUND makes
+     * and distance is the same measure `enemyRound` steps by — a telegraph derived
+     * from anything else would eventually promise a reach the game does not honour.
+     *
+     * It deliberately includes bodies that are NOT visible. Something around a
+     * corner two tiles away really can reach you, and a warning that only fires for
+     * threats you can already see is a warning for the case that needed it least.
+     */
+    hud.threats = new Set(floor.entities.filter((e) =>
+      e.alive && e.hostile && combat.isAlerted(e)
+      && Math.abs(e.sprite.tx - stepper.x) + Math.abs(e.sprite.ty - stepper.y) <= THREAT_REACH));
     hud.tornIds = fan.gameIds;
     // Every prompt for an INTERACTION is recomputed here, off the same predicate
     // the interaction itself uses, so a control cannot be lit while the rule would
@@ -1505,8 +1520,8 @@ async function boot(): Promise<void> {
       hud.addLog(ev.text, ev.colour ?? 0xd8c9a0);
     };
 
-    combat.onPlayerHurt = () => {
-      hud.playerHurt();
+    combat.onPlayerHurt = (_amount, by) => {
+      hud.playerHurt(by ? hitFxFor(by.spriteId) : null);
       fx.shake = Math.min(1.3, fx.shake + 0.5);
     };
 

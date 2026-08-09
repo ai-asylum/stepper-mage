@@ -156,6 +156,21 @@ export const bossDamage = (depth: number): number => 4 + depth;
 export const DAMAGE_JITTER: readonly [number, number] = [-1, 2];
 
 /**
+ * How far a hostile can reach on its coming round — the telegraph's whole rule.
+ *
+ * TWO, not one, and that is the number the move-and-attack change created: a body
+ * closes and swings in the same round, so anything within two tiles can hit you
+ * before you act again. It was one for the whole game before that, and it was
+ * invisible because it did not need to be seen — a creature two tiles away was
+ * simply not a threat this turn.
+ *
+ * Derived here rather than written twice, because the telegraph promising a
+ * different reach from the one `enemyRound` actually uses is worse than no
+ * telegraph: it would teach the player a rule the game does not follow.
+ */
+export const THREAT_REACH = 2;
+
+/**
  * Status damage per tick. Burning is the fast one and decay is the long one, so
  * they share a rate and differ only in duration (see `STATUS_META` in
  * `spells.ts`): burning is 3 ticks, decay is 5. That is what makes Decay worth

@@ -274,7 +274,7 @@ export class Combat {
    * player has to read off it.
    */
   onReactionFx: (fx: ReactionFx) => void = () => {};
-  onPlayerHurt: (amount: number) => void = () => {};
+  onPlayerHurt: (amount: number, by: Entity | null) => void = () => {};
   /**
    * A boss's ingredient drop, one call per vial.
    *
@@ -775,7 +775,7 @@ export class Combat {
           e.sprite.play('attack');
           const dmg = Math.max(1, c.damage + this.rng.int(DAMAGE_JITTER[0], DAMAGE_JITTER[1]));
           this.state.hp -= dmg;
-          this.onPlayerHurt(dmg);
+          this.onPlayerHurt(dmg, e);
           this.onEvent({
             kind: 'hit', text: `${label(e)} hits you for ${dmg}.`, colour: 0xff6a6a,
           });

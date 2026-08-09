@@ -312,6 +312,48 @@ check('the map and the 3D world agree body for body', mini.disagreements === 0,
 check('furniture out of sight is still remembered on the map',
   mini.staticPlottedOffScreen > 0, JSON.stringify(mini));
 
+console.log('\n=== 3f. the telegraph marks what can reach you ===');
+/**
+ * A hostile now closes AND swings in one round, so its reach is two tiles. The
+ * telegraph promises exactly that, and the promise is the point: a warning that
+ * fired at a different range from the one `enemyRound` steps by would teach a rule
+ * the game does not follow.
+ */
+const tele = await ev(async () => {
+  const g = window.__game;
+  const grid = g.floor.grid;
+  const dirs = [[0, 0, 1], [1, -1, 0], [2, 0, -1], [3, 1, 0]];
+  const home = { x: g.stepper.x, y: g.stepper.y, dir: g.stepper.dir };
+  const e = g.floor.entities.find((x) => x.alive && x.hostile);
+  if (!e) return null;
+  const dist = () => Math.abs(e.sprite.tx - g.stepper.x) + Math.abs(e.sprite.ty - g.stepper.y);
+  const out = {};
+  // Stand adjacent and run a round, which alerts it and puts it well in reach.
+  for (const [d, dx, dy] of dirs) {
+    const px = e.sprite.tx + dx, py = e.sprite.ty + dy;
+    if (!grid.walkable(px, py) || g.floor.solidAt(px, py)) continue;
+    g.place(px, py, d);
+    await g.combat.playerStepped(px, py);
+    out.near = { d: dist(), flagged: g.hud.threats.has(e), alerted: g.combat.isAlerted(e) };
+    break;
+  }
+  // Now walk it out of reach without letting it act, and the warning must drop.
+  const far = g.floor.entities.find((x) => x === e);
+  for (let tries = 0; tries < 40 && dist() <= 2; tries++) {
+    far.sprite.tx += 1;
+    if (!grid.walkable(far.sprite.tx, far.sprite.ty)) { far.sprite.tx -= 1; break; }
+  }
+  g.place(g.stepper.x, g.stepper.y, g.stepper.dir);
+  out.far = { d: dist(), flagged: g.hud.threats.has(e) };
+  g.place(home.x, home.y, home.dir);
+  return out;
+});
+console.log(tele);
+check('a hostile in reach is telegraphed',
+  !!tele && tele.near && tele.near.d <= 2 && tele.near.flagged === true, JSON.stringify(tele));
+check('a hostile out of reach is not telegraphed',
+  !!tele && tele.far && (tele.far.d <= 2 || tele.far.flagged === false), JSON.stringify(tele));
+
 console.log('\n=== 4. one cast, one turn: Fireball on the furniture ===');
 const solo = await ev(async () => {
   const g = window.__game;

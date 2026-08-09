@@ -124,8 +124,8 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Generate back and side frames for the twenty hostiles, from the front by reference.
 - [x] Generate attack frames for the twenty hostiles.
 - [x] Pick the drawn frame from the angle between a creature's facing and the camera.
-- [ ] Telegraph an enemy that is about to act, before it acts.
-- [ ] Play an attack pose and a screen effect when an enemy hits the player.
+- [x] Telegraph an enemy that is about to act, before it acts.
+- [x] Play an attack pose and a screen effect when an enemy hits the player.
 - [ ] Give creatures elemental weaknesses and resistances that change damage taken.
 - [ ] Teach a creature's element by fighting it, without a tooltip.
 - [ ] Commit changes.
