@@ -76,19 +76,41 @@ export function populate(grid: Grid, theme: Theme, seed: string, depth: number):
       });
       claim(room.cx, room.cy);
     } else if (room.kind === 'boss') {
-      // The boss stands at the far end so entering the room frames it.
-      const far = room.tiles
-        .filter(([x, y]) => free(x, y))
-        .sort((a, b) =>
-          (Math.abs(b[0] - grid.start.x) + Math.abs(b[1] - grid.start.y)) -
-          (Math.abs(a[0] - grid.start.x) + Math.abs(a[1] - grid.start.y)))[0];
-      if (far) {
+      /**
+       * THE BOSS STANDS IN THE MIDDLE.
+       *
+       * It used to stand at the tile furthest from the player's entrance, which
+       * framed the room nicely and sometimes wedged the boss behind the furniture
+       * that had been scattered around it — and a wedged boss turns the fight into a
+       * standoff against geometry rather than against a creature. A boss is the one
+       * body on a floor that MUST be able to move: it is the only fight the floor is
+       * built around, and the room is built around it.
+       *
+       * The centre is the tile most likely to have room, and `openTiles` is the test
+       * for "has room" that creature placement already uses — so the fallback walks
+       * outward to the nearest tile with three free neighbours rather than taking any
+       * free tile, which is how it got wedged in the first place. Framing survives
+       * anyway: the room is entered from an edge, so its middle is still ahead of you.
+       */
+      const roomy = openTiles(room);
+      const spot = roomy.length
+        ? roomy.reduce((best, t) =>
+            (Math.abs(t[0] - room.cx) + Math.abs(t[1] - room.cy)) <
+            (Math.abs(best[0] - room.cx) + Math.abs(best[1] - room.cy)) ? t : best)
+        : room.tiles.find(([x, y]) => free(x, y));
+      if (spot) {
         out.push({
-          kind: 'boss', sprite: theme.boss, x: far[0], y: far[1],
+          kind: 'boss', sprite: theme.boss, x: spot[0], y: spot[1],
           ox: 0, oz: 0, hover: depth === 1 ? 0.12 : 0, roomId: room.id,
         });
-        claim(far[0], far[1]);
+        claim(spot[0], spot[1]);
       }
+      /**
+       * The stairs are generated here and hidden, and MOVED to wherever the boss
+       * falls (`Combat.kill`). Generating one and moving it beats spawning one on
+       * death, because `entityAt`, the descend reach check and the minimap all
+       * already know about this entity.
+       */
       out.push({
         kind: 'stairs', sprite: 'stairs_down', x: room.cx, y: room.cy,
         ox: 0, oz: 0, hover: 0, roomId: room.id,

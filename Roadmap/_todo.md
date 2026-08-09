@@ -157,11 +157,15 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 12 — Dungeon_Shape
 
-- [ ] Spawn bosses at the centre of their room so they cannot wedge behind furniture.
-- [ ] Move the way down to the boss's position when it dies.
-- [ ] Keep the stairs off the minimap until the boss falls.
+- [x] Spawn bosses at the centre of their room so they cannot wedge behind furniture.
+      Nearest tile to the centre with three free neighbours, via `openTiles`.
+- [x] Move the way down to the boss's position when it dies. `Floor.revealStairs(at)`.
+- [x] Keep the stairs off the minimap until the boss falls. `Floor.stairsOpen`.
+- [x] Stop a corpse blocking the tile its own staircase opened on. Found by walking it.
 - [ ] Verify descending both by walking in and by tapping.
-- [ ] Commit changes.
+      Walk-in did NOT descend with every guard condition true — see the phase doc.
+      Not reproduced by playing yet, so it is a suspicion rather than a defect.
+- [x] Commit changes.
 
 ## Phase 13 — First_Minutes
 

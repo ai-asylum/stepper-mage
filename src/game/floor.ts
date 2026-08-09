@@ -143,6 +143,14 @@ export class Floor {
    */
   visible: ReadonlySet<number> = new Set();
   /**
+   * Has the way down been opened? False until the boss falls.
+   *
+   * A fact about the FLOOR rather than about the stairs sprite, because the minimap
+   * has to answer "does this door exist yet" and the honest source for that is not
+   * whether a mesh happens to be visible.
+   */
+  stairsOpen = false;
+  /**
    * What is on the FLOOR — burning tiles today, and the seam any future ground
    * state uses. On the floor and not on `Combat` because it is a property of the
    * PLACE: it is drawn with the room, it is thrown away with the room, and a
@@ -267,10 +275,26 @@ export class Floor {
     }
   }
 
-  /** True when a living, solid entity occupies this tile. */
+  /**
+   * True when a living, solid entity occupies this tile.
+   *
+   * A body at zero HP is NOT solid, even though `alive` is still true. Those two
+   * facts are different and the gap between them is a whole second: `alive` is
+   * cleared when the death animation finishes (see `update`), so between the killing
+   * blow and the end of the slump there is a corpse standing in the doorway.
+   *
+   * That gap did not matter while the stairs were generated at the room's centre,
+   * away from the fight. It matters now that they open where the boss FELL — the
+   * player kills the boss, steps onto the staircase that just appeared under it, and
+   * bumps into the thing they have already killed. Found by walking it; nothing else
+   * would have caught it.
+   *
+   * Everything spawns with positive HP, so `hp <= 0` means killed rather than
+   * "happens to have no health bar".
+   */
   solidAt(x: number, y: number): boolean {
     for (const e of this.entities) {
-      if (!e.alive || !SOLID.has(e.kind)) continue;
+      if (!e.alive || e.hp <= 0 || !SOLID.has(e.kind)) continue;
       if (e.sprite.tx === x && e.sprite.ty === y) return true;
     }
     return false;
@@ -322,9 +346,31 @@ export class Floor {
     return null;
   }
 
-  revealStairs(): void {
+  /**
+   * Open the way down, at the tile the boss fell on.
+   *
+   * The stairs used to be generated at the room's centre and simply un-hidden, so
+   * the reward for the fight was a walk: the player stood over a corpse at one end
+   * of the room and the door was somewhere else. Now the door opens where they are
+   * already standing.
+   *
+   * `stairsOpen` is the fact the minimap reads. Visibility of the sprite would be
+   * the same answer today, but it is a rendering detail — the map asking "is this
+   * drawn" instead of "does this exist" is exactly the confusion that had it marking
+   * a door before the door was there.
+   */
+  revealStairs(at?: { x: number; y: number }): void {
+    this.stairsOpen = true;
     for (const e of this.entities) {
-      if (e.kind === 'stairs') e.sprite.group.visible = true;
+      if (e.kind !== 'stairs') continue;
+      if (at) {
+        e.sprite.tx = at.x;
+        e.sprite.ty = at.y;
+        e.sprite.setTileLight(this.grid.lightAt(at.x, at.y));
+        e.roomId = this.grid.roomAt(at.x, at.y)?.id ?? e.roomId;
+        this.grid.stairs = { x: at.x, y: at.y };
+      }
+      e.sprite.group.visible = true;
     }
   }
 

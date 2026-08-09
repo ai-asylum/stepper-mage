@@ -947,7 +947,9 @@ export class Combat {
 
     if (t.kind === 'boss') {
       this.bossDead = true;
-      this.floor.revealStairs();
+      // Where it FELL, so the door opens under the player rather than sending them
+      // off to look for one after the only fight on the floor is over.
+      this.floor.revealStairs({ x: t.sprite.tx, y: t.sprite.ty });
       this.state.stars += 3 + this.state.depth;
       this.onEvent({
         kind: 'info', text: 'The stairs grind open below.', colour: 0xffe58a,

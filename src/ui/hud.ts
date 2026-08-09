@@ -427,6 +427,15 @@ export class Hud {
     const g = floor.grid;
     if (!e.alive || !g.inside(e.sprite.tx, e.sprite.ty)) return false;
     const i = g.idx(e.sprite.tx, e.sprite.ty);
+    /**
+     * The stairs are furniture that DOES NOT EXIST YET. Every other fixture is safe
+     * to remember from exploration because it was there when you saw it; the way
+     * down is generated with the floor and hidden until the boss falls, so the
+     * explored rule had the map advertising a door that had not been opened — and
+     * then the door turned out to be somewhere else, because it now opens where the
+     * boss dies.
+     */
+    if (e.kind === 'stairs') return floor.stairsOpen && !!g.explored[i];
     return (e.hostile || e.animated) ? floor.visible.has(i) : !!g.explored[i];
   }
 
