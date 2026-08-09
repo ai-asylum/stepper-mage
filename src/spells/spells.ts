@@ -42,6 +42,47 @@ export type Element =
   | 'none';
 
 /**
+ * The elements that FILL SPACE rather than reaching a distance.
+ *
+ * A radius is a point effect that reaches some way. A volume flows into every tile
+ * it can walk to, wraps corners, pours down hallways, and is dangerous to whoever
+ * stands in it — the player included. Neither crosses a wall; that is the whole
+ * rule and the only rule (`Roadmap/Spell_Reach.md`).
+ *
+ * Fire is a volume because it is the most generally useful element in the game and
+ * had no cost at the moment of casting; being able to reach back down the hallway
+ * you are standing in is that cost. Gust is a volume because it has to be able to
+ * reach round a corner to put a fire out, and two things that behave the same way
+ * about corners are a loop rather than two rows in a table.
+ *
+ * Everything else is a radius, and deliberately: if everything wrapped there would
+ * be no distinction worth having.
+ */
+export const VOLUME_ELEMENTS: ReadonlySet<Element> = new Set<Element>(['fire', 'gust']);
+
+/** Does this cast fill space, rather than reach a distance? */
+export function isVolume(elements: readonly Element[]): boolean {
+  return elements.some((e) => VOLUME_ELEMENTS.has(e));
+}
+
+/**
+ * How many TILES a volume fills, by empowerment step.
+ *
+ * A budget of tiles rather than a radius, because a radius is a number nobody can
+ * picture and a tile count is one you can see on the floor and read: 1 is the tile
+ * it lands on, 9 is that tile and the ring around it, 25 is the ring after that.
+ *
+ * It starts at ONE on purpose. A plain Fireball filling a single tile is not a
+ * disappointment — it is what makes the empowered one feel like something, and it
+ * is why the self-hit is a late-game hazard rather than a tax the player pays from
+ * the first cast. The volume has to be small before it is allowed to be dangerous.
+ */
+export const VOLUME_TILES = [1, 9, 25] as const;
+
+/** A non-volume cast fills the tile it lands on and no more. */
+export const POINT_VOLUME = 1;
+
+/**
  * Where a component comes from — `docs/DESIGN.md`'s three sources, as a type.
  *
  * Non-overlap between the sources is the design's load-bearing rule, so it is
@@ -698,6 +739,15 @@ export interface ResolvedCast {
   infuse: StatusId[];
   /** True when an authored row named this cast — drives the discovery caption. */
   authored: boolean;
+  /**
+   * How many TILES this cast fills where it lands — see `VOLUME_TILES`.
+   *
+   * On the resolved cast rather than looked up from the elements at the point of
+   * use, because empowerment is resolved here and nowhere else: two fires is a
+   * bigger volume for the same reason it is a bigger number, and a caller that
+   * re-derived it from `elements` would lose the count that made it bigger.
+   */
+  volume: number;
   /** Why a cast cannot happen, for the deny message. */
   refusal?: string;
 }
@@ -753,6 +803,9 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
     name: '', colour: 0xffffff, output: 'projectile',
     damage: 0, count: 1, statuses: [], shove: 0, cost,
     elements: [...new Set(elements)],
+    volume: isVolume(elements)
+      ? VOLUME_TILES[Math.min(extraBolt, VOLUME_TILES.length - 1)]
+      : POINT_VOLUME,
     pierce: elements.includes('starlight'), infuse: [], authored: false,
   };
 

@@ -26,7 +26,7 @@ It also resolves hand size 1 being a punishment: one page, one turn, free cast i
 
 ## Out of scope
 
-- The belt (phase 5) and the tree (phase 4). This phase only makes hand size a value.
+- The belt (phase 20) and the tree (phase 4). This phase only makes hand size a value.
 - Any new spell content.
 
 ## Implementation

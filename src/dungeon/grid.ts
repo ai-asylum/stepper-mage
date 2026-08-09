@@ -111,6 +111,113 @@ export class Grid {
     return r === 255 ? null : this.rooms[r];
   }
 
+  /**
+   * Every tile reachable from a point in at most `max` steps, as PATH distance.
+   *
+   * The one answer in this codebase to "which tiles can be reached from here in N
+   * steps". A spell's volume, a body's pathfinding and a reaction's blast all ask
+   * the same question and must not each answer it their own way — the wall is what
+   * stops an effect, and a wall stops it identically whoever is asking.
+   *
+   * Returns distance per tile, -1 where unreached. The origin is 0 and is always
+   * included, walkable or not: a blast goes off where it goes off.
+   *
+   * `passable` narrows the expansion beyond walls — bodies also refuse to walk
+   * through each other, where a blast happily rolls over them.
+   */
+  flood(
+    x: number, y: number, max: number,
+    passable: (px: number, py: number) => boolean = (px, py) => this.walkable(px, py),
+  ): Int16Array {
+    const dist = new Int16Array(this.w * this.h).fill(-1);
+    if (!this.inside(x, y)) return dist;
+    const queue: number[] = [this.idx(x, y)];
+    dist[queue[0]] = 0;
+    for (let qi = 0; qi < queue.length; qi++) {
+      const i = queue[qi];
+      const d = dist[i];
+      if (d >= max) continue;
+      const cx = i % this.w, cy = (i / this.w) | 0;
+      for (const [dx, dy] of DIR_VEC) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!this.inside(nx, ny)) continue;
+        const ni = this.idx(nx, ny);
+        if (dist[ni] !== -1) continue;
+        if (!passable(nx, ny)) continue;
+        dist[ni] = d + 1;
+        queue.push(ni);
+      }
+    }
+    return dist;
+  }
+
+  /**
+   * The tiles an effect of a given VOLUME fills, nearest first.
+   *
+   * Volume is a BUDGET OF TILES, not a radius — a Fireball is 1, which is the tile
+   * it lands on and nothing else, and the next one up is 9, which is that tile plus
+   * the eight it reaches first. Sized this way because a radius is a number nobody
+   * can picture and a tile count is one you can look at on the floor and read.
+   *
+   * The order is the flood's, so the budget is spent on the NEAREST tiles and a
+   * volume against a wall pools sideways instead of stopping short. It never
+   * crosses a wall; that is the whole rule and the only rule.
+   *
+   * Returns tile indices, origin first, at most `volume` of them.
+   */
+  fill(x: number, y: number, volume: number, away?: [number, number]): number[] {
+    if (volume <= 0 || !this.inside(x, y)) return [];
+    const origin = this.idx(x, y);
+    const seen = new Uint8Array(this.w * this.h);
+    const out: number[] = [];
+
+    // The frontier is grown one tile at a time and always from a tile already
+    // taken, so the fill is connected however the bias reorders it.
+    const frontier: number[] = [origin];
+    seen[origin] = 1;
+
+    /**
+     * How much a tile is in the direction the blast was thrown.
+     *
+     * Ties inside a ring are broken on this, so the budget is spent AWAY from the
+     * caster first: a fireball thrown down an open room pushes its volume down the
+     * room, and only a room with nowhere left to put it pools back over the person
+     * who threw it. The self-hit becomes a fact about the geometry — you fired into
+     * a dead end — rather than a tax on casting fire at all.
+     */
+    const forward = (i: number): number => {
+      if (!away) return 0;
+      return ((i % this.w) - x) * away[0] + (((i / this.w) | 0) - y) * away[1];
+    };
+    const rank = (i: number): number => this.dist2(i, origin) - forward(i) * 4;
+
+    while (out.length < volume && frontier.length) {
+      let best = 0;
+      for (let k = 1; k < frontier.length; k++) {
+        if (rank(frontier[k]) < rank(frontier[best])) best = k;
+      }
+      const i = frontier.splice(best, 1)[0];
+      out.push(i);
+      const cx = i % this.w, cy = (i / this.w) | 0;
+      for (const [dx, dy] of DIR_VEC) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!this.inside(nx, ny)) continue;
+        const ni = this.idx(nx, ny);
+        if (seen[ni] || !this.walkable(nx, ny)) continue;
+        seen[ni] = 1;
+        frontier.push(ni);
+      }
+    }
+    return out;
+  }
+
+  /** Squared tile distance between two indices — a tie-break, never a reach test. */
+  private dist2(a: number, b: number): number {
+    const dx = (a % this.w) - (b % this.w);
+    const dy = ((a / this.w) | 0) - ((b / this.w) | 0);
+    return dx * dx + dy * dy;
+  }
+
   /** Straight line of sight along a cardinal direction, blocked by walls. */
   rayTiles(x: number, y: number, dir: Dir, max: number): [number, number][] {
     const [dx, dy] = DIR_VEC[dir];

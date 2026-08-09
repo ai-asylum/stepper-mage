@@ -66,17 +66,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Route the death screen into the tree instead of reloading the page.
 - [x] Commit changes.
 
-## Phase 5 — Ingredient_Belt
-
-- [x] Draw the belt strip under the book in locked, empty and filled states.
-- [x] Implement the five ingredients: object animation, Coffin Moss, Growth, Multishot, TimeSand.
-- [x] Make TimeSand free to take and zero the turn cost of the next two components.
-- [x] Drop ingredients generously from chests, bosses and altars.
-- [x] Show "you have nowhere to keep it" and pulse the strap when the belt is locked.
-- [x] Consume an ingredient only on cast; taking one out stays returnable.
-- [x] Commit changes.
-
-## Phase 6 — Casting_And_Movement
+## Phase 5 — Casting_And_Movement
 
 - [x] Charge a turn on cast and on moving only; make taking a component free.
 - [x] Retune the balance and the acceptance gate against the new rule.
@@ -90,7 +80,7 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Correct the design doc's turn economy section and everything it concluded.
 - [x] Commit changes.
 
-## Phase 7 — Pixel_Art_Overlay
+## Phase 6 — Pixel_Art_Overlay
 
 - [x] Prove page text is readable as pixel art before retexturing anything.
 - [x] Author the book's covers, spine and ribbons through `Pix`, nearest-filtered.
@@ -100,7 +90,7 @@ every phase. Never list tasks for editing this file or a phase doc.
       well as the book — an ordered dither over a flat tone is a checkerboard.
 - [x] Commit changes.
 
-## Phase 8 — Pixel_Resolution_Steps
+## Phase 7 — Pixel_Resolution_Steps
 
 - [x] Make PPU a runtime value; rebuild every texture and sprite size when it changes.
 - [x] Author the masonry, bevel, AO and crack constants for each of the four steps.
@@ -116,7 +106,7 @@ every phase. Never list tasks for editing this file or a phase doc.
       They do not — see the phase doc's settled decisions.
 - [x] Commit changes.
 
-## Phase 9 — Enemy_Identity
+## Phase 8 — Enemy_Identity
 
 - [x] Decide what "physical" resolves to, and size the sprite run before generating.
       Gust and stone, no new element; 40 frames for hostile back+side first. Phase doc.
@@ -136,7 +126,57 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Add a directional damage indicator, researched against how other games do it.
 - [x] Commit changes.
 
-## Phase 10 — Corpse_Raising_And_Golem_Persistence
+## Phase 9 — Spell_Reach
+
+- [ ] Decide which spells are volumes and which are radii, and write the table.
+- [ ] Flood the grid from the blast centre by path distance; splash, arcs and reactions.
+- [ ] Let a volume reach and damage the player.
+- [ ] Retune the balance and the acceptance gate against the shorter effective reach.
+- [x] Commit changes.
+
+## Phase 10 — Burning_Ground
+
+- [ ] Add a floor layer that holds burning tiles and ages them each round.
+- [ ] Draw burning ground so it is unmistakable at 72 texels on a brown floor.
+- [ ] Make standing in fire cost something, for creatures and the player alike.
+- [ ] Let one Gust clear the fire it reaches.
+- [ ] Decide whether enemies avoid burning tiles, and record the decision either way.
+- [ ] Commit changes.
+
+## Phase 11 — Elemental_Spread
+
+- [ ] Measure, per floor, how many creatures each element beats.
+- [ ] Reassign affinities per floor so no floor is solvable with one element.
+- [ ] Spread every floor across at least three pages; fix floor 3's four-of-four fire.
+- [ ] Look at the cast readout, discovery banner and nameplate marks at 375px.
+- [ ] Retune the gate and the `mixed` policy's page choice against the new table.
+- [ ] Commit changes.
+
+## Phase 12 — Dungeon_Shape
+
+- [ ] Spawn bosses at the centre of their room so they cannot wedge behind furniture.
+- [ ] Move the way down to the boss's position when it dies.
+- [ ] Keep the stairs off the minimap until the boss falls.
+- [ ] Verify descending both by walking in and by tapping.
+- [ ] Commit changes.
+
+## Phase 13 — First_Minutes
+
+- [ ] Lock the world to 72 texels and delete the chip, the setting and its harness.
+- [ ] Stop the camera changing pitch when the grimoire rises.
+- [ ] Hide the empty hand slots while the book plays its intro.
+- [ ] Add a movement hint that clears on the first step and never returns.
+- [ ] Commit changes.
+
+## Phase 14 — Altar_Screen
+
+- [ ] Lay the three offers out as columns, left to right.
+- [ ] Draw a spell offer as a spell-book page at card size.
+- [ ] Draw a non-spell offer as a scroll in the same pixel-art hand.
+- [ ] Add a gold treatment to the page face and use it wherever a golden page is drawn.
+- [ ] Commit changes.
+
+## Phase 15 — Corpse_Raising_And_Golem_Persistence
 
 - [ ] Carry the nearest surviving golem through the stairs when the node is owned.
 - [ ] Preserve the carried golem's rank and infusion at the second tier.
@@ -145,28 +185,28 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Crumble raised corpses after five turns.
 - [ ] Commit changes.
 
-## Phase 11 — Guidance_And_Blessings
+## Phase 16 — Guidance_And_Blessings
 
 - [ ] Add a compass pointing at unclaimed altar, then living boss, then stairs.
 - [ ] Add a run-start blessing: choose one of three at the dungeon mouth.
 - [ ] Fill the bestiary as props are animated and fusions discovered, free and never sold.
 - [ ] Commit changes.
 
-## Phase 12 — Deeper_Dungeon
+## Phase 17 — Deeper_Dungeon
 
 - [ ] Author the seven missing element triples.
 - [ ] Add floors 6 to 10 with their own palettes, rosters and bosses.
 - [ ] Generate the sprite roster for the new floors.
 - [ ] Commit changes.
 
-## Phase 13 — Descent_Unlocks
+## Phase 18 — Descent_Unlocks
 
 - [ ] Record boss kills in `meta` and unlock the floor above each as a start point.
 - [ ] Offer a start-depth choice at run start, every fifth floor.
 - [ ] Grant three catch-up altar draws when starting deep.
 - [ ] Commit changes.
 
-## Phase 14 — Polish_Pass
+## Phase 19 — Polish_Pass
 
 - [x] Stop target markers drawing through walls. (Closed early by Casting_And_Movement.)
 - [x] Re-cull after every enemy round; a body that moves into view is currently never drawn.
@@ -181,52 +221,12 @@ every phase. Never list tasks for editing this file or a phase doc.
       `buildSconce` uses absolute 144-space texel offsets, so it needs rewriting per step.
 - [ ] Commit changes.
 
-## Phase 15 — Spell_Reach
+## Phase 20 — Ingredient_Belt
 
-- [ ] Decide which spells are volumes and which are radii, and write the table.
-- [ ] Flood the grid from the blast centre by path distance; splash, arcs and reactions.
-- [ ] Let a volume reach and damage the player.
-- [ ] Retune the balance and the acceptance gate against the shorter effective reach.
-- [ ] Commit changes.
-
-## Phase 16 — Burning_Ground
-
-- [ ] Add a floor layer that holds burning tiles and ages them each round.
-- [ ] Draw burning ground so it is unmistakable at 72 texels on a brown floor.
-- [ ] Make standing in fire cost something, for creatures and the player alike.
-- [ ] Let one Gust clear the fire it reaches.
-- [ ] Decide whether enemies avoid burning tiles, and record the decision either way.
-- [ ] Commit changes.
-
-## Phase 17 — Elemental_Spread
-
-- [ ] Measure, per floor, how many creatures each element beats.
-- [ ] Reassign affinities per floor so no floor is solvable with one element.
-- [ ] Spread every floor across at least three pages; fix floor 3's four-of-four fire.
-- [ ] Look at the cast readout, discovery banner and nameplate marks at 375px.
-- [ ] Retune the gate and the `mixed` policy's page choice against the new table.
-- [ ] Commit changes.
-
-## Phase 18 — Dungeon_Shape
-
-- [ ] Spawn bosses at the centre of their room so they cannot wedge behind furniture.
-- [ ] Move the way down to the boss's position when it dies.
-- [ ] Keep the stairs off the minimap until the boss falls.
-- [ ] Verify descending both by walking in and by tapping.
-- [ ] Commit changes.
-
-## Phase 19 — First_Minutes
-
-- [ ] Lock the world to 72 texels and delete the chip, the setting and its harness.
-- [ ] Stop the camera changing pitch when the grimoire rises.
-- [ ] Hide the empty hand slots while the book plays its intro.
-- [ ] Add a movement hint that clears on the first step and never returns.
-- [ ] Commit changes.
-
-## Phase 20 — Altar_Screen
-
-- [ ] Lay the three offers out as columns, left to right.
-- [ ] Draw a spell offer as a spell-book page at card size.
-- [ ] Draw a non-spell offer as a scroll in the same pixel-art hand.
-- [ ] Add a gold treatment to the page face and use it wherever a golden page is drawn.
-- [ ] Commit changes.
+- [x] Draw the belt strip under the book in locked, empty and filled states.
+- [x] Implement the five ingredients: object animation, Coffin Moss, Growth, Multishot, TimeSand.
+- [x] Make TimeSand free to take and zero the turn cost of the next two components.
+- [x] Drop ingredients generously from chests, bosses and altars.
+- [x] Show "you have nowhere to keep it" and pulse the strap when the belt is locked.
+- [x] Consume an ingredient only on cast; taking one out stays returnable.
+- [x] Commit changes.

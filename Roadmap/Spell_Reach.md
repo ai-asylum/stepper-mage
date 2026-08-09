@@ -1,8 +1,8 @@
 # Spell Reach
 
 **Player-facing:** yes
-**Status:** planned
-**Started:** —
+**Status:** shipped
+**Started:** 2026-08-09
 
 Spells propagate through the grid instead of through the air. Some have a RADIUS and
 some have a VOLUME, and neither passes through a wall.
@@ -38,12 +38,23 @@ because a victim is chosen by straight-line distance and a wall is not consulted
   expansion, different stopping condition. There should be one answer in the codebase
   to "which tiles can be reached from here in N steps".
 
-## Open — not decided
+## Settled during the build
 
-- **Which spells are volumes.** Fire is. Gust probably is, because it has to be able to
-  reach a fire in order to put one out. Everything else is unasked.
-- **What a volume does to the player** beyond being able to reach them — the same
-  damage as an enemy takes, or less, and whether the player's own cast can kill them.
+- **Fire and Gust are the volumes.** Nothing else. Gust is one because it has to reach
+  a fire to put one out, which is phase 10's whole loop.
+- **A volume is a BUDGET OF TILES, not a radius.** `VOLUME_TILES` is `[1, 9, 25]` by
+  empowerment step: a plain Fireball fills the one tile it lands on, the empowered one
+  fills that tile and the ring around it. A tile count is a number you can look at on
+  the floor and read; a radius is one nobody can picture. Starting at ONE is what makes
+  the empowered version feel like something, and it is why the self-hit is a late
+  hazard rather than a tax paid from the first cast.
+- **The fill is thrown AWAY from the caster.** `Grid.fill` breaks ties inside a ring on
+  how far the tile is in the direction the blast went, so an open room takes the whole
+  volume down the room and never reaches back. What brings it back is the room running
+  out of anywhere else to put it. The self-hit is therefore a fact about the geometry —
+  you fired into a dead end — and the player can see which mistake they made.
+- **It deals full damage and it can kill.** The same rules as the enemy standing next
+  to them, no exception carved for the person holding the book.
 
 ## Out of scope
 
@@ -65,7 +76,20 @@ themselves.
 single digits, and the BFS in `stepToward` already expands a whole floor without
 anyone noticing.
 
-**Expect a retune, but a smaller one than a raycast would have needed.** This is more
+**No retune was needed.** Measured rather than assumed, as the paragraph below asked:
+the wall bound alone clears the gate 5/5 with every existing number untouched. The
+prediction was right and understated — a blast fired down an open room is unchanged,
+and the rooms the gate seeds fight in are open.
+
+The one thing that DID move the gate was the self-damage lever, and only in its first
+shape: full damage inside a radius of 3 took the gated line from 5/5 to 1/5, because
+`tools/fullrun.mjs` never steps once a fight starts and so cannot walk out of its own
+fire. The tile budget and the directional bias fixed that without a tuning change —
+at low volume the fill never reaches the caster at all. Worth remembering that the
+harness measures a stationary player and so reads the worst case of any positioning
+mechanic.
+
+**The original expectation, kept because it was the right instinct.** This is more
 generous than line of sight — it reaches round corners — and less generous than the
 current straight-line radius, which reaches through walls. The net is a nerf to blasts
 fired at a wall and no change at all to one fired down an open room, so the gate may

@@ -220,6 +220,27 @@ export const roomEnemyChance = (depth: number): number => 0.2 + depth * 0.08;
  */
 export const ENGAGE_RADIUS = 7;
 
+/**
+ * How far a cast reaches, as PATH distance through the grid.
+ *
+ * The same number as `ENGAGE_RADIUS` and for the same reason the engage radius is
+ * the same as targeting's: the reticle's promise, the body's right to answer and
+ * the spell's reach are one fact, and three numbers that can drift is how the
+ * corridor exploit happened the first time.
+ *
+ * What CHANGED under `Roadmap/Spell_Reach.md` is not the number but the metric. A
+ * volley used to take any hostile alive anywhere on the floor; now it floods out
+ * from the blast and a wall stops it. The net is a nerf to a blast fired at a wall
+ * and no change at all to one fired down an open room.
+ */
+export const SPELL_REACH = ENGAGE_RADIUS;
+
+/**
+ * How far an object's reaction can reach. Its SHAPE never names a tile further
+ * than two out; this is the wall bound applied to the tiles the shape asks for.
+ */
+export const REACTION_REACH = 2;
+
 /** How far a golem will break off from following you to engage something. */
 export const GOLEM_AGGRO = 6;
 

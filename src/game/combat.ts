@@ -30,6 +30,7 @@ import { faceToward, type Entity, type Floor } from './floor';
 import { affinityMult, affinityOf, type Affinities } from './affinity';
 import {
   STATUS_META, displayName, harvestOf, isFixtureElement, resolveCast,
+  isVolume,
   type CastTarget, type Element, type ResolvedCast, type StatusId,
 } from '../spells/spells';
 import { BOSS_INGREDIENTS, rollDropCount, rollIngredient, type BeltState } from '../spells/belt';
@@ -38,7 +39,8 @@ import {
   ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CONDUCTION_ARC_RANGE,
   CONDUCTION_ARC_SHARE, CONDUCTION_MULT, DAMAGE_JITTER, DECAY_DOT, DEEP_FREEZE_MULT,
   DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS,
-  SHATTER_DAMAGE, SHATTER_MULT, bossDamage, enemyDamage,
+  REACTION_REACH, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
+  bossDamage, enemyDamage,
 } from './tuning';
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -449,8 +451,22 @@ export class Combat {
       return true;
     }
 
-    // spread a volley across distinct hostiles, primary first
-    const hostiles = this.floor.entities.filter((e) => e.alive && e.hostile);
+    /**
+     * Spread a volley across distinct hostiles, primary first — but only across the
+     * ones the cast can actually REACH.
+     *
+     * This used to take any hostile that was alive, anywhere on the floor, which is
+     * how a blast in one room killed something in the next. The flood answers it by
+     * path: a body on the far side of a wall is simply not in the distance map, and
+     * a body round the corner of the doorway you fired past is.
+     */
+    const centre = targetEntity
+      ? { x: targetEntity.sprite.tx, y: targetEntity.sprite.ty }
+      : this.playerTile;
+    const reach = this.reachFrom(centre.x, centre.y, SPELL_REACH);
+    const inReach = (e: Entity) => this.reached(reach, e.sprite.tx, e.sprite.ty);
+
+    const hostiles = this.floor.entities.filter((e) => e.alive && e.hostile && inReach(e));
     const order: Entity[] = [];
     if (targetEntity) order.push(targetEntity);
     for (const h of hostiles) if (h !== targetEntity) order.push(h);
@@ -462,8 +478,72 @@ export class Combat {
       this.applyCast(cast, t);
     }
 
+    /**
+     * A VOLUME fills tiles, and the player is standing on one of them or is not.
+     *
+     * The fill is thrown AWAY from the caster, so an open room takes the whole
+     * volume down the room and never reaches back. What brings it back is the room
+     * running out of anywhere else to put it — a dead end, a doorway you are
+     * standing in, a corner you backed yourself into. That is the lever the phase
+     * exists for, and it is a fact about the geometry rather than a tax on casting
+     * fire at all: the player who gets burnt made a positioning mistake and can see
+     * which one.
+     *
+     * It can kill. The same rules as an enemy, no exception carved for the person
+     * holding the book.
+     */
+    if (isVolume(cast.elements)) {
+      const g = this.floor.grid;
+      const away: [number, number] = [
+        Math.sign(centre.x - this.playerTile.x),
+        Math.sign(centre.y - this.playerTile.y),
+      ];
+      const filled = g.fill(centre.x, centre.y, cast.volume, away);
+      if (filled.includes(g.idx(this.playerTile.x, this.playerTile.y))) this.burnCaster(cast);
+    }
+
     await this.enemyRound();
     return true;
+  }
+
+  /**
+   * The tiles an effect centred here reaches, as path distance.
+   *
+   * Walls stop it and nothing else does — not rooms, which are not airtight, and
+   * not line of sight, which refuses to go round a corner and so models an arrow
+   * rather than an explosion. Bodies do not block it either: a blast rolls over
+   * the thing it just hit.
+   */
+  private reachFrom(x: number, y: number, radius: number): Int16Array {
+    return this.floor.grid.flood(x, y, radius);
+  }
+
+  /**
+   * Did a flood get to this tile? Bounds-checked, because a reaction's SHAPE is
+   * arithmetic off the object's tile and can name a square outside the grid — and
+   * an out-of-range read is `undefined`, which is not -1 and would sail through a
+   * bare comparison as if the blast had reached it.
+   */
+  private reached(dist: Int16Array, x: number, y: number): boolean {
+    const g = this.floor.grid;
+    return g.inside(x, y) && dist[g.idx(x, y)] !== -1;
+  }
+
+  /**
+   * The player's own volume, catching the player.
+   *
+   * Full damage and it can kill — the same rules as the enemy standing next to
+   * them. Softening it would be designing out the one thing that gives fire a
+   * cost, and a lever nobody respects is not a lever.
+   */
+  private burnCaster(cast: ResolvedCast): void {
+    const dmg = Math.max(1, cast.damage);
+    this.state.hp -= dmg;
+    this.onPlayerHurt(dmg, null);
+    this.onEvent({
+      kind: 'hit', text: `Your own ${cast.name.toLowerCase()} catches you for ${dmg}.`,
+      colour: cast.colour,
+    });
   }
 
   /**
@@ -483,10 +563,12 @@ export class Combat {
         damage = Math.round(damage * CONDUCTION_MULT);
         glow = 0xffe14a;
         this.onEvent({ kind: 'status', text: 'CONDUCTION!', colour: 0xffe14a });
+        // The arc walks the grid like everything else. A charge does not jump
+        // through a wall to a body in the next room.
+        const arc = this.reachFrom(t.sprite.tx, t.sprite.ty, CONDUCTION_ARC_RANGE);
         const other = this.floor.entities.find(
           (o) => o !== t && o.alive && o.hostile &&
-            Math.abs(o.sprite.tx - t.sprite.tx) + Math.abs(o.sprite.ty - t.sprite.ty)
-              <= CONDUCTION_ARC_RANGE,
+            this.reached(arc, o.sprite.tx, o.sprite.ty),
         );
         if (other) {
           this.damage(other, Math.round(damage * CONDUCTION_ARC_SHARE), 0xffe14a);
@@ -605,7 +687,12 @@ export class Combat {
     const r = reactionFor(t.spriteId, cast.elements);
     if (!r) return;
 
-    const tiles = this.reactionTiles(t, r.shape);
+    // A reaction obeys the same bound as the cast that set it off: the shape says
+    // which tiles it WANTS, the flood says which of them it can get to. A barrel
+    // against a wall no longer sprays through it.
+    const blast = this.reachFrom(t.sprite.tx, t.sprite.ty, REACTION_REACH);
+    const tiles = this.reactionTiles(t, r.shape).filter((p) => this.reached(blast, p.x, p.y));
+
     this.onEvent({
       kind: 'status',
       text: `${displayName(t.spriteId).toUpperCase()} · ${r.verb}!`,
@@ -1001,28 +1088,13 @@ export class Combat {
       return !occ || occ === e || occ.kind === 'stairs';
     };
 
-    // BFS out from the goal, so every reachable tile learns its distance; then
+    // Flood out from the GOAL, so every reachable tile learns its distance; then
     // the body just walks downhill. Searching from the goal means one pass
-    // serves whichever neighbour it ends up standing on.
-    const W = g.w, H = g.h;
-    const dist = new Int16Array(W * H).fill(-1);
-    const queue: number[] = [ty * W + tx];
-    dist[ty * W + tx] = 0;
-    for (let qi = 0; qi < queue.length; qi++) {
-      const i = queue[qi];
-      const cx = i % W, cy = (i / W) | 0;
-      if (dist[i] > 24) break;                 // far enough; stop expanding
-      for (const [dx, dy] of DIR_VEC) {
-        const nx = cx + dx, ny = cy + dy;
-        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-        const ni = ny * W + nx;
-        if (dist[ni] !== -1) continue;
-        // the goal tile itself may be occupied (it is who we are chasing)
-        if (!free(nx, ny) && !(nx === tx && ny === ty)) continue;
-        dist[ni] = dist[i] + 1;
-        queue.push(ni);
-      }
-    }
+    // serves whichever neighbour it ends up standing on — and the goal tile is
+    // the flood's origin, which is why the body it is chasing standing there
+    // does not block the search that is looking for it.
+    const W = g.w;
+    const dist = g.flood(tx, ty, 24, free);
 
     let best: [number, number] | null = null;
     let bestD = dist[sy * W + sx];

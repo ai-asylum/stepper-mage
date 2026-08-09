@@ -13,40 +13,19 @@ Status values: `planned` · `in progress` · `shipped` · `paused`. Only one pha
 | 2 | [Altar_Reward_Node](Altar_Reward_Node.md) | yes | shipped |
 | 3 | [Harvest_And_Room_Elements](Harvest_And_Room_Elements.md) | yes | shipped |
 | 4 | [Star_Tree](Star_Tree.md) | yes | shipped |
-| 5 | [Ingredient_Belt](Ingredient_Belt.md) | yes | shipped, flagged off |
-| 6 | [Casting_And_Movement](Casting_And_Movement.md) | yes | shipped |
-| 7 | [Pixel_Art_Overlay](Pixel_Art_Overlay.md) | yes | shipped |
-| 8 | [Pixel_Resolution_Steps](Pixel_Resolution_Steps.md) | yes | in progress |
-| 9 | [Enemy_Identity](Enemy_Identity.md) | yes | planned |
-| 10 | [Corpse_Raising_And_Golem_Persistence](Corpse_Raising_And_Golem_Persistence.md) | yes | paused |
-| 11 | [Guidance_And_Blessings](Guidance_And_Blessings.md) | yes | planned |
-| 12 | [Deeper_Dungeon](Deeper_Dungeon.md) | yes | planned |
-| 13 | [Descent_Unlocks](Descent_Unlocks.md) | yes | planned |
-| 14 | [Polish_Pass](Polish_Pass.md) | yes | planned |
-
-## Why this order
-
-Turn economy was first because it re-bases the balance of everything downstream —
-building content against the old "one cast, one turn" rule would mean retuning it all
-later. The altar was second because it is the run's reward hub and self-contained.
-Harvest was third and needed nothing from the tree. The tree came fourth because it is
-what unlocks the belt, and the belt is **inert below hand size 2**, which is a real
-dependency edge rather than a pacing guess.
-
-**Casting_And_Movement is sixth for the same reason the first phase was first.** It
-changes the turn rule again — to cast = 1 turn — and everything balanced against
-pay-per-component has to be re-tuned against it. Doing content first would mean tuning
-it twice.
-
-Pixel_Art_Overlay precedes Enemy_Identity because that phase adds attack VFX and an
-attack telegraph, and those have to be authored in whichever pipeline wins there.
-Enemy_Identity is last of the three because it is much the largest — roughly 120 new
-sprite frames against the 63 in the whole game today — and it benefits from both a
-settled loop and a settled art direction.
-
-Corpse_Raising_And_Golem_Persistence is **paused**, not merely later. Coffin Moss and
-the animation ingredient are both belt ingredients, and the belt is switched off behind
-`BELT_ENABLED` pending a UX rethink, so that phase has nothing to build against until
-the flag flips back.
-
-Descent unlocks stay late because with five floors there is nowhere to skip to.
+| 5 | [Casting_And_Movement](Casting_And_Movement.md) | yes | shipped |
+| 6 | [Pixel_Art_Overlay](Pixel_Art_Overlay.md) | yes | shipped |
+| 7 | [Pixel_Resolution_Steps](Pixel_Resolution_Steps.md) | yes | in progress |
+| 8 | [Enemy_Identity](Enemy_Identity.md) | yes | planned |
+| 9 | [Spell_Reach](Spell_Reach.md) | yes | planned |
+| 10 | [Burning_Ground](Burning_Ground.md) | yes | planned |
+| 11 | [Elemental_Spread](Elemental_Spread.md) | yes | planned |
+| 12 | [Dungeon_Shape](Dungeon_Shape.md) | yes | planned |
+| 13 | [First_Minutes](First_Minutes.md) | yes | planned |
+| 14 | [Altar_Screen](Altar_Screen.md) | yes | planned |
+| 15 | [Corpse_Raising_And_Golem_Persistence](Corpse_Raising_And_Golem_Persistence.md) | yes | paused |
+| 16 | [Guidance_And_Blessings](Guidance_And_Blessings.md) | yes | planned |
+| 17 | [Deeper_Dungeon](Deeper_Dungeon.md) | yes | planned |
+| 18 | [Descent_Unlocks](Descent_Unlocks.md) | yes | planned |
+| 19 | [Polish_Pass](Polish_Pass.md) | yes | planned |
+| 20 | [Ingredient_Belt](Ingredient_Belt.md) | yes | shipped, flagged off |
