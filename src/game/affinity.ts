@@ -57,29 +57,37 @@ export interface Affinity {
  */
 const AFFINITY: Record<string, Affinity> = {
   // ---- I, the Drowned Library. Paper and ink, and a library is already flooded.
-  // Fire is the obvious answer here and it is meant to be: this is the floor that
-  // teaches the mechanic, so its lesson is the one nobody needs a hint for.
-  f1_enemy_ink: { weak: ['fire'], resist: ['water'] },
+  // Fire is the biggest column here and is meant to be — this is the floor that
+  // teaches the mechanic — but it is two of four rather than the whole floor, so
+  // even the tutorial has a room where the starting page is the wrong answer.
+  f1_enemy_ink: { weak: ['spark'], resist: ['water'] },     // wet ink conducts
   f1_enemy_moth: { weak: ['gust'], resist: ['fire'] },      // it IS a flame
   f1_enemy_wraith: { weak: ['fire'], resist: ['stone'] },   // loose paper, nothing to hit
   f1_boss: { weak: ['fire'], resist: ['rot'] },             // a book cannot rot faster than it burns
 
-  // ---- II, the Ossuary Kitchens. Bone: resists fire, breaks under a blow.
+  // ---- II, the Ossuary Kitchens. Bone: resists fire, breaks under a blow — and
+  // the hound is the row that stops "hit it" being the whole floor. Cold makes bone
+  // brittle, which is a second way to break the same material.
   f2_enemy_cleaver: { weak: ['gust', 'stone'], resist: ['fire'] },
   f2_enemy_imp: { weak: ['fire'], resist: ['oil'] },        // rendered fat, and it is already greasy
-  f2_enemy_hound: { weak: ['gust', 'stone'], resist: ['fire', 'rot'] },
+  f2_enemy_hound: { weak: ['frost', 'stone'], resist: ['fire', 'rot'] },
   f2_boss: { weak: ['gust', 'stone'], resist: ['fire'] },
 
-  // ---- III, the fungal deep. Wet, alive, and rooted.
+  // ---- III, the fungal deep. Wet, alive, and rooted — which is three different
+  // vulnerabilities and used to be written as one. Burning was the answer to every
+  // creature on this floor; now it answers two of four, and the other two are what
+  // "wet" and "alive" actually imply.
   f3_enemy_hulk: { weak: ['fire'], resist: ['stone', 'rot'] },
-  f3_enemy_creeper: { weak: ['fire'], resist: ['gust'] },   // low and anchored
-  f3_enemy_priest: { weak: ['fire'], resist: ['rot'] },
+  f3_enemy_creeper: { weak: ['frost'], resist: ['gust'] },  // growth, and cold stops growth
+  f3_enemy_priest: { weak: ['spark'], resist: ['rot'] },    // damp flesh conducts
   f3_boss: { weak: ['fire', 'frost'], resist: ['rot'] },
 
-  // ---- IV, the foundry. Already on fire; water and cold are the answer.
+  // ---- IV, the foundry. Already on fire; cold and water are the answer, and the
+  // wasp is the exception that stops the floor being one column — it is the only
+  // thing in here that flies, and a gust wrecks a flyer.
   f4_enemy_slag: { weak: ['water', 'frost'], resist: ['fire'] },
   f4_enemy_bellows: { weak: ['water', 'spark'], resist: ['fire'] },
-  f4_enemy_wasp: { weak: ['frost'], resist: ['fire'] },
+  f4_enemy_wasp: { weak: ['gust'], resist: ['fire'] },
   f4_boss: { weak: ['water', 'frost'], resist: ['fire'] },
 
   // ---- V, the observatory. Stone, glass and starlight — brittle, not burnable.

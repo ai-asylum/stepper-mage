@@ -145,12 +145,15 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 11 — Elemental_Spread
 
-- [ ] Measure, per floor, how many creatures each element beats.
-- [ ] Reassign affinities per floor so no floor is solvable with one element.
-- [ ] Spread every floor across at least three pages; fix floor 3's four-of-four fire.
+- [x] Measure, per floor, how many creatures each element beats. Four of five floors
+      broke the three-page rule, not just floor 3. Table in the phase doc.
+- [x] Reassign affinities per floor so no floor is solvable with one element.
+- [x] Spread every floor across at least three pages; fix floor 3's four-of-four fire.
 - [ ] Look at the cast readout, discovery banner and nameplate marks at 375px.
-- [ ] Retune the gate and the `mixed` policy's page choice against the new table.
-- [ ] Commit changes.
+      BLOCKED: no debug seam holds a target long enough to open the book — see the doc.
+- [x] Retune the gate and the `mixed` policy's page choice against the new table.
+      Moot: the gate and its policies were deleted with `fullrun.mjs` on 2026-08-09.
+- [x] Commit changes.
 
 ## Phase 12 — Dungeon_Shape
 

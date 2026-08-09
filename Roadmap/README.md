@@ -21,10 +21,10 @@ played — check it before trusting it.
 | 5 | [Casting_And_Movement](Casting_And_Movement.md) | yes | shipped |
 | 6 | [Pixel_Art_Overlay](Pixel_Art_Overlay.md) | yes | shipped |
 | 7 | [Pixel_Resolution_Steps](Pixel_Resolution_Steps.md) | yes | shipped |
-| 8 | [Enemy_Identity](Enemy_Identity.md) | yes | planned |
+| 8 | [Enemy_Identity](Enemy_Identity.md) | yes | shipped |
 | 9 | [Spell_Reach](Spell_Reach.md) | yes | shipped |
 | 10 | [Burning_Ground](Burning_Ground.md) | yes | shipped |
-| 11 | [Elemental_Spread](Elemental_Spread.md) | yes | planned |
+| 11 | [Elemental_Spread](Elemental_Spread.md) | yes | shipped |
 | 12 | [Dungeon_Shape](Dungeon_Shape.md) | yes | planned |
 | 13 | [First_Minutes](First_Minutes.md) | yes | planned |
 | 14 | [Altar_Screen](Altar_Screen.md) | yes | planned |
