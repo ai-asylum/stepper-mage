@@ -234,8 +234,8 @@ every phase. Never list tasks for editing this file or a phase doc.
       It was the TONEMAP, as the doc guessed. Per-channel ACES bleached hue as soon as
       the torch lit a surface. Luminance-mapped with chroma preserved now.
 - [ ] Add a chest golem sprite and let Animate target chests.
-      BLOCKED on the sprite — `tools/genart.py` needs the Scenario CLI. The TARGETING
-      half is already done: `isCastableObject` accepts a spent chest (phase 10).
+      Needs one sprite generated through `tools/genart.py`. The TARGETING half is
+      already done: `isCastableObject` accepts a spent chest (phase 10).
 - [~] Untangle the HUD text layer: log lines, captions, name plates and cards overdraw each other.
       The LOG now yields — it is the only element in that band that is a record rather
       than a control, so it stacks up from whatever the cast UI is not using and caps

@@ -71,21 +71,20 @@ facing frames, an attack pose and an element it resists. Generating floors 6–1
 that lands would mean generating them to the old spec and regenerating them after, so
 the roster work must be specified against the new creature shape.
 
-## Floors 6-10 are BLOCKED on asset generation
+## Floors 6-10 need the art pipeline run
 
-Not deferred by judgement — blocked by a dependency that is not available.
+Not blocked — not done. An earlier draft of this section claimed the pipeline was
+unavailable; it is not, and the claim was made from reading a docstring rather than
+from checking. `uvx`, `op` and the asset-creator are all present and the credentials
+resolve, so `tools/genart.py` runs.
 
 Each floor is 3 enemies, 4 props, 4 matching golems and a boss: 12 sprites, 60 across
-five floors. Every one is produced by `tools/genart.py`, which generates through the
-**Scenario asset-creator CLI** — an external, paid image service. Without it the
-manifest rows can be written and the themes can be authored, but the floors would ship
-referencing sprites that do not exist and fail the moment a player descended into one.
+five floors. What that costs is a large generated diff and a run of the pipeline, so
+it wants starting deliberately rather than as a side effect of authoring themes.
 
-What is needed to unblock: someone with Scenario credentials runs the pipeline for the
-new manifest rows. The theme palettes, the roster lists and the `THEMES.length` work
-below are all authorable without it and are NOT done, because doing them first would
-leave the repo in a state where the win condition has moved to a depth that cannot be
-reached.
+The theme palettes, the roster lists and the `THEMES.length` work below are authorable
+without the sprites and are deliberately NOT done, because doing them first would
+leave the repo with the win condition moved to a depth that cannot be reached.
 
 **`THEMES.length` is still the vault**, and that stays true until the floors exist.
 
