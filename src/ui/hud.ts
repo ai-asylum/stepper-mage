@@ -45,6 +45,41 @@ import { ALL_PAGES } from '../spells/pages';
  * golden page is a one-run gift and competes for nothing, so nothing an altar
  * hands out asks a second question.
  */
+/**
+ * A tile the player has aimed at, as opposed to a body.
+ *
+ * Burning ground is the first thing in this game worth aiming at that is not an
+ * entity — it lives as tile indices in `Ground` and is drawn from a pooled quad, and
+ * giving it a body just to be targetable would put a second copy of the truth beside
+ * the one that already works.
+ *
+ * `tile: true` is the discriminant, and it is a literal rather than a `kind` string
+ * because `Entity` already has a `kind` meaning something else entirely.
+ */
+export interface TileTarget { tile: true; x: number; y: number }
+
+/** What the reticle can be on: a body, or a tile. */
+export type AimTarget = Entity | TileTarget;
+
+export function isTileTarget(t: AimTarget | null): t is TileTarget {
+  return !!t && (t as TileTarget).tile === true;
+}
+
+/**
+ * Are these the same aim?
+ *
+ * Bodies compare by identity; tiles cannot, because a tile target is a fresh object
+ * every time the candidate list is rebuilt — which is every frame. Comparing those by
+ * reference silently dropped the reticle on the frame after it was set.
+ */
+export function sameTarget(a: AimTarget | null, b: AimTarget | null): boolean {
+  if (!a || !b) return a === b;
+  if (isTileTarget(a) || isTileTarget(b)) {
+    return isTileTarget(a) && isTileTarget(b) && a.x === b.x && a.y === b.y;
+  }
+  return a === b;
+}
+
 export type AltarOfferKind =
   | 'new' | 'upgrade' | 'sacrifice' | 'star' | 'golden'
   // A bundle of one belt ingredient. About a spell, but never about a PAGE, so it
@@ -120,7 +155,7 @@ export interface AltarOffer {
 export type UiAction =
   | { kind: 'cast' }
   | { kind: 'clear' }
-  | { kind: 'target'; entity: Entity }
+  | { kind: 'target'; entity: AimTarget }
   | { kind: 'cycle' }
   | { kind: 'offer'; offer: AltarOffer }
   /** Spend a banked charge to re-roll the open altar's three offers. */
@@ -258,9 +293,9 @@ export function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 }
 
 export class Hud {
-  target: Entity | null = null;
+  target: AimTarget | null = null;
   /** Candidates the player can tap, refreshed by the game each turn. */
-  candidates: Entity[] = [];
+  candidates: AimTarget[] = [];
   /**
    * Hostiles that can hit you before you act again — see `THREAT_REACH`.
    *
@@ -290,7 +325,10 @@ export class Hud {
    */
   castEffect(): { label: string; colour: number } | null {
     const t = this.target;
-    if (!t || !this.knownFor) return null;
+    // A tile has no affinities. The chip is a claim about a CREATURE's element and
+    // drawing "???" over burning ground would be inventing a creature to be unsure
+    // about.
+    if (!t || isTileTarget(t) || !this.knownFor) return null;
     const cast = this.currentCast();
     if (!cast || cast.refusal || !cast.elements.length || cast.damage <= 0) return null;
     const seen = cast.elements.map((el) => this.knownFor!(t.spriteId, el));
@@ -586,15 +624,26 @@ export class Hud {
     const ids = this.selectedIds();
     if (!ids.length) return null;
     const t = this.target;
-    // Ground fire the target is standing in joins the cast, so the preview has to
-    // include it or the spell changes identity the moment the player commits.
-    return this.combat.preview(this.combat.withGroundFuel(ids, t).pages, t
-      ? {
-          kind: t.animated ? 'golem' : t.kind === 'prop' ? 'prop'
-            : t.kind === 'boss' ? 'boss' : t.kind === 'chest' ? 'chest' : 'enemy',
-          propId: t.kind === 'prop' && !t.animated ? t.spriteId : undefined,
-        }
-      : { kind: 'none' });
+    const body = isTileTarget(t) ? null : t;
+    const tile = isTileTarget(t) ? t : null;
+    /**
+     * Ground fire joins the cast, so the preview has to include it or the spell
+     * changes identity the moment the player commits. Aimed at a TILE the fuel comes
+     * from that tile; aimed at a body, from the tile it stands on.
+     */
+    return this.combat.previewAimed(
+      ids,
+      body
+        ? {
+            kind: body.animated ? 'golem' : body.kind === 'prop' ? 'prop'
+              : body.kind === 'boss' ? 'boss' : body.kind === 'chest' ? 'chest' : 'enemy',
+            propId: body.kind === 'prop' && !body.animated ? body.spriteId : undefined,
+          }
+        // A tile has no kind to speak of. `none` is right: nothing about the cast
+        // resolves off what it was thrown at, only off where it lands.
+        : { kind: 'none' },
+      tile,
+      body);
   }
 
   update(dt: number): void {
@@ -618,7 +667,9 @@ export class Hud {
     if (this.discoveryT > 0) this.discoveryT = Math.max(0, this.discoveryT - dt * 0.34);
     this.engine.setFlash(this.hurtFlash * 0.42, 0xd82f2f);
     // drop a dead target
-    if (this.target && !this.target.alive) this.target = null;
+    // Drop a dead target. A tile cannot die — `refreshTargets` drops it when the
+    // fire goes out, which is the only way a tile stops being a candidate.
+    if (this.target && !isTileTarget(this.target) && !this.target.alive) this.target = null;
   }
 
   // ---------------------------------------------------------------------- draw
@@ -715,7 +766,43 @@ export class Hud {
     const project = (pt: THREE.Vector3, out: { x: number; y: number; behind: boolean }) =>
       this.engine.worldToUi(pt, out);
 
-    for (const e of this.candidates) {
+    for (const c of this.candidates) {
+      /**
+       * A TILE marker: a ring on the ground, drawn where the fire is.
+       *
+       * Not the down-triangle bodies get. That marker points at a silhouette from
+       * above, and burning ground has no silhouette — a ring lying on the tile says
+       * "this square" in a way an arrow hovering over it cannot.
+       */
+      if (isTileTarget(c)) {
+        const v2 = new THREE.Vector3(c.x, 0.06, c.y);
+        project(v2, p);
+        if (p.behind) continue;
+        const sel = sameTarget(c, this.target);
+        const pulse = 0.55 + Math.sin(t * 3.2) * 0.45;
+        ctx.save();
+        ctx.globalAlpha = sel ? 1 : 0.4 + pulse * 0.25;
+        /**
+         * A dark rim under the ring, and a COLD colour when selected.
+         *
+         * The first version was orange on orange and vanished into the fire it was
+         * marking — the same trap the burning ground itself fell into, and the same
+         * fix: the one thing this palette never produces near a flame is a hard dark
+         * edge, and the one hue is a cold one.
+         */
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, 17, 8, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(8,5,10,0.85)';
+        ctx.lineWidth = sel ? 5 : 3.5;
+        ctx.stroke();
+        ctx.strokeStyle = sel ? '#eaf6ff' : '#bfe8ff';
+        ctx.lineWidth = sel ? 2.4 : 1.4;
+        ctx.stroke();
+        ctx.restore();
+        this.hits.push({ rect: [p.x - 20, p.y - 12, 40, 24], action: { kind: 'target', entity: c } });
+        continue;
+      }
+      const e = c;
       if (!e.alive || !e.sprite.group.visible) { e.sprite.setOutline(0xffffff, false); continue; }
 
       const animatable = isCastableObject(e);
@@ -1187,7 +1274,7 @@ export class Hud {
     // refused because nothing on the floor has fallen, and its own refusal already
     // says exactly that. There is no target to point at.
     if (!ok && hasElement && wantsObject(this.tornIds)) {
-      const anyObject = this.candidates.some((e) => e.kind === 'prop' && !e.animated);
+      const anyObject = this.candidates.some((e) => !isTileTarget(e) && e.kind === 'prop' && !e.animated);
       hint = anyObject
         ? 'Tap an object (violet ring) to animate it'
         : 'No object in sight — find furniture to animate';

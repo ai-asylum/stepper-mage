@@ -397,13 +397,41 @@ export class Combat {
    * having changed its mind, which is the same defect the reaction verbs exist to
    * avoid — see `ReactionDef.verb`.
    */
+  /**
+   * What a cast WILL do, aimed where it is aimed — fuel folded in and capped.
+   *
+   * The one place both the HUD's promise and the cast's payoff come from. They used
+   * to be two calls: the HUD previewed the fuelled cast and `cast` capped its volume
+   * afterwards, so the preview described a 25-tile blast the cast would deliver as
+   * one. Nothing drew the number yet, which is the only reason it was not already a
+   * bug — and "not drawn yet" is not a place to leave a disagreement.
+   *
+   * Scavenged fire feeds the cast but never inflates its VOLUME. Uncapped, the
+   * mechanic is a loop with gain above one: bigger cast, more tiles lit, more to pick
+   * up. Measured, it took the gated line from clearing 5 seeds in 5 to clearing 1,
+   * dying as early as floor 1. Capped to what the hand alone would produce, the fire
+   * still folds into the cast's IDENTITY and its damage — a Frostbolt thrown into a
+   * fire is still a Steam Burst — and only the area stays where the player put it.
+   */
+  previewAimed(
+    pages: string[], target: CastTarget, tile?: { x: number; y: number } | null,
+    aimedAt: Entity | null = null,
+  ): ResolvedCast {
+    const { pages: withFuel, fuel } = this.withGroundFuel(pages, aimedAt, tile);
+    const cast = this.preview(withFuel, target);
+    if (fuel) cast.volume = Math.min(cast.volume, this.preview(pages, target).volume);
+    return cast;
+  }
+
   withGroundFuel(
-    pages: string[], targetEntity: Entity | null,
+    pages: string[], targetEntity: Entity | null, tile?: { x: number; y: number } | null,
   ): { pages: string[]; fuel: number; at: number } {
     const g = this.floor.grid;
-    const at = targetEntity
-      ? g.idx(targetEntity.sprite.tx, targetEntity.sprite.ty)
-      : g.idx(this.playerTile.x, this.playerTile.y);
+    const at = tile
+      ? g.idx(tile.x, tile.y)
+      : targetEntity
+        ? g.idx(targetEntity.sprite.tx, targetEntity.sprite.ty)
+        : g.idx(this.playerTile.x, this.playerTile.y);
     const fuel = this.floor.ground.burning(at) ? this.floor.ground.level(at) : 0;
     return {
       pages: fuel ? [...pages, ...Array<string>(fuel).fill('fire')] : pages,
@@ -433,7 +461,18 @@ export class Combat {
    * for one slot, and an extra element buys a whole extra element. "Better against
    * a group, worse against one thing" is true of every volley in the game.
    */
-  async cast(pages: string[], targetEntity: Entity | null): Promise<boolean> {
+  async cast(pages: string[], aim: Entity | { tile: true; x: number; y: number } | null): Promise<boolean> {
+    /**
+     * A TILE aim is a cast thrown at the ground rather than at a body.
+     *
+     * Burning ground is the first thing in this game worth aiming at that is not an
+     * entity, and what it offers is the fire itself: the volume lands there, the fuel
+     * under it joins the cast, and anything standing in the blast pays. There is no
+     * primary victim, which is the only thing that makes this different from every
+     * other cast — so `targetEntity` stays null and the tile only moves the CENTRE.
+     */
+    const tile = aim && 'tile' in aim ? aim : null;
+    const targetEntity = tile ? null : (aim as Entity | null);
     const target: CastTarget = targetEntity
       ? {
           kind: targetEntity.animated ? 'golem'
@@ -446,25 +485,9 @@ export class Combat {
         }
       : { kind: 'none' };
 
-    const { pages: withFuel, fuel, at: fuelAt } = this.withGroundFuel(pages, targetEntity);
+    const { fuel, at: fuelAt } = this.withGroundFuel(pages, targetEntity, tile);
 
-    const cast = this.preview(withFuel, target);
-
-    /**
-     * Scavenged fire feeds the cast but never inflates its VOLUME.
-     *
-     * Without this the mechanic is a runaway with gain greater than one: fire picked
-     * up off a tile made the cast bigger, a bigger cast lit more tiles, and more
-     * tiles meant more to pick up next round. Measured, it took the gated line from
-     * clearing 5 of 5 seeds to 1, dying as early as floor 1 — the volume outgrew the
-     * room and caught the caster every time.
-     *
-     * Capped to the volume the hand alone would have produced, so the fire still
-     * folds into the cast's IDENTITY and its damage — a Frostbolt thrown into a fire
-     * is still a Steam Burst, which is the whole point — and only the area is held
-     * where the player put it. The loop keeps its payoff and loses its gain.
-     */
-    if (fuel) cast.volume = Math.min(cast.volume, this.preview(pages, target).volume);
+    const cast = this.previewAimed(pages, target, tile, targetEntity);
 
     if (cast.refusal) {
       this.onEvent({ kind: 'deny', text: cast.refusal });
@@ -529,9 +552,10 @@ export class Combat {
      * path: a body on the far side of a wall is simply not in the distance map, and
      * a body round the corner of the doorway you fired past is.
      */
-    const centre = targetEntity
-      ? { x: targetEntity.sprite.tx, y: targetEntity.sprite.ty }
-      : this.playerTile;
+    const centre = tile
+      ?? (targetEntity
+        ? { x: targetEntity.sprite.tx, y: targetEntity.sprite.ty }
+        : this.playerTile);
     const reach = this.reachFrom(centre.x, centre.y, SPELL_REACH);
     const inReach = (e: Entity) => this.reached(reach, e.sprite.tx, e.sprite.ty);
 
@@ -1398,11 +1422,11 @@ function clearLine(grid: Grid, x0: number, y0: number, x1: number, y1: number): 
 export function targetsInView(
   grid: Grid, floor: Floor, x: number, y: number, dir: 0 | 1 | 2 | 3,
   reach = ENGAGE_RADIUS,
-): Entity[] {
+): (Entity | { tile: true; x: number; y: number })[] {
   const room = grid.roomAt(x, y);
   const [fx, fy] = DIR_VEC[dir];
   const [rx, ry] = DIR_VEC[(dir + 1) % 4];
-  const out: Entity[] = [];
+  const out: (Entity | { tile: true; x: number; y: number })[] = [];
 
   for (const e of floor.entities) {
     if (!e.alive || e.kind === 'stairs') continue;
@@ -1415,9 +1439,34 @@ export function targetsInView(
     out.push(e);
   }
 
+  /**
+   * BURNING GROUND is targetable, under the same three clauses as a body.
+   *
+   * The first thing in this game worth aiming at that is not an entity. It has to be
+   * aimable because fire on the floor is a spell COMPONENT — casting into it picks it
+   * up — and until now the only way to reach that fuel was to aim at a creature
+   * standing in it, which is the case where you least want to be spending the cast on
+   * the ground.
+   *
+   * Same cone, same reach, same wall test. A tile is a target on exactly the terms a
+   * creature is, which is what stops this being a second targeting system.
+   */
+  for (const i of floor.ground.fires()) {
+    const tx = i % grid.w, ty = (i / grid.w) | 0;
+    const dx = tx - x, dy = ty - y;
+    const ahead = dx * fx + dy * fy;
+    const side = Math.abs(dx * rx + dy * ry);
+    if (ahead < 1 || side > ahead) continue;
+    if (Math.abs(dx) + Math.abs(dy) > reach) continue;
+    if (!clearLine(grid, x, y, tx, ty)) continue;
+    out.push({ tile: true, x: tx, y: ty });
+  }
+
   // nearest first, so auto-target picks the immediate threat
-  out.sort((a, b) =>
-    (Math.abs(a.sprite.tx - x) + Math.abs(a.sprite.ty - y)) -
-    (Math.abs(b.sprite.tx - x) + Math.abs(b.sprite.ty - y)));
+  const near = (t: Entity | { tile: true; x: number; y: number }): number =>
+    'tile' in t
+      ? Math.abs(t.x - x) + Math.abs(t.y - y)
+      : Math.abs(t.sprite.tx - x) + Math.abs(t.sprite.ty - y);
+  out.sort((a, b) => near(a) - near(b));
   return out;
 }

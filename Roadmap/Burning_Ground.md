@@ -65,6 +65,15 @@ Both asked for during the build, both load-bearing enough to write down.
   fire is Steam Burst without ever holding fire. Its contribution to VOLUME is capped
   to what the hand alone would produce, because uncapped it is a loop with gain above
   one: bigger cast, more tiles lit, more to pick up.
+- **Burning ground is TARGETABLE.** The first thing in this game worth aiming at that
+  is not an entity, which made it a real change: `hud.target` became a union of a body
+  and a tile, and `sameTarget` exists because a tile target is a fresh object every
+  time the candidate list is rebuilt — comparing those by reference dropped the
+  reticle on the very next frame. A tile qualifies under the same cone, the same
+  reach and the same wall test a creature does, which is what keeps it from being a
+  second targeting system. It is drawn as a ring on the ground rather than the
+  down-triangle bodies get: that marker points at a silhouette, and burning ground
+  has none.
 - **Containers spill when destroyed.** A barrel of something empties nine tiles from
   where it stood (`SPILL_VOLUME`), which turns an object from a one-shot trigger into
   terrain you positioned. Puddles last 14 rounds against fire's 8 — a trap that

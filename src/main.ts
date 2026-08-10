@@ -6,7 +6,10 @@ import {
   Combat, targetsInView, MAX_RANK, type PlayerState,
 } from './game/combat';
 import { CastFx } from './spells/vfx';
-import { Hud, type AltarOffer, type HandCard } from './ui/hud';
+import {
+  Hud, isTileTarget, sameTarget,
+  type AimTarget, type AltarOffer, type HandCard,
+} from './ui/hud';
 import { TreeScreen, type TreeAction } from './ui/tree';
 import { routeCost, routeTo } from './ui/treeCommon';
 import { Book } from './book/book';
@@ -905,7 +908,17 @@ async function boot(): Promise<void> {
     return null;
   };
 
-  const isLegal = (e: Entity, ids: string[]): boolean => {
+  const isLegal = (t: AimTarget, ids: string[]): boolean => {
+    /**
+     * A BURNING TILE is a legal target for anything with an element in it.
+     *
+     * It is not a body and nothing about the hand has to be aimed at it — what it
+     * offers is the fire itself, as fuel, and the ability to throw the next cast at
+     * a patch of ground rather than at a creature. The two ingredient rules below
+     * still refuse it, because a tile is neither an object to animate nor a corpse.
+     */
+    if (isTileTarget(t)) return !wantsCorpse(ids) && !wantsObject(ids);
+    const e = t;
     /**
      * Coffin Moss raises the DEAD, and nothing on a floor is a corpse yet — the
      * corpse-raising phase is what puts one there. So a hand holding moss has no
@@ -966,7 +979,10 @@ async function boot(): Promise<void> {
     const ids = fan.gameIds;
     // A target you can no longer SEE is dropped — out of the cone, out of reach, or
     // behind a wall, all three of which `targetsInView` now answers in one place.
-    if (hud.target && !hud.candidates.includes(hud.target)) hud.target = null;
+    // `sameTarget` and not `includes`, because a tile target is a fresh object every
+    // time this list is rebuilt — comparing by reference dropped the reticle on the
+    // very next frame.
+    if (hud.target && !hud.candidates.some((c) => sameTarget(c, hud.target))) hud.target = null;
 
     // If what you have torn out cannot be aimed at the current target, drop the
     // reticle. Tearing Animate with a skeleton selected used to just refuse the cast,
@@ -985,8 +1001,11 @@ async function boot(): Promise<void> {
      * the two clauses above are the only things that ever take one away.
      */
     if (!hud.target) {
+      // Bodies only: auto-select exists for the one case that must not need a tap,
+      // an enemy already coming for you. A tile never qualifies.
       hud.target = hud.candidates.find(
-        (e) => e.hostile && combat.isAlerted(e) && directlyAhead(e) && isLegal(e, ids)) ?? null;
+        (e): e is Entity => !isTileTarget(e)
+          && e.hostile && combat.isAlerted(e) && directlyAhead(e) && isLegal(e, ids)) ?? null;
     }
   };
 
@@ -1018,7 +1037,7 @@ async function boot(): Promise<void> {
     const ids = fan.gameIds;
     const legal = hud.candidates.filter((e) => isLegal(e, ids));
     if (!legal.length) { hud.target = null; return; }
-    const i = hud.target ? legal.indexOf(hud.target) : -1;
+    const i = hud.target ? legal.findIndex((c) => sameTarget(c, hud.target)) : -1;
     hud.target = legal[(i + 1) % legal.length];
   };
 
@@ -2235,7 +2254,11 @@ async function boot(): Promise<void> {
   const wakeRefusal = (dry: ResolvedCast | null): string | null => {
     if (dry?.output !== 'golem') return null;
     const t = hud.target;
-    if (t && t.alive && t.kind === 'prop' && !t.animated && t.golemId) return null;
+    // A tile is never furniture, so an animate cast aimed at burning ground is
+    // refused here with the same sentence a creature gets.
+    if (t && !isTileTarget(t) && t.alive && t.kind === 'prop' && !t.animated && t.golemId) {
+      return null;
+    }
     return 'Nothing there will wake. Aim it at furniture.';
   };
 
@@ -2303,6 +2326,9 @@ async function boot(): Promise<void> {
       case 'cast': void doCast(); break;
       case 'clear': hud.clearSelection(); break;
       case 'target':
+        // A tile is only ever a target — none of the furniture gestures below can
+        // apply to one, so it short-circuits them all.
+        if (isTileTarget(a.entity)) { hud.target = a.entity; break; }
         if (a.entity.kind === 'altar') { takeFromAltar(a.entity); break; }
         if (a.entity.kind === 'chest' && !a.entity.spent) { openChest(a.entity); break; }
         // The stairs are a door, not a target. Tapping them is the same gesture as
@@ -2580,7 +2606,10 @@ async function boot(): Promise<void> {
   // back to the reticle so pressing it at something across the room still SAYS why
   // nothing happened; the pill itself is only ever drawn for a fixture in reach.
   keys.KeyH = () => {
-    const e = hud.harvestInReach ?? hud.target;
+    // A tile has nothing to harvest — burning ground is a component you pick up by
+    // casting into it, not by taking it off a fixture.
+    const t = hud.target;
+    const e = hud.harvestInReach ?? (t && !isTileTarget(t) ? t : null);
     if (e) harvestFrom(e);
   };
   for (let i = 1; i <= 9; i++) {
@@ -2715,7 +2744,8 @@ async function boot(): Promise<void> {
      * stand is `hud.harvestInReach`, which is the single fixture the pill draws for.
      */
     harvestable: () => hud.candidates
-      .filter((e) => e.alive && e.kind === 'prop' && !e.animated && !!harvestOf(e.spriteId))
+      .filter((e): e is Entity => !isTileTarget(e)
+        && e.alive && e.kind === 'prop' && !e.animated && !!harvestOf(e.spriteId))
       .map((e) => ({ e, spriteId: e.spriteId, yields: harvestOf(e.spriteId) })),
     /**
      * Harvest the fixture in reach, or a given one. Same path as the pill, so it
