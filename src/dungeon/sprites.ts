@@ -48,6 +48,8 @@ const SPRITE_FRAG = /* glsl */ `
   uniform float uTorchGain;
   uniform vec3 uFog;
   uniform float uFogDensity;
+  uniform vec3 uMurkCol;
+  uniform float uMurkHere;
 
   /** Baked light at this sprite's tile, pushed in when it moves. */
   uniform float uTileLight;
