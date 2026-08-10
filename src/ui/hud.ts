@@ -792,11 +792,15 @@ export class Hud {
          * The mark is the tile's own four corners projected, so it sits ON the square
          * in perspective and says "this one" the way a floating ring never could.
          */
-        project(new THREE.Vector3(c.x, 0.05, c.y), p);
-        if (p.behind) continue;
-        this.hits.push({ rect: [p.x - 22, p.y - 14, 44, 28], action: { kind: 'target', entity: c } });
-        if (!sameTarget(c, this.target)) continue;
-
+        /**
+         * The tile's four corners, projected. They are the hit region as well as the
+         * outline, so what the player taps is exactly the square they can see.
+         *
+         * A fixed-size rect was the first version and it was fiddly for two opposite
+         * reasons at once: too small on a tile at the far end of a corridor, and far
+         * smaller than the fire it was marking on a tile underfoot. A projected quad
+         * is neither, because it IS the tile.
+         */
         const corner = { x: 0, y: 0, behind: false };
         const pts: [number, number][] = [];
         for (const [ox, oz] of [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]] as const) {
@@ -805,6 +809,23 @@ export class Hud {
           pts.push([corner.x, corner.y]);
         }
         if (!pts.length) continue;
+
+        const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+        let x0 = Math.min(...xs), x1 = Math.max(...xs);
+        let y0 = Math.min(...ys), y1 = Math.max(...ys);
+        /**
+         * Never smaller than a thumb. A tile six paces off projects to a few pixels
+         * of height, and a target you can see but cannot reliably hit is worse than
+         * one you cannot see — so the box is grown about its centre to a floor.
+         */
+        const MIN = 40;
+        if (x1 - x0 < MIN) { const c2 = (x0 + x1) / 2; x0 = c2 - MIN / 2; x1 = c2 + MIN / 2; }
+        if (y1 - y0 < MIN) { const c2 = (y0 + y1) / 2; y0 = c2 - MIN / 2; y1 = c2 + MIN / 2; }
+        this.hits.push({
+          rect: [x0, y0, x1 - x0, y1 - y0],
+          action: { kind: 'target', entity: c },
+        });
+        if (!sameTarget(c, this.target)) continue;
 
         const pulse = 0.6 + Math.sin(t * 3.2) * 0.4;
         ctx.save();

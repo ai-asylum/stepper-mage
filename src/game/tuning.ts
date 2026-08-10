@@ -410,3 +410,13 @@ export const SPILL_VOLUME = 9;
  * the same standing-in-a-corridor exploit `ENGAGE_RADIUS` was raised to close.
  */
 export const FIRE_DETOUR = 3;
+
+/**
+ * How many extra tiles a patch gains when a cast FEEDS it rather than spending it.
+ *
+ * Eight, which is one ring around a single tile: a base cast takes a 1-tile fire to
+ * 9, and an empowered one takes 9 to 17. Sized as a ring rather than as a multiplier
+ * so feeding is something you do repeatedly and deliberately — a cast that doubled
+ * the patch would make the first feed the only one worth making.
+ */
+export const GROW_RING = 8;

@@ -40,7 +40,7 @@ import {
   ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CONDUCTION_ARC_RANGE,
   CONDUCTION_ARC_SHARE, CONDUCTION_MULT, DAMAGE_JITTER, DECAY_DOT, DEEP_FREEZE_MULT,
   DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS,
-  FIRE_DETOUR, GROUND_FIRE_DOT, REACTION_REACH, SPILL_VOLUME, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
+  FIRE_DETOUR, GROUND_FIRE_DOT, GROW_RING, REACTION_REACH, SPILL_VOLUME, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
   bossDamage, enemyDamage,
 } from './tuning';
 
@@ -623,7 +623,20 @@ export class Combat {
      * not a mistake worth costing HP over, and a water cast that damaged you would
      * be the only spell in the game punishing you for putting out a fire.
      */
-    const leaves = GROUND_ELEMENTS.find((el) => cast.elements.includes(el));
+/**
+     * What the cast leaves behind is decided by what the PLAYER threw, never by what
+     * the ground contributed.
+     *
+     * `cast.elements` includes scavenged components, and a fire picked up off a tile
+     * carries the fire element — so a Frostbolt thrown into a fire extinguished the
+     * tile as fuel and then, three lines later, relit it with the very fire it had
+     * just spent. The fire never went away, which is exactly what it looked like.
+     *
+     * Asking the player's own components instead makes the two halves agree: what you
+     * take off the floor is spent, and what you put back is what you cast.
+     */
+    const ownElements = this.elementsOf(this.byRank(pages));
+    const leaves = GROUND_ELEMENTS.find((el) => ownElements.includes(el));
     if (leaves) {
       const g = this.floor.grid;
       const away: [number, number] = [
@@ -666,7 +679,16 @@ export class Combat {
          * TERRAIN, a different element buys POWER, and the player picks which of the
          * two the tile is worth to them this turn.
          */
-        this.floor.ground.feed(filled, groundWas);
+        /**
+         * Fed over the cast's volume PLUS one ring, not the volume alone.
+         *
+         * A base cast fills exactly one tile, so feeding `filled` topped that tile
+         * back up and spread nothing — "grows" that did not grow, which is the whole
+         * payoff of matching the element. The extra ring is what makes the patch
+         * visibly bigger every time you feed it.
+         */
+        const grown = g.fill(centre.x, centre.y, cast.volume + GROW_RING, away);
+        this.floor.ground.feed(grown, groundWas);
         this.onEvent({
           kind: 'status',
           text: groundWas === 'fire' ? 'THE FIRE SPREADS!' : 'THE POOL SPREADS!',
