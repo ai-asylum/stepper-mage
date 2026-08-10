@@ -775,31 +775,53 @@ export class Hud {
        * "this square" in a way an arrow hovering over it cannot.
        */
       if (isTileTarget(c)) {
-        const v2 = new THREE.Vector3(c.x, 0.06, c.y);
-        project(v2, p);
-        if (p.behind) continue;
-        const sel = sameTarget(c, this.target);
-        const pulse = 0.55 + Math.sin(t * 3.2) * 0.45;
-        ctx.save();
-        ctx.globalAlpha = sel ? 1 : 0.4 + pulse * 0.25;
         /**
-         * A dark rim under the ring, and a COLD colour when selected.
+         * The SELECTED tile only, drawn as the tile itself.
          *
-         * The first version was orange on orange and vanished into the fire it was
-         * marking — the same trap the burning ground itself fell into, and the same
-         * fix: the one thing this palette never produces near a flame is a hard dark
-         * edge, and the one hue is a cold one.
+         * Two things were wrong with marking every burning tile. A fixed-size ellipse
+         * does not shrink with distance, so three tiles receding down a corridor
+         * stacked into a pile of little rings that read as a rendering artefact; and
+         * "selected" was a brightness difference inside that pile, which is no
+         * difference at all.
+         *
+         * Unselected tiles get NO mark. They do not need one — the fire is already
+         * the most visible thing in the room, and a marker on something that is
+         * already shouting is noise. They stay tappable; the hit region below is
+         * registered either way.
+         *
+         * The mark is the tile's own four corners projected, so it sits ON the square
+         * in perspective and says "this one" the way a floating ring never could.
          */
+        project(new THREE.Vector3(c.x, 0.05, c.y), p);
+        if (p.behind) continue;
+        this.hits.push({ rect: [p.x - 22, p.y - 14, 44, 28], action: { kind: 'target', entity: c } });
+        if (!sameTarget(c, this.target)) continue;
+
+        const corner = { x: 0, y: 0, behind: false };
+        const pts: [number, number][] = [];
+        for (const [ox, oz] of [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]] as const) {
+          project(new THREE.Vector3(c.x + ox, 0.05, c.y + oz), corner);
+          if (corner.behind) { pts.length = 0; break; }
+          pts.push([corner.x, corner.y]);
+        }
+        if (!pts.length) continue;
+
+        const pulse = 0.6 + Math.sin(t * 3.2) * 0.4;
+        ctx.save();
         ctx.beginPath();
-        ctx.ellipse(p.x, p.y, 17, 8, 0, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(8,5,10,0.85)';
-        ctx.lineWidth = sel ? 5 : 3.5;
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k][0], pts[k][1]);
+        ctx.closePath();
+        // A dark rim under a cold line: the two things this palette never produces
+        // beside a flame, which is what the burning ground itself had to learn.
+        ctx.strokeStyle = 'rgba(8,5,10,0.9)';
+        ctx.lineWidth = 5;
         ctx.stroke();
-        ctx.strokeStyle = sel ? '#eaf6ff' : '#bfe8ff';
-        ctx.lineWidth = sel ? 2.4 : 1.4;
+        ctx.strokeStyle = '#eaf6ff';
+        ctx.lineWidth = 2.2;
+        ctx.globalAlpha = 0.7 + pulse * 0.3;
         ctx.stroke();
         ctx.restore();
-        this.hits.push({ rect: [p.x - 20, p.y - 12, 40, 24], action: { kind: 'target', entity: c } });
         continue;
       }
       const e = c;
