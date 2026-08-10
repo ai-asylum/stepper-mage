@@ -20,6 +20,18 @@ export const enum Tile {
   Floor = 1,
   /** Floor that also holds the descent once the boss is dead. */
   Stairs = 2,
+  /**
+   * Open air you cannot enter. Blocks movement and NOT sight.
+   *
+   * The second axis of obstacle. Every obstacle before this one blocked both,
+   * because a wall was the only obstacle there was — so "I can't go there" and
+   * "I can't see there" were the same sentence. A gap splits them: you can look
+   * across it, shoot across it, be shot across it, and not cross it.
+   *
+   * It is bottomless as far as this phase is concerned. A pit you fall INTO is a
+   * floor tile several levels down, not a second tile kind — see `height`.
+   */
+  Gap = 3,
 }
 
 export type Dir = 0 | 1 | 2 | 3; // 0=north(-z) 1=east(+x) 2=south(+z) 3=west(-x)
@@ -52,6 +64,21 @@ export interface LightSource {
 /** A tile a fill reached, and how many steps away it was. */
 export interface FillTile { i: number; d: number; }
 
+/**
+ * How far a tile may sit off the floor plane, in whole steps.
+ *
+ * Five levels, and the count is a renderer bill rather than a design wish: every
+ * level is another band of quads at every elevation seam, and sprite sorting stops
+ * being trivial once things can stand above each other. Two down carries a sunken
+ * room and the ledge you shove someone off; two up carries a terrace you can see
+ * over from the walkway. Nothing so far has wanted a third.
+ *
+ * 0 is the plane everything in the game stands on today, so an all-zero height
+ * array is exactly the floor the game already had.
+ */
+export const HEIGHT_MIN = -2;
+export const HEIGHT_MAX = 2;
+
 export class Grid {
   readonly w: number;
   readonly h: number;
@@ -72,6 +99,16 @@ export class Grid {
    * way you came in. This is the trail.
    */
   readonly visited: Uint8Array;
+  /**
+   * Elevation per tile in whole steps, `HEIGHT_MIN`..`HEIGHT_MAX`, 0 being the
+   * plane the whole game stands on.
+   *
+   * DATA ONLY for now. Nothing sets it, the renderer draws every tile at 0 and
+   * movement does not read it — falling, the shove off a ledge and the ladder are
+   * Verticality. It is here because a generator cannot produce a terrace it has no
+   * way to say, and that alphabet is what this phase is.
+   */
+  readonly height: Int8Array;
 
   rooms: Room[] = [];
   lights: LightSource[] = [];
@@ -86,6 +123,7 @@ export class Grid {
     this.roomOf = new Uint8Array(w * h).fill(255);
     this.explored = new Uint8Array(w * h);
     this.visited = new Uint8Array(w * h);
+    this.height = new Int8Array(w * h);
   }
 
   idx(x: number, y: number): number { return y * this.w + x; }
@@ -99,8 +137,33 @@ export class Grid {
     return this.tiles[this.idx(x, y)] as Tile;
   }
 
+  /**
+   * May a body stand here?
+   *
+   * One of the two seams the whole game asks about a tile. Targeting, the volume
+   * flood, enemy pathing and the minimap all come through here or through
+   * `seeThrough`, which is why a new tile kind is learned by most of the game
+   * without being told about it.
+   */
   walkable(x: number, y: number): boolean {
+    const t = this.at(x, y);
+    return t !== Tile.Wall && t !== Tile.Gap;
+  }
+
+  /**
+   * May sight — and anything that travels along sight — cross this tile?
+   *
+   * The other seam. A wall is the only thing that stops it; a gap does not, which
+   * is the entire point of a gap.
+   */
+  seeThrough(x: number, y: number): boolean {
     return this.at(x, y) !== Tile.Wall;
+  }
+
+  /** Elevation in whole steps. 0 outside the map, so the edge never reads as a drop. */
+  heightAt(x: number, y: number): number {
+    if (!this.inside(x, y)) return 0;
+    return this.height[this.idx(x, y)];
   }
 
   lightAt(x: number, y: number): number {
@@ -163,8 +226,10 @@ export class Grid {
    * can picture and a tile count is one you can look at on the floor and read.
    *
    * The order is the flood's, so the budget is spent on the NEAREST tiles and a
-   * volume against a wall pools sideways instead of stopping short. It never
-   * crosses a wall; that is the whole rule and the only rule.
+   * volume against a wall pools sideways instead of stopping short. It goes where a
+   * body could walk; that is the whole rule and the only rule — which is what makes
+   * a gap a firebreak without a line of code about fire or gaps. Fire fills the
+   * floor, a gap is not floor, so the burn stops at the edge and pools along it.
    *
    * Returns each tile with its PATH DISTANCE from the origin, nearest first, at
    * most `volume` of them. The distance is carried out rather than left for the
@@ -233,7 +298,9 @@ export class Grid {
     const out: [number, number][] = [];
     for (let i = 1; i <= max; i++) {
       const nx = x + dx * i, ny = y + dy * i;
-      if (!this.walkable(nx, ny)) break;
+      // Sight, so a gap is passed and RETURNED — a chasm you cannot cross is still
+      // something you have laid eyes on, and the far side of it is too.
+      if (!this.seeThrough(nx, ny)) break;
       out.push([nx, ny]);
     }
     return out;
@@ -375,7 +442,9 @@ function placeLights(g: Grid, rng: Rng, depth: number): void {
     for (const [x, y] of r.tiles) {
       for (let f = 0; f < 4; f++) {
         const [dx, dy] = DIR_VEC[f];
-        if (g.walkable(x + dx, y + dy)) continue;
+        // A sconce needs a WALL to hang on, not merely something you cannot walk
+        // into: mounted against a gap it is a torch floating over a chasm.
+        if (g.seeThrough(x + dx, y + dy)) continue;
         cands.push({ x, y, h: WALL_H * 0.49, reach: 4.4, strength: 0.85, face: f });
       }
     }
@@ -399,7 +468,7 @@ function placeLights(g: Grid, rng: Rng, depth: number): void {
       if (!rng.chance(0.55)) continue;
       for (let f = 0; f < 4; f++) {
         const [dx, dy] = DIR_VEC[f];
-        if (g.walkable(x + dx, y + dy)) continue;
+        if (g.seeThrough(x + dx, y + dy)) continue;
         g.lights.push({ x, y, h: WALL_H * 0.49, reach: 3.8, strength: 0.7, face: f });
         break;
       }
@@ -436,7 +505,10 @@ export function bakeLight(g: Grid): void {
       if (next <= 0.02) continue;
       for (const [dx, dy] of DIR_VEC) {
         const nx = cx + dx, ny = cy + dy;
-        if (!g.walkable(nx, ny)) continue;
+        // Light crosses a gap. It is open air, not an obstacle — a brazier on one
+        // side of a chasm has to light the far lip, or half the room goes black for
+        // a reason the player can see straight through.
+        if (!g.seeThrough(nx, ny)) continue;
         const ni = g.idx(nx, ny);
         if (level[ni] >= next) continue;
         level[ni] = next;

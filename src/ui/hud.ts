@@ -1235,7 +1235,25 @@ export class Hud {
         const tx = px + wdx, ty = py + wdy;
         const cx = gx + i * CELL, cy = gy + j * CELL;
         if (!known(tx, ty)) continue;
-        const wall = !g.inside(tx, ty) || g.tiles[g.idx(tx, ty)] === Tile.Wall;
+        const kind = g.inside(tx, ty) ? g.tiles[g.idx(tx, ty)] : Tile.Wall;
+        const wall = kind === Tile.Wall;
+
+        /**
+         * A GAP is drawn hollow: the floor tone as an outline, nothing inside.
+         *
+         * It cannot be a wall cell and it cannot be a floor cell, because either one
+         * is a lie about a route — solid says "no way through" of something you can
+         * see and shoot across, and floor says "walk here" of something you cannot
+         * enter. Hollow is the only reading that needs no legend: the map says there
+         * is open space there and no ground under it.
+         */
+        if (kind === Tile.Gap) {
+          ctx.strokeStyle = '#6a5c48';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(cx + 1.5, cy + 1.5, CELL - 3, CELL - 3);
+          continue;
+        }
+
         // Three levels, not two: wall, floor you have only SEEN, and floor you
         // have actually walked. The map is heading-locked, so without the third
         // level you cannot tell which way you came in after a couple of turns.

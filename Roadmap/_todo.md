@@ -272,11 +272,14 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 21 — Grid_Vocabulary
 
-- [ ] Add `Tile.Gap`: blocks movement, passes sight. `walkable` no, `clearLine` yes.
-- [ ] Make a volume stop at a gap, with no special case in `Grid.fill`.
-- [ ] Draw a gap on the minimap as neither wall nor floor.
-- [ ] Add per-tile height to the grid as data. Decide how many levels.
-- [ ] Commit changes.
+- [x] Add `Tile.Gap`: blocks movement, passes sight. `walkable` no, `clearLine` yes.
+      Sight is its own seam now — `Grid.seeThrough`, which only a wall fails.
+- [x] Make a volume stop at a gap, with no special case in `Grid.fill`.
+      Fill already went where a body could walk, so the firebreak fell out of `walkable`.
+- [x] Draw a gap on the minimap as neither wall nor floor. Hollow: floor tone, no fill.
+- [x] Add per-tile height to the grid as data. Decide how many levels.
+      FIVE, -2..+2, `Int8Array`. Data only — no renderer, no movement. See the phase doc.
+- [x] Commit changes.
 
 ## Phase 22 — Layout_Generators
 

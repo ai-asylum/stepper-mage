@@ -304,6 +304,26 @@ Facing matters as much as distance: an altar behind you is not an altar you are 
 The prompt has to describe something the player can see, or it reads as the game
 firing at random.
 
+## Obstacles have two axes, not one
+
+**A wall stops sight and footing. A gap stops only footing.** Until the grid could
+say `Gap`, those were one sentence, because a wall was the only obstacle in the game
+— which meant every piece of terrain was a thing you could neither cross nor see
+past, and the only lever a layout had was where to put the walls.
+
+Splitting them is what makes terrain argue with the player. A chasm across a room is
+a room you can read at a glance and have to walk the long way round: the creature on
+the far side is fully aimable and completely out of reach, and the ten seconds you
+spend going around are ten seconds it spends casting. It also gives fire a boundary
+that needs no rule about fire — a volume goes where a body could walk, and a gap is
+not somewhere a body can walk, so a burn stops at the lip and pools along it.
+
+This is the same split as **Reaching**, one level down. A spell is aimed and an
+interaction is reached; a gap is the piece of floor that says yes to the first and no
+to the second. The rule is legible because you can *see* the hole — a floor that
+invalidates something you thought was always true has to do it in the tile, not in a
+line of text.
+
 ## Guidance
 
 A **compass**, pointing at the next thing that matters: unclaimed altar → boss

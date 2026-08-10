@@ -1485,6 +1485,10 @@ function label(e: Entity): string {
 /**
  * Is the straight line between two tiles free of wall?
  *
+ * Asked of SIGHT and not of footing, which is why it is `seeThrough` and not
+ * `walkable`: a creature across a chasm is a creature you can put a reticle on and
+ * throw fire at. You just cannot walk over and hit it.
+ *
  * Endpoints excluded — the thing being looked at may stand anywhere, and the tile
  * being looked FROM is the player's own. Sampled along the line and permissive at a
  * corner (a line that grazes the join between two tiles passes if either is open),
@@ -1498,9 +1502,9 @@ function clearLine(grid: Grid, x0: number, y0: number, x1: number, y1: number): 
   for (let i = 1; i < n; i++) {
     const t = i / n;
     const px = x0 + dx * t, py = y0 + dy * t;
-    if (grid.walkable(Math.round(px), Math.round(py))) continue;
-    if (grid.walkable(Math.floor(px), Math.floor(py))) continue;
-    if (grid.walkable(Math.ceil(px), Math.ceil(py))) continue;
+    if (grid.seeThrough(Math.round(px), Math.round(py))) continue;
+    if (grid.seeThrough(Math.floor(px), Math.floor(py))) continue;
+    if (grid.seeThrough(Math.ceil(px), Math.ceil(py))) continue;
     return false;
   }
   return true;

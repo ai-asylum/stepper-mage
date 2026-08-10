@@ -200,7 +200,9 @@ export class DungeonView {
     for (let dy = -1; dy <= 0; dy++) {
       for (let dx = -1; dx <= 0; dx++) {
         const x = cx + dx, y = cy + dy;
-        if (!g.walkable(x, y)) continue;
+        // Open air counts, walls do not: a gap carries baked light, so the lip of a
+        // chasm is lit by the far side the way the room it sits in is.
+        if (!g.seeThrough(x, y)) continue;
         sum += g.lightAt(x, y);
         n++;
       }
@@ -234,7 +236,18 @@ export class DungeonView {
 
     for (let y = 0; y < g.h; y++) {
       for (let x = 0; x < g.w; x++) {
-        if (g.at(x, y) === Tile.Wall) continue;
+        const kind = g.at(x, y);
+        if (kind === Tile.Wall) continue;
+        /**
+         * A GAP gets no floor and no wall face, and keeps its ceiling.
+         *
+         * Which is the whole of its geometry: the hole in the floor IS the absent
+         * quad, and a full-height wall along its edge would be the renderer calling
+         * it a wall after the grid went to the trouble of saying it is not one — you
+         * are meant to see across it. What is under it is Verticality's question; a
+         * bottomless black is the honest answer until there is one.
+         */
+        const gap = kind === Tile.Gap;
         const v = g.variant[g.idx(x, y)];
 
         // corner lights, shared by floor and ceiling
@@ -245,12 +258,14 @@ export class DungeonView {
 
         // Floor, normal +y. Winding runs from the far edge to the near edge —
         // the opposite order reads as facing down and gets backface-culled.
-        const fb = floorB[v % floorB.length];
-        fb.quad(
-          [x - 0.5, 0, y + 0.5], [x + 0.5, 0, y + 0.5],
-          [x + 0.5, 0, y - 0.5], [x - 0.5, 0, y - 0.5],
-          l01, l11, l10, l00,
-        );
+        if (!gap) {
+          const fb = floorB[v % floorB.length];
+          fb.quad(
+            [x - 0.5, 0, y + 0.5], [x + 0.5, 0, y + 0.5],
+            [x + 0.5, 0, y - 0.5], [x - 0.5, 0, y - 0.5],
+            l01, l11, l10, l00,
+          );
+        }
 
         // Ceiling, normal -y (pointing down at the player).
         const cb = ceilB[v % ceilB.length];
@@ -264,7 +279,7 @@ export class DungeonView {
         for (let f = 0; f < 4; f++) {
           const [dx, dy] = DIR_VEC[f];
           const nx = x + dx, ny = y + dy;
-          if (g.walkable(nx, ny)) continue;
+          if (g.seeThrough(nx, ny)) continue;
 
           const wb = wallB[(v + f * 3) % wallB.length];
           const lb = g.lightAt(x, y);
