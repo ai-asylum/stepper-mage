@@ -40,7 +40,7 @@ import {
   ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CONDUCTION_ARC_RANGE,
   CONDUCTION_ARC_SHARE, CONDUCTION_MULT, DAMAGE_JITTER, DECAY_DOT, DEEP_FREEZE_MULT,
   DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS,
-  FIRE_DETOUR, GROUND_FIRE_DOT, GROW_RING, bodyStars, REACTION_REACH, SPILL_VOLUME, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
+  FIRE_DETOUR, GROUND_FIRE_DOT, GROW_RING, bodyStars, fallDamage, REACTION_REACH, SPILL_VOLUME, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
   bossDamage, enemyDamage,
 } from './tuning';
 
@@ -1045,11 +1045,31 @@ export class Combat {
     const g = this.floor.grid;
     const px = this.playerTile.x, py = this.playerTile.y;
     const dx = Math.sign(t.sprite.tx - px), dy = Math.sign(t.sprite.ty - py);
+    let fell = 0;
     for (let i = 0; i < tiles; i++) {
       const nx = t.sprite.tx + dx, ny = t.sprite.ty + dy;
       if (!g.walkable(nx, ny) || this.floor.entityAt(nx, ny)) break;
+      /**
+       * A SHOVE GOES OVER A LEDGE BUT NOT UP ONE.
+       *
+       * `canClimb` is the same rule the player's feet obey, asked of a body that did
+       * not choose to move: you cannot shove something uphill, and shoving it off an
+       * edge is the entire reason this phase makes gust worth casting. Nothing here
+       * knows it is gust — anything that shoves gets this for free.
+       */
+      if (!g.canClimb(t.sprite.tx, t.sprite.ty, nx, ny)) break;
+      fell += g.dropFrom(t.sprite.tx, t.sprite.ty, nx, ny);
       t.sprite.tx = nx; t.sprite.ty = ny;
       t.sprite.setTileLight(g.lightAt(nx, ny));
+    }
+    if (fell > 0) {
+      const dmg = fallDamage(fell);
+      this.onEvent({
+        kind: 'status',
+        text: fell > 1 ? `A ${fell}-LEVEL FALL!` : 'OFF THE LEDGE!',
+        colour: 0xc9b590,
+      });
+      this.damage(t, dmg, 0xc9b590);
     }
   }
 
@@ -1458,6 +1478,20 @@ export class Combat {
     for (const [dx, dy] of DIR_VEC) {
       const nx = sx + dx, ny = sy + dy;
       if (!free(nx, ny)) continue;
+      /**
+       * NOTHING WALKS OFF A LEDGE OF ITS OWN ACCORD, and nothing climbs one without
+       * a ladder. Both directions refused here rather than in the flood, because the
+       * flood runs from the GOAL and its edges are therefore traversed backwards —
+       * a rule about which way you are going cannot be a rule about which tiles are
+       * passable.
+       *
+       * The consequence is deliberate and is the point of the phase: a level is
+       * TERRAIN. Dropping off an edge takes you somewhere the room cannot follow
+       * without going round, which is a positional resource the player spends by
+       * giving up the high ground and the ladder back.
+       */
+      if (g.dropFrom(sx, sy, nx, ny) > 0) continue;
+      if (!g.canClimb(sx, sy, nx, ny)) continue;
       const d = dist[ny * W + nx];
       if (d === -1) continue;
       if (cost(nx, ny, d) < bestD) { bestD = cost(nx, ny, d); best = [nx, ny]; }

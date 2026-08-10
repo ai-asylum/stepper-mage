@@ -9,7 +9,7 @@
  */
 import * as THREE from 'three';
 import { Grid, Tile, Surface, DIR_VEC } from './grid';
-import { WALL_H, buildTileSet, buildSconce, colToHex } from '../art/tiles';
+import { WALL_H, STEP_H, buildTileSet, buildSconce, colToHex } from '../art/tiles';
 import type { Theme } from '../art/theme';
 import type { Pix } from '../art/pixel';
 
@@ -302,12 +302,14 @@ export class DungeonView {
     const waterB = tiles.water.map(() => new MeshBuild());
     const rubbleB = tiles.rubble.map(() => new MeshBuild());
     const fogB = tiles.fog.map(() => new MeshBuild());
+    const ladderB = tiles.ladder.map(() => new MeshBuild());
     const portalB = tiles.portal.map(() => new MeshBuild());
     const surfaceB: Record<number, MeshBuild[]> = {
       [Surface.Iron]: ironB,
       [Surface.Water]: waterB,
       [Surface.Rubble]: rubbleB,
       [Surface.Fog]: fogB,
+      [Surface.Ladder]: ladderB,
     };
 
     // ONE. Not `WALL_H`, which is what it used to be and what put a strip of the
@@ -342,6 +344,16 @@ export class DungeonView {
          */
         const gap = kind === Tile.Gap;
         const v = g.variant[g.idx(x, y)];
+        /**
+         * THIS TILE'S FLOOR, and everything else on it, is built off `e`.
+         *
+         * The whole of the renderer's half of verticality is this one number and the
+         * risers it implies. Floor at `e`, ceiling at `e + WALL_H` — the headroom
+         * follows the ground rather than staying flat, so a sunken room is a sunken
+         * ROOM and not a room with a taller ceiling, and a terrace does not grow up
+         * through a vault that stayed where it was.
+         */
+        const e = g.heightAt(x, y) * STEP_H;
 
         // corner lights, shared by floor and ceiling
         const l00 = this.cornerLight(x, y);
@@ -371,8 +383,8 @@ export class DungeonView {
           }
           fb.fog = [m01, m11, m10, m00];
           fb.quad(
-            [x - 0.5, 0, y + 0.5], [x + 0.5, 0, y + 0.5],
-            [x + 0.5, 0, y - 0.5], [x - 0.5, 0, y - 0.5],
+            [x - 0.5, e, y + 0.5], [x + 0.5, e, y + 0.5],
+            [x + 0.5, e, y - 0.5], [x - 0.5, e, y - 0.5],
             l01, l11, l10, l00,
           );
         }
@@ -381,10 +393,57 @@ export class DungeonView {
         const cb = ceilB[v % ceilB.length];
         cb.fog = [m00, m10, m11, m01];
         cb.quad(
-          [x - 0.5, WALL_H, y - 0.5], [x + 0.5, WALL_H, y - 0.5],
-          [x + 0.5, WALL_H, y + 0.5], [x - 0.5, WALL_H, y + 0.5],
+          [x - 0.5, e + WALL_H, y - 0.5], [x + 0.5, e + WALL_H, y - 0.5],
+          [x + 0.5, e + WALL_H, y + 0.5], [x - 0.5, e + WALL_H, y + 0.5],
           l00 * 0.55, l10 * 0.55, l11 * 0.55, l01 * 0.55,
         );
+
+        /**
+         * RISERS: the step face between this tile and a lower neighbour.
+         *
+         * Drawn from the HIGH tile and only downward, so exactly one of any pair of
+         * neighbours draws the face between them and it is never drawn twice. Two of
+         * them per edge, because the ceiling steps with the floor: the ledge itself,
+         * from the low floor up to this one, and the soffit above it, from the low
+         * ceiling up to this one. Without the second, a terrace has daylight over the
+         * step — a strip of nothing where the two ceilings fail to meet.
+         *
+         * Wall texture on both, because that is what the side of a stone step is, and
+         * it means the risers cost no new art and land in the same batches.
+         */
+        for (let f = 0; f < 4; f++) {
+          const [dx, dy] = DIR_VEC[f];
+          const nx = x + dx, ny = y + dy;
+          if (!g.seeThrough(nx, ny)) continue;      // a wall face covers that edge
+          const ne = g.heightAt(nx, ny) * STEP_H;
+          if (ne >= e) continue;                    // the low side never draws it
+
+          const wb = wallB[(v + f * 3) % wallB.length];
+          const wm = g.surfaceAt(x, y) === Surface.Fog ? 1 : 0;
+          wb.fog = [wm, wm, wm, wm];
+          const lb = g.lightAt(x, y);
+
+          // the shared edge between (x,y) and its lower neighbour
+          const hx = dx * 0.5, hz = dy * 0.5;
+          const ex = dy * 0.5, ez = -dx * 0.5;
+          const ax = x + hx + ex, az = y + hz + ez;
+          const bx = x + hx - ex, bz = y + hz - ez;
+
+          // the ledge, facing the low side
+          wb.quad(
+            [ax, ne, az], [bx, ne, bz],
+            [bx, e, bz], [ax, e, az],
+            lb * 0.7, lb * 0.7, lb, lb,
+            1, (e - ne) / WALL_H, true,
+          );
+          // the soffit over it, same edge, between the two ceilings
+          wb.quad(
+            [ax, ne + WALL_H, az], [bx, ne + WALL_H, bz],
+            [bx, e + WALL_H, bz], [ax, e + WALL_H, az],
+            lb * 0.45, lb * 0.45, lb * 0.3, lb * 0.3,
+            1, (e - ne) / WALL_H, true,
+          );
+        }
 
         // walls: one quad per solid neighbour, facing inward
         for (let f = 0; f < 4; f++) {
@@ -408,9 +467,17 @@ export class DungeonView {
           const ax = x + hx + ex, az = y + hz + ez;
           const bx = x + hx - ex, bz = y + hz - ez;
 
+          /**
+           * A wall face runs from THIS tile's floor to THIS tile's ceiling.
+           *
+           * Not from zero: a wall bounding a sunken room has to start at the sunken
+           * floor or the room has a strip of void round its skirting, and one
+           * bounding a terrace has to stop at the terrace's ceiling or it stands
+           * proud of the vault it is holding up.
+           */
           wb.quad(
-            [ax, 0, az], [bx, 0, bz],
-            [bx, WALL_H, bz], [ax, WALL_H, az],
+            [ax, e, az], [bx, e, bz],
+            [bx, e + WALL_H, bz], [ax, e + WALL_H, az],
             lb, lb, lt, lt,
             1, wallVh, true,
           );
@@ -436,6 +503,7 @@ export class DungeonView {
     addAll(waterB, tiles.water);
     addAll(rubbleB, tiles.rubble);
     addAll(fogB, tiles.fog);
+    addAll(ladderB, tiles.ladder);
     addAll(portalB, tiles.portal);
 
     this.buildSconces(seed);

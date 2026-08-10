@@ -41,9 +41,9 @@ played — check it before trusting it.
 | 19 | [Polish_Pass](Polish_Pass.md) | yes | in progress |
 | 20 | [Ingredient_Belt](Ingredient_Belt.md) | yes | shipped, flagged off |
 | 21 | [Grid_Vocabulary](Grid_Vocabulary.md) | yes | shipped |
-| 22 | [Layout_Generators](Layout_Generators.md) | yes | shipped, less terraces |
+| 22 | [Layout_Generators](Layout_Generators.md) | yes | shipped |
 | 23 | [Tile_Vocabulary](Tile_Vocabulary.md) | yes | shipped |
-| 24 | [Verticality](Verticality.md) | yes | planned |
+| 24 | [Verticality](Verticality.md) | yes | shipped |
 | 25 | [Timing_And_Hazards](Timing_And_Hazards.md) | yes | planned |
 | 26 | [Locks_And_Levers](Locks_And_Levers.md) | yes | planned |
 | 27 | [Light_And_Memory](Light_And_Memory.md) | yes | planned |

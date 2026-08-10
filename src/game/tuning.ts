@@ -258,6 +258,28 @@ export const GOLEM_AGGRO = 6;
 export const DENIAL_BRACE = 1;
 export const BOSS_DENIAL_BRACE = 2;
 
+// ------------------------------------------------------------------ falling
+
+/**
+ * What a drop costs, per level, and how fast it gets worse.
+ *
+ * SUPERLINEAR ON PURPOSE. A one-level step down is a jolt you take without thinking
+ * about it — 4 — and the deepest drop the grid can say is four levels, at 4x16 = 64,
+ * which is more than the player has. That curve is what makes a ledge a WEAPON: gust
+ * costs five damage and shoves one tile, so shoving something off a two-level edge
+ * beats casting it three times, and shoving it off a four is the whole fight. A
+ * linear scale would have made height a rounding error on the damage table instead of
+ * a reason to look at the room.
+ *
+ * It cuts both ways at exactly the same rate. Nothing here asks who fell.
+ */
+export const FALL_PER_LEVEL = 4;
+export const FALL_EXP = 2;
+export function fallDamage(levels: number): number {
+  if (levels <= 0) return 0;
+  return Math.round(FALL_PER_LEVEL * Math.pow(levels, FALL_EXP));
+}
+
 // ------------------------------------------------- elemental interactions
 
 /** CONDUCTION: shock on a soaked body, and the share that arcs onward. */

@@ -314,6 +314,17 @@ export class Sprite {
   oz = 0;
   /** Base hover height (flying creatures sit above the floor). */
   hover = 0;
+  /**
+   * World height of the floor this sprite is standing on.
+   *
+   * Separate from `hover`, which is how far a thing floats above its own ground. A
+   * wraith on a terrace is hovering AND elevated, and collapsing the two would make a
+   * flyer that drifts down a step when it crosses one. Pushed per frame from
+   * `Floor.update`, for the same reason the fog depth is: a body walks, gets shoved,
+   * rises as a golem and dies, and every one of those paths would otherwise have to
+   * remember to update it.
+   */
+  ground = 0;
 
   /**
    * The quad's world size. Not `readonly`, because the pixel step can invalidate it
@@ -535,11 +546,11 @@ export class Sprite {
     project: (p: THREE.Vector3, out: { x: number; y: number; behind: boolean }) => void,
   ): { x: number; y: number; w: number; h: number } | null {
     const o = { x: 0, y: 0, behind: false };
-    _v.set(this.tx + this.ox, this.hover, this.ty + this.oz);
+    _v.set(this.tx + this.ox, this.ground + this.hover, this.ty + this.oz);
     project(_v, o);
     if (o.behind) return null;
     const bx = o.x, by = o.y;
-    _v.set(this.tx + this.ox, this.hover + this.h, this.ty + this.oz);
+    _v.set(this.tx + this.ox, this.ground + this.hover + this.h, this.ty + this.oz);
     project(_v, o);
     if (o.behind) return null;
     const top = o.y;
@@ -671,7 +682,7 @@ export class Sprite {
 
     const bx = this.tx + this.ox;
     const bz = this.ty + this.oz;
-    this.group.position.set(bx, 0, bz);
+    this.group.position.set(bx, this.ground, bz);
 
     // yaw so the quad's +x is perpendicular to the view direction
     const yaw = Math.atan2(cam.x - bx, cam.z - bz);

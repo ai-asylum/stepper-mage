@@ -23,11 +23,11 @@
  * game. A block of a grid city that nobody can enter is solid stone, not a room.
  */
 import { Rng } from '../core/rng';
-import { Grid, Tile, DIR_VEC, type Room } from './grid';
+import { Grid, Tile, Surface, DIR_VEC, type Room } from './grid';
 
 export type LayoutId =
   | 'rooms' | 'cave' | 'ring' | 'spiral' | 'hub' | 'gridcity' | 'cathedral'
-  | 'gauntlet' | 'labyrinth' | 'warren' | 'islands' | 'chasm' | 'nested';
+  | 'gauntlet' | 'labyrinth' | 'warren' | 'islands' | 'chasm' | 'nested' | 'terraces';
 
 export interface Layout {
   id: LayoutId;
@@ -783,13 +783,84 @@ const nested: Layout = {
   },
 };
 
+/**
+ * TERRACES. The fourteenth, and the one that could not be written until the grid
+ * could both store elevation and draw it.
+ *
+ * Bands of floor at descending levels, each one a long ledge you can be shoved off
+ * and can see the next one from. It is the only layout where the SECOND spatial
+ * question — how far down is it — is the one the floor is about: every fight happens
+ * with an edge in it, and a gust is worth more than a fireball on every band but the
+ * bottom one.
+ */
+const terraces: Layout = {
+  id: 'terraces',
+  brief: 'Bands at four levels. Every fight has an edge in it.',
+  size(base) { return Math.min(base, 28); },
+  carve(g, rng) {
+    // One open hall, cut into bands across its short axis
+    const m = 2;
+    const all = digRect(g, m, m, g.w - m * 2, g.h - m * 2);
+    const bands = 4;
+    const bandH = Math.floor((g.h - m * 2) / bands);
+    for (let b = 0; b < bands; b++) {
+      const top = m + b * bandH;
+      const level = 1 - b;                       // +1 down to -2 across the hall
+      for (let y = top; y < top + bandH && y < g.h - m; y++) {
+        for (let x = m; x < g.w - m; x++) g.height[g.idx(x, y)] = level;
+      }
+      // A ladder at the foot of each step, alternating sides so the walk down the
+      // hall is a switchback rather than a straight line.
+      if (b > 0) {
+        const lx = b % 2 === 0 ? m + 1 : g.w - m - 2;
+        g.surface[g.idx(lx, top)] = Surface.Ladder;
+      }
+    }
+
+    // Rooms are the bands themselves: each is a place you stand and fight, and the
+    // room boundary lands exactly on the elevation change, which is what makes the
+    // overlook show you the NEXT room rather than half of this one.
+    for (let b = 0; b < bands; b++) {
+      const top = m + b * bandH;
+      const tiles = all.filter(([, y]) => y >= top && y < top + bandH);
+      addRoom(g, tiles);
+    }
+    // and two alcoves off the sides, so the floor is not purely a staircase
+    for (let i = 0; i < 2; i++) {
+      const y = m + bandH + i * bandH;
+      const side = i % 2 === 0;
+      const x = side ? m - 3 : g.w - m;
+      const tiles = digRect(g, x, y, 4, 4);
+      const doorX = side ? m : g.w - m - 1;
+      corridor(g, rng, side ? x + 3 : x, y + 1, doorX, y + 1);
+      /**
+       * An alcove sits at the level of the band it opens off, and so does the
+       * corridor into it. Any other answer is a step up with no ladder at the foot
+       * of it, which is a room the player can see and never enter.
+       */
+      const level = g.heightAt(doorX, y + 1);
+      for (const [tx, ty] of tiles) g.height[g.idx(tx, ty)] = level;
+      for (let cx = Math.min(x, doorX); cx <= Math.max(x + 3, doorX); cx++) {
+        if (g.walkable(cx, y + 1) && g.roomOf[g.idx(cx, y + 1)] === 255) {
+          g.height[g.idx(cx, y + 1)] = level;
+        }
+      }
+      addRoom(g, tiles);
+    }
+  },
+  boss(g) {
+    // the bottom of the hall — the floor is a descent and it ends somewhere
+    return g.rooms[3] ?? null;
+  },
+};
+
 // ---------------------------------------------------------------------------
 // the roster
 // ---------------------------------------------------------------------------
 
 export const LAYOUTS: Record<LayoutId, Layout> = {
   rooms, cave, ring, spiral, hub, gridcity, cathedral,
-  gauntlet, labyrinth, warren, islands, chasm, nested,
+  gauntlet, labyrinth, warren, islands, chasm, nested, terraces,
 };
 
 /**

@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { Grid, Surface, visibleTiles, type Dir } from '../dungeon/grid';
 import { generate } from '../dungeon/generate';
 import { DungeonView } from '../dungeon/render';
+import { STEP_H } from '../art/tiles';
 import { Sprite, preloadSprites, loadSprite } from '../dungeon/sprites';
 import { viewsFor, type SpriteView } from '../art/views';
 import { populate, spriteIdsFor, type Placed, type PlacedKind } from './populate';
@@ -432,6 +433,8 @@ export class Floor {
       e.sprite.setView(v, flip);
       e.sprite.setTileMurk(
         this.grid.surfaceAt(e.sprite.tx, e.sprite.ty) === Surface.Fog ? 1 : 0);
+      // Standing ON the floor it is standing on, per frame, for the same reason.
+      e.sprite.ground = this.grid.heightAt(e.sprite.tx, e.sprite.ty) * STEP_H;
       e.sprite.update(dt, time, cam);
       if (e.sprite.isGone && e.alive) {
         e.alive = false;

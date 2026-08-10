@@ -60,6 +60,7 @@ export function generate(opts: GenOpts): Grid {
   }
 
   dress(g, rng, opts.depth);
+  raise(g, rng, opts.depth);
   placeLights(g, rng);
   bakeLight(g);
   return g;
@@ -463,6 +464,193 @@ function dress(g: Grid, rng: Rng, depth: number): void {
       g.portals.push({ a, b });
     }
   }
+}
+
+/**
+ * Cut levels into the floor: a sunken room, a raised platform, and a ladder back up.
+ *
+ * Runs after the surfaces, because a ladder IS a surface and has to be able to claim a
+ * tile the others have not taken, and after the roles, because the entrance and the
+ * boss room want different treatment. Every drop it makes is walkable both ways at the
+ * moment it is made — down over the edge and up the ladder — so this cannot cut a floor
+ * in two the way a wall could, which is why it does not have to re-run `stitch`.
+ *
+ * WHICH FLOORS. Not floor 1, which teaches, and not every floor after — a ledge in
+ * every room is a terrain feature nobody notices. Depth 4 up, and only in rooms big
+ * enough that the drop has a top and a bottom you can both stand on.
+ */
+function raise(g: Grid, rng: Rng, depth: number): void {
+  if (depth < 4) return;
+  // A layout that shaped its own elevation has already decided; terraces is a
+  // staircase and does not want a pit cut into one of its landings.
+  for (let i = 0; i < g.height.length; i++) if (g.height[i]) return;
+
+  const rooms = g.rooms.filter((r) => r.kind !== 'entrance' && r.w >= 6 && r.h >= 6);
+  if (!rooms.length) return;
+
+  const wanted = depth >= 8 ? 2 : 1;
+  let made = 0;
+  for (const room of rng.shuffle([...rooms])) {
+    if (made >= wanted) break;
+
+    /**
+     * A HALF-ROOM, split on one axis, and the SUNKEN half is the far one.
+     *
+     * Half rather than a patch in the middle, because the ledge has to be a LINE you
+     * can be shoved across rather than a hole you can walk round — the shove is one
+     * tile, so a drop you can sidestep is a drop that never happens. And the far half
+     * sinks rather than the near one, so a player coming in through the door arrives
+     * on the high side and gets the overlook before the decision, which is the order
+     * the phase is written in.
+     */
+    const drop = depth >= 8 && rng.chance(0.4) ? 2 : 1;
+    // Both ways round, in a random order, because a room can have an exit on the far
+    // side of one cut and not the other — a chapel whose only door opens into the
+    // sunken half is a chapel you cannot walk to, and which half that is depends
+    // entirely on which way the room was sliced.
+    for (const vertical of rng.shuffle([true, false])) {
+      const cut = vertical
+        ? room.x + Math.max(2, Math.floor(room.w / 2))
+        : room.y + Math.max(2, Math.floor(room.h / 2));
+
+      /**
+       * THE DOORWAYS STAY AT THE TOP.
+       *
+       * A room's exits are the tiles with a neighbour belonging to something else, and
+       * sinking one turns the corridor beyond it into a step up with no ladder under
+       * it — which is how the cathedral kept ending up with its altar behind a door
+       * you could see and not use. Holding them back makes the pit the room's INTERIOR,
+       * which is also the better shape: you fight your way in across the edge instead
+       * of arriving at the bottom of it.
+       *
+       * The check afterwards still runs. This is what makes it usually pass rather
+       * than what makes it unnecessary.
+       */
+      const isDoor = (x: number, y: number) => DIR_VEC.some(([dx, dy]) =>
+        g.walkable(x + dx, y + dy) && g.roomOf[g.idx(x + dx, y + dy)] !== room.id);
+
+      /**
+       * WHICHEVER HALF THE ROOM'S CENTRE IS NOT IN.
+       *
+       * The centre is where `populate` puts the altar, the boss and the descent, and
+       * none of those belong at the bottom of a pit. Rejecting the room when the
+       * centre landed on the wrong side of the cut was the first attempt, and it threw
+       * away every big room on the floor — the cathedral's nave is split through its
+       * middle by definition, so the one room most worth a ledge never got one.
+       * Choosing the other half instead costs a comparison.
+       */
+      const far = (vertical ? room.cx : room.cy) < cut;
+      const want = new Set<number>();
+      for (const [x, y] of room.tiles) {
+        const beyond = (vertical ? x : y) >= cut;
+        if (beyond !== far) continue;
+        if (isDoor(x, y)) continue;
+        want.add(g.idx(x, y));
+      }
+      /**
+       * ONE PIECE, because one ladder can only serve one piece.
+       *
+       * The cathedral's nave has two rows of pillars down it, so the far half of that
+       * room is not a half, it is three strips — and a pit in three pieces with a
+       * ladder in one of them is two pieces you can fall into and not climb out of.
+       * The traversal check caught it every time, which meant the nave, the one room
+       * on the floor worth a ledge, never got one.
+       */
+      const low = largestPiece(g, want);
+      // A sunken half with nothing in it is a step nobody meets.
+      if (low.length < 4) continue;
+      for (const i of low) g.height[i] = -drop;
+
+      /**
+       * THE LADDER, at the foot of the step and against it.
+       *
+       * One per drop and no more: the way back has to be a PLACE, because the whole
+       * value of dropping is that you gave something up to do it. Chosen on the low
+       * side touching the high side, so it is visible from the top — you can see where
+       * you will be able to climb out before you decide to go down.
+       */
+      const feet = low.filter((i) => {
+        const x = i % g.w, y = (i / g.w) | 0;
+        if (g.surface[i] !== Surface.Plain) return false;
+        return DIR_VEC.some(([dx, dy]) =>
+          g.walkable(x + dx, y + dy) && g.heightAt(x + dx, y + dy) > g.heightAt(x, y));
+      });
+      if (!feet.length) {
+        for (const i of low) g.height[i] = 0;   // no way back up: put the room back
+        continue;
+      }
+      const ladder = rng.pick(feet);
+      g.surface[ladder] = Surface.Ladder;
+
+      /**
+       * AND THEN CHECK, because a ledge is a one-way door and a one-way door can shut
+       * a floor.
+       *
+       * Climbing is directional, so height turns reachability into a DIRECTED graph and
+       * every intuition from the flat grid stops being safe. The case that broke it was
+       * not the obvious one: the sunken half of the cathedral's nave swallowed the tile
+       * the altar's chapel opens off, so the chapel was still one step from the player
+       * and the step was upward — a room you can see the door of and cannot enter, with
+       * the floor's spell inside it.
+       *
+       * Rather than enumerate the ways that can happen, the pass makes its change and
+       * then asks the only two questions that matter: can you still get everywhere, and
+       * can you still get BACK from everywhere. If not, the room is put back exactly as
+       * it was and another one is tried. One ladder in the wrong place is not worth a
+       * clever rule; it is worth an undo.
+       */
+      if (!traversable(g)) {
+        for (const i of low) g.height[i] = 0;
+        g.surface[ladder] = Surface.Plain;
+        continue;
+      }
+      made++;
+      break;
+    }
+  }
+}
+
+/**
+ * Can you still get everywhere from the start, AND back from everywhere?
+ *
+ * `stitch` answers the first question for a flat floor and is not enough once tiles
+ * have elevation: a drop is passable one way, so the floor is a DIRECTED graph and
+ * "connected" splits into two questions that can have different answers. The second
+ * one is the one that matters most — a tile you can walk into and not walk out of is
+ * a run ended by the scenery, which is the single worst thing this phase could ship.
+ */
+function traversable(g: Grid): boolean {
+  const N = g.w * g.h;
+  const reach = (forward: boolean): Uint8Array => {
+    const seen = new Uint8Array(N);
+    const start = g.idx(g.start.x, g.start.y);
+    const q = [start];
+    seen[start] = 1;
+    for (let qi = 0; qi < q.length; qi++) {
+      const i = q[qi];
+      const x = i % g.w, y = (i / g.w) | 0;
+      for (const [dx, dy] of DIR_VEC) {
+        const nx = x + dx, ny = y + dy;
+        if (!g.walkable(nx, ny)) continue;
+        // forward: can I step there? backward: could it step to me?
+        if (!(forward ? g.canClimb(x, y, nx, ny) : g.canClimb(nx, ny, x, y))) continue;
+        const ni = g.idx(nx, ny);
+        if (seen[ni]) continue;
+        seen[ni] = 1;
+        q.push(ni);
+      }
+    }
+    return seen;
+  };
+  const out = reach(true), back = reach(false);
+  for (let y = 1; y < g.h - 1; y++) {
+    for (let x = 1; x < g.w - 1; x++) {
+      if (!g.walkable(x, y)) continue;
+      const i = g.idx(x, y);
+      if (!out[i] || !back[i]) return false;
+    }
+  }
+  return true;
 }
 
 /** The biggest 4-connected piece of a set of tiles. A plate is one piece or it is nothing. */

@@ -40,7 +40,8 @@ import { affinityOf } from './game/affinity';
 import type { Element as SpellElement } from './spells/spells';
 import { DEFAULT_STEP, setPixelStep } from './art/steps';
 import {
-  CATCH_UP_DRAWS, CHEST_HEAL_SPREAD, PLAYER_MAX_HP, THREAT_REACH, chestHealBase, descendHeal, healable,
+  CATCH_UP_DRAWS, CHEST_HEAL_SPREAD, PLAYER_MAX_HP, THREAT_REACH, chestHealBase, descendHeal,
+  fallDamage, healable,
 } from './game/tuning';
 import { setGilded } from './book/pageTexture';
 import {
@@ -297,9 +298,14 @@ async function boot(): Promise<void> {
     if (!id) return null;
     meta.giftedPage = null;
     saveMeta(meta);
-    // Already in the starting book — the gift has nothing to add, and pushing a
-    // duplicate would put the same page in the grimoire twice.
-    return meta.loadout.includes(id) ? null : id;
+    /**
+     * No longer filtered against the loadout. The loadout is a MENU now rather than
+     * the book — you leave the mouth with one page out of it — so a gift that names
+     * a page on the menu is still a real second page. `offerStartPage` is what keeps
+     * it from being wasted: the gifted page is struck off the menu, because being
+     * offered a choice you have already been given is not a choice.
+     */
+    return id;
   };
   /** Kept for the log line the first floor raises: a gift has to be announced. */
   const gifted = takeGift();
@@ -309,7 +315,15 @@ async function boot(): Promise<void> {
    * used to arrive in the grimoire looking like every other page.
    */
   setGilded(gifted);
-  const startPages = gifted ? [...meta.loadout, gifted] : [...meta.loadout];
+  /**
+   * A run now BEGINS EMPTY, or holding nothing but last run's gift.
+   *
+   * The book used to open with all three of `meta.loadout` in it, which is what made
+   * every run's first floor the same floor (`Roadmap/Guidance_And_Blessings.md`). The
+   * loadout is now the menu the mouth offers and the player leaves with ONE page off
+   * it — see `offerStartPage`, which runs before the first turn is ever taken.
+   */
+  const startPages = gifted ? [gifted] : [];
 
   const state: PlayerState = {
     hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP,
@@ -1577,11 +1591,60 @@ async function boot(): Promise<void> {
     hud.offerSubtitle = 'choose one';
   };
 
-  const offerBlessings = (): void => {
-    if (!owns(meta.nodes, 'blessing')) return;
+  const offerBlessings = (): boolean => {
+    if (!owns(meta.nodes, 'blessing')) return false;
     hud.offerTitle = 'A BLESSING AT THE MOUTH';
     hud.offerSubtitle = 'choose one, before the first floor';
     hud.offers = rollBlessings();
+    return true;
+  };
+
+  /**
+   * THE ONE PAGE YOU SET OUT WITH.
+   *
+   * The first question the mouth asks, and the reason the loadout stopped being the
+   * book. Three pages in the book at hand size 1 meant the opening cast was picked
+   * from a menu nobody chose; one page chosen deliberately means the run has a
+   * SUBJECT before the first tile, and the altar's second page is an answer to a
+   * question the player actually asked.
+   *
+   * The menu is `meta.loadout` — what the star tree has bound — minus anything last
+   * run already gifted, so the gift widens the book instead of paying for a rung of
+   * it twice.
+   *
+   * Granted silently when it is not a choice. A tree trimmed to a single binding, or
+   * a gift that leaves one page on the menu, produces a modal with one card and no
+   * decision, which is the toll `offerStartDepth` refuses to charge for the same
+   * reason.
+   */
+  const startPageMenu = (): string[] =>
+    meta.loadout.filter((id) => id !== gifted && SPELL_BY_ID[id]);
+
+  const grantStartPage = (id: string): void => {
+    state.ranks[id] = 1;
+    learnPage(id);
+  };
+
+  const offerStartPage = (): boolean => {
+    const menu = startPageMenu();
+    if (menu.length < 2) {
+      // Nothing to ask. Take the one there is, or — for a save whose loadout has
+      // filtered down to nothing at all — the default book's first page, because a
+      // run that begins with an empty grimoire cannot cast and cannot recover.
+      grantStartPage(menu[0] ?? DEFAULT_LOADOUT[0]);
+      return false;
+    }
+    hud.offerTitle = 'WHICH PAGE DO YOU CARRY';
+    hud.offerSubtitle = 'one only · the rest are found below';
+    hud.offers = menu.map((id) => {
+      const sp = SPELL_BY_ID[id];
+      return {
+        kind: 'startPage' as const, id, name: sp.name, tag: 'the one page',
+        colour: sp.colour, detail: sp.effect,
+        cost: null, amount: 0, rank: 1, toRank: 0, maxRank: MAX_RANK, golden: false,
+      };
+    });
+    return true;
   };
 
   const chooseOffer = (o: AltarOffer): void => {
@@ -1599,6 +1662,19 @@ async function boot(): Promise<void> {
       hud.offerTitle = 'THE ALTAR OFFERS';
       hud.offerSubtitle = 'choose one';
       startDepth = o.amount;
+      return;
+    }
+    /**
+     * THE ONE PAGE. Resolved before the altar guard with the other two mouth
+     * questions, and for the same reason: there is no stone in front of the player.
+     */
+    if (o.kind === 'startPage') {
+      hud.offers = null;
+      hud.offerTitle = 'THE ALTAR OFFERS';
+      hud.offerSubtitle = 'choose one';
+      grantStartPage(o.id);
+      hud.addLog(`You carry ${o.name}, and nothing else.`, o.colour);
+      hud.setShout(o.name.toUpperCase(), o.colour);
       return;
     }
     if (o.kind === 'blessing') {
@@ -1993,7 +2069,14 @@ async function boot(): Promise<void> {
       return body ? e : null;
     };
     stepper.swappable = (x, y) => bodyAt(x, y) !== null;
+    /**
+     * The tile the current step started on, for the arrival to measure the drop
+     * against. `onArrive` is only told where you landed, and by then the stepper's
+     * own `fromX/fromY` have been reused by whatever was queued next.
+     */
+    let cameFrom = { x: stepper.x, y: stepper.y };
     stepper.onDepart = (fx, fy, tx, ty) => {
+      cameFrom = { x: fx, y: fy };
       // The golem shuffle and the two-finger swap are the same move, so they are
       // the same code: whoever is standing in the destination takes the tile you
       // left. A plain step can only ever get here with a friendly golem there —
@@ -2039,6 +2122,33 @@ async function boot(): Promise<void> {
       floor.cull(x, y);
       refreshTargets();
       busy = true;
+
+      /**
+       * THE PLAYER PAYS FOR THE DROP THEY CHOSE TO TAKE.
+       *
+       * Before the round, unlike the rubble clamber and the descent: you land hurt,
+       * and then the room answers you standing there hurt. It can kill — the same
+       * rule the caster's own fireball gets, and for the same reason. A ledge that
+       * could not kill you would not be a thing you think about at 8 HP, and thinking
+       * about it at 8 HP is the entire content of the mechanic.
+       *
+       * Nothing here is a special case for the player. `fallDamage` is the same
+       * function the shove uses, asked the same question.
+       */
+      const fell = floor.grid.dropFrom(cameFrom.x, cameFrom.y, x, y);
+      if (fell > 0) {
+        const dmg = fallDamage(fell);
+        state.hp -= dmg;
+        fx.shake = Math.min(1.4, fx.shake + 0.35 + fell * 0.2);
+        fx.hitstop = Math.max(fx.hitstop, 0.06 + fell * 0.02);
+        hud.addLog(
+          fell > 1 ? `You drop ${fell} levels. ${dmg} damage.` : `You drop down. ${dmg} damage.`,
+          0xc9b590,
+        );
+        // No attacker: the strike overlay is a shot of the thing hitting you, and
+        // the floor is not a thing that hits you.
+        hud.playerHurt(null);
+      }
       await combat.playerStepped(x, y);
       busy = false;
       refreshTargets();
@@ -2367,10 +2477,13 @@ async function boot(): Promise<void> {
   await enterFloor(1);
 
   /**
-   * THE MOUTH, in order: where to begin, then what to begin with.
+   * THE MOUTH, in order: where to begin, which page, then what else.
    *
    * Depth first, because a blessing chosen before knowing which floor you land on is
-   * a choice made without the information that decides it.
+   * a choice made without the information that decides it. The page second, because
+   * it is the run's SUBJECT and every blessing is a comment on it — "a wider book"
+   * is a second element, "a deeper page" is the one you just chose at rank 2, and
+   * both are unreadable until the player knows what they are holding.
    *
    * Runs AFTER `engine.start()` and is deliberately not awaited here. It blocks on
    * the player answering a modal, and the modal is drawn by the render loop — so
@@ -2379,15 +2492,33 @@ async function boot(): Promise<void> {
    * the first time, and it bricked every save with a deep start unlocked.
    */
   const openTheMouth = async (): Promise<void> => {
+    let owed = false;
     if (offerStartDepth()) {
       await waitForChoice();
       if (startDepth > 1) {
         await enterFloor(startDepth);
         grantCatchUp();
-        await payCatchUp();
+        owed = true;
       }
     }
-    offerBlessings();
+    /**
+     * The page comes before the owed rites and not after, because a rite is a draw
+     * against the BOOK: `rollAltarOffers` offers ranks on pages you hold and new
+     * pages you do not, and an empty grimoire gives it nothing to deepen. A deep
+     * starter used to be handed three rank-ups for a book that did not exist yet.
+     */
+    if (offerStartPage()) await waitForChoice();
+    if (owed) await payCatchUp();
+    if (offerBlessings()) await waitForChoice();
+    /**
+     * NOW the book rises — every question that can put a page in it has been
+     * answered. It used to play at boot, which meant it leafed itself open on a
+     * Flame the player had not chosen and could not yet have: the fallback page
+     * `setBookPages` shows an empty grimoire. Rising last also means the intro's
+     * flip cascade is honest, because a blessing that widened the book has already
+     * widened it, and a book of one does not flip at all (`Book.canFlip`).
+     */
+    book.playIntro();
   };
 
   // ------------------------------------------------------------------- the loop
@@ -2458,7 +2589,12 @@ async function boot(): Promise<void> {
     hud.emptySlots = fan.busy ? [] : emptySlotBoxes();
     // Named on the page it belongs to, so "not learned" never has to share a
     // channel with "hand full".
-    hud.sealedPage = !book.closed && !state.pages.includes(book.currentSpell.gameId)
+    // `revealed` first: before the mouth's page question is answered the book is
+    // showing `setBookPages`' fallback page, which the player does not hold and has
+    // not been offered, so "that page is sealed" would be scolding them for a page
+    // that is not theirs to have yet.
+    hud.sealedPage = book.revealed && !book.closed
+      && !state.pages.includes(book.currentSpell.gameId)
       ? book.currentSpell.name
       : null;
     hud.update(dt);
@@ -2859,10 +2995,10 @@ async function boot(): Promise<void> {
 
   engine.start();
   // The mouth's choosers need the loop running to be drawn at all — see `openTheMouth`.
+  // The book rises at the END of it, not here: `openTheMouth` calls `playIntro` once
+  // the player has actually chosen what is in it.
   void openTheMouth();
   document.getElementById('boot')?.classList.add('gone');
-  // The book rises into frame and leafs itself onto the first page.
-  book.playIntro();
 
   // ---- screenshot / debug harness ---------------------------------------
   (window as unknown as Record<string, unknown>).__game = {

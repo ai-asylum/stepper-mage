@@ -8,6 +8,7 @@
  */
 import * as THREE from 'three';
 import { Grid, DIR_VEC, Surface, type Dir } from '../dungeon/grid';
+import { STEP_H } from '../art/tiles';
 
 /** Seconds per one-tile step. */
 const STEP_TIME = 0.235;
@@ -192,13 +193,35 @@ export class Stepper {
     const [bdx, bdy] = DIR_VEC[this.bumpDir as Dir] ?? [0, 0];
     const bk = this.bump * 0.09;
 
+    /**
+     * THE EYE RIDES THE GROUND, interpolated across the step like the position is.
+     *
+     * Which is the whole of the camera's part in verticality, and it is deliberately
+     * all of it: the eye goes up and down, and the FRAMING — pitch, pullback, height
+     * above the floor — never moves. `First_Minutes` settled that the camera does not
+     * pitch, and a drop is not a reason to reopen it. Walking off a ledge lowers you
+     * by the drop and shows you more of what is ahead because you are lower, not
+     * because the lens tilted.
+     *
+     * Eased with the same curve as x and z, so a step down is one motion rather than
+     * a slide followed by a lurch.
+     */
+    const eg = this.groundAt(this.fromX, this.fromY);
+    const dg = this.groundAt(this.x, this.y);
+    const ground = eg + (dg - eg) * p;
+
     const yaw = this.yaw();
     const back = Math.min(0.45, this.pullback);
     out.set(
       x + sway * Math.cos(yaw) + bdx * bk + Math.sin(yaw) * back,
-      this.eyeHeight + bob + idle,
+      ground + this.eyeHeight + bob + idle,
       z - sway * Math.sin(yaw) + bdy * bk + Math.cos(yaw) * back,
     );
+  }
+
+  /** World height of the floor at a tile. */
+  private groundAt(x: number, y: number): number {
+    return this.grid.heightAt(x, y) * STEP_H;
   }
 
   yaw(): number {
@@ -254,7 +277,10 @@ export class Stepper {
     const d = this.moveDir(m);
     const [dx, dy] = DIR_VEC[d];
     const nx = this.x + dx, ny = this.y + dy;
-    const open = this.grid.walkable(nx, ny);
+    // A ledge you cannot climb refuses exactly like a wall does — same bump, same
+    // recoil. The player learns "that is too high" from the same feedback that
+    // teaches them "that is solid", which is one lesson instead of two.
+    const open = this.grid.walkable(nx, ny) && this.grid.canClimb(this.x, this.y, nx, ny);
     // A compound move trades tiles with a body, so `blocked` must not veto it.
     // The wall grid is never loosened: nothing swaps you through a wall or off
     // the map, only past something standing on a tile you could have walked to.

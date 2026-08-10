@@ -288,9 +288,9 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Teach placement to work without rectangles — a cave has no rooms.
       Every generator declares rooms; a cave's are found by `pockets`. `populate` untouched.
 - [x] Write the ten flat generators: rooms, cave, ring, spiral, hub, grid city, cathedral, gauntlet, labyrinth, warren.
-- [~] Write nested, and the three that need Grid_Vocabulary: islands, chasm, terraces.
-      Nested, islands and chasm are in. TERRACES IS NOT: it needs elevation drawn, not
-      stored, and `render.ts` puts every tile at y=0. It waits for Verticality.
+- [x] Write nested, and the three that need Grid_Vocabulary: islands, chasm, terraces.
+      Terraces landed with Verticality, which is the phase that paid for drawing elevation.
+      It is on the bench with spiral, labyrinth and nested.
 - [x] Assign one generator per floor, and let it brief that floor's roster.
       `BY_DEPTH` in `layouts.ts`; each layout carries a one-line `brief` for the roster phases.
 - [x] Commit changes.
@@ -309,12 +309,13 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 24 — Verticality
 
-- [ ] Build floor, wall and ceiling quads at per-tile height.
-- [ ] Sort sprites correctly when two occupy a column at different heights.
-- [ ] Fall damage, scaled by the drop, for bodies and the player.
-- [ ] Gust off a ledge. Ladders to climb back.
-- [ ] Verify the camera framing never changes.
-- [ ] Commit changes.
+- [x] Build floor, wall and ceiling quads at per-tile height. Plus two risers per step: ledge and soffit.
+- [x] Sort sprites correctly when two occupy a column at different heights.
+      `Sprite.ground`, pushed per frame from `Floor.update`. Depth test does the rest.
+- [x] Fall damage, scaled by the drop, for bodies and the player. Superlinear: 0, 4, 16, 36, 64.
+- [x] Gust off a ledge. Ladders to climb back. One `canClimb`, asked by feet, pathing and shove alike.
+- [x] Verify the camera framing never changes. eyeHeight 0.525, pullback 0.30, PITCH untouched.
+- [x] Commit changes.
 
 ## Phase 25 — Timing_And_Hazards
 

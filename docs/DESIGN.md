@@ -304,6 +304,33 @@ Facing matters as much as distance: an altar behind you is not an altar you are 
 The prompt has to describe something the player can see, or it reads as the game
 firing at random.
 
+## Height is the second spatial question
+
+Everything used to be at one level, so a fight was a plan view and the player had
+exactly one thing to work out: how far away is it. Elevation adds the second, and it
+does it without adding a verb — **the weakest spell in the book becomes the strongest
+in the right room.** Gust does five damage and shoves one tile; a shove near a two-level
+edge does sixteen, and near a four-level edge it ends the fight. That is a direct answer
+to every creature being a pile of hit points, and it costs nothing to learn because you
+can see the ledge.
+
+Three rules hold it together:
+
+- **Down is free, up is not.** You can step off any edge; you get back up only at a
+  ladder. One-way movement with no new verb and no locked door — and because the way
+  back is a PLACE you can see from the top, going down is a decision made with the
+  information rather than before it.
+- **Falling is damage, and it cuts both ways.** Superlinear in the drop, so height is
+  worth more than two levels are; identical for the player and for everything else.
+  Nothing in the rule asks who fell.
+- **Nothing walks off a ledge of its own accord.** Bodies refuse a drop as well as a
+  climb, so a fall is always either a shove or a choice. The consequence is the useful
+  one: dropping puts you somewhere the room has to go round to reach.
+
+And one thing that does NOT move: **the camera framing.** The eye rides the ground and
+nothing else about the lens knows this exists — no pitch, no look-up gesture, no
+widening. If something cannot be seen at the fixed framing it should not be up there.
+
 ## A layout is not a look
 
 **Every floor is a different shape, and the shape is the argument.** A ring means you

@@ -25,6 +25,18 @@ import type { FloorDetail, Theme } from './theme';
 export const WALL_H = 1.05;
 
 /**
+ * One step of elevation, in world units. The other geometric constant.
+ *
+ * A bit over a quarter of the wall — so a single level is a ledge you sit on rather
+ * than a kerb you would not notice, and the deepest drop the grid can say (four
+ * levels, `HEIGHT_MIN` to `HEIGHT_MAX`) is taller than the room is high. That is the
+ * scale the fall damage is written against: one step is a jolt and four is most of a
+ * healthbar, and both of those have to be READABLE from the top of the drop, which a
+ * smaller step is not.
+ */
+export const STEP_H = WALL_H * 0.28;
+
+/**
  * An inclusive random range that survives a coarse step.
  *
  * Every inset in the art table is a texel count, and a wall is 18 texels wide at
@@ -445,6 +457,7 @@ export interface TileSet {
   water: Pix[];
   rubble: Pix[];
   fog: Pix[];
+  ladder: Pix[];
   /** One per portal PAIR, so two mouths that match are drawn the same colour. */
   portal: Pix[];
 }
@@ -750,6 +763,40 @@ function buildFog(theme: Theme, seed: string, variant: number): Pix {
   return p;
 }
 
+/**
+ * A ladder, drawn on the floor at the foot of the step it climbs.
+ *
+ * On the ground rather than as an object leaning on the wall, and that is a
+ * compromise being stated rather than hidden: a real ladder is a billboard and a
+ * billboard is a sprite, and this phase already spends its whole budget on geometry.
+ * What the tile has to do is be unmistakable from the TOP of the drop, which is where
+ * the decision to go down is made — so it is rungs, high contrast, running across the
+ * tile, and nothing else on a floor looks like a row of parallel bars.
+ */
+function buildLadder(theme: Theme, seed: string): Pix {
+  const p = buildFloor(theme, `${seed}-base`, 1);
+  const P = ppu();
+  const wood = hex(0x6b4a28), lit = hex(0xa8814a), dark = hex(0x2a1b0e);
+
+  // two stiles down the tile and rungs across them
+  const inset = Math.max(1, Math.round(P * 0.22));
+  const railW = Math.max(1, Math.round(P * 0.07));
+  for (let y = 0; y < P; y++) {
+    for (let d = 0; d < railW; d++) {
+      p.set(inset + d, y, d === 0 ? lit : wood);
+      p.set(P - 1 - inset - d, y, d === 0 ? lit : wood);
+    }
+  }
+  const gap = Math.max(3, Math.round(P * 0.2));
+  for (let y = Math.round(gap / 2); y < P; y += gap) {
+    for (let x = inset; x < P - inset; x++) {
+      p.set(x, y, lit);
+      if (y + 1 < P) p.set(x, y + 1, dark);
+    }
+  }
+  return p;
+}
+
 /** One mouth of a portal pair: a ring lit in the pair's own colour. */
 function buildPortal(theme: Theme, seed: string, hue: number): Pix {
   const p = buildFloor(theme, `${seed}-base`, 0);
@@ -842,6 +889,7 @@ export function buildTileSet(theme: Theme, seed: string, pairs = 0): TileSet {
   const water: Pix[] = [];
   const rubble: Pix[] = [];
   const fog: Pix[] = [];
+  const ladder: Pix[] = [buildLadder(theme, `${seed}-lad`)];
   for (let i = 0; i < 2; i++) {
     iron.push(buildIron(theme, `${seed}-s${i}`, i));
     water.push(buildWater(theme, `${seed}-s${i}`, i));
@@ -852,7 +900,7 @@ export function buildTileSet(theme: Theme, seed: string, pairs = 0): TileSet {
   for (let i = 0; i < pairs; i++) {
     portal.push(buildPortal(theme, `${seed}-p${i}`, PORTAL_HUES[i % PORTAL_HUES.length]));
   }
-  return { walls, floors, ceils, iron, water, rubble, fog, portal };
+  return { walls, floors, ceils, iron, water, rubble, fog, ladder, portal };
 }
 
 /**

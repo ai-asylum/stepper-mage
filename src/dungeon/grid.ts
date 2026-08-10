@@ -64,6 +64,16 @@ export const enum Surface {
   Fog = 4,
   /** One mouth of a pair. Step on it, arrive at the other. */
   Portal = 5,
+  /**
+   * A ladder. The one tile you may climb UP from.
+   *
+   * Down is free everywhere along an edge and up is not, so a level would be a
+   * one-way trip without these — and a one-way trip is a locked door wearing a
+   * different hat. It is a SURFACE rather than an object because that is what makes
+   * it visible from the top of the drop: you can see where you will be able to get
+   * back up before you commit to going down.
+   */
+  Ladder = 6,
 }
 
 /** How many fogged tiles a line of sight survives. Two, and the second is the last. */
@@ -252,6 +262,29 @@ export class Grid {
       }
     }
     return out;
+  }
+
+  /**
+   * May a body go from one tile to the next, given what they are standing on?
+   *
+   * DOWN IS FREE, UP IS NOT. That asymmetry is the whole traversal rule and it buys
+   * one-way movement with no new verb and no locked door: you can step off any edge
+   * anywhere, and you get back up only where somebody put a ladder. A drop is
+   * therefore a decision — the way back is visible from the top before you take it.
+   *
+   * Level ground and a step down always pass. A step UP passes only from a ladder,
+   * and from a ladder it passes however high the step is, because a ladder is the
+   * answer to the ledge it is leaning on.
+   */
+  canClimb(fromX: number, fromY: number, toX: number, toY: number): boolean {
+    const rise = this.heightAt(toX, toY) - this.heightAt(fromX, fromY);
+    if (rise <= 0) return true;
+    return this.surfaceAt(fromX, fromY) === Surface.Ladder;
+  }
+
+  /** How far a body falls making this move, in whole levels. 0 for level or up. */
+  dropFrom(fromX: number, fromY: number, toX: number, toY: number): number {
+    return Math.max(0, this.heightAt(fromX, fromY) - this.heightAt(toX, toY));
   }
 
   /** The other mouth of the pair this tile belongs to, or -1. */
@@ -475,6 +508,39 @@ export function visibleTiles(g: Grid, px: number, py: number): Set<number> {
   const room = g.roomAt(px, py);
   if (room && !blind) for (const [x, y] of room.tiles) out.add(g.idx(x, y));
   out.add(g.idx(px, py));
+
+  /**
+   * THE OVERLOOK: standing high, you can see the ground below laid out.
+   *
+   * "You should know what is coming" without a reveal, a tooltip or a minimap
+   * upgrade — you are simply above it. Everything LOWER than you within a good look,
+   * with a straight line that no wall crosses; the ledge itself is not an obstacle,
+   * which is the entire difference between being on top of it and being under it.
+   *
+   * A drop is therefore worth walking to the top of before you take it, and the
+   * choice to go down is made with the information rather than before it. Fog still
+   * wins: a bank you are standing in blinds you at any altitude.
+   */
+  const high = g.heightAt(px, py);
+  if (high > 0 && !blind) {
+    const R = 7;
+    for (let dy = -R; dy <= R; dy++) {
+      for (let dx = -R; dx <= R; dx++) {
+        const x = px + dx, y = py + dy;
+        if (!g.inside(x, y) || g.heightAt(x, y) >= high) continue;
+        if (!g.seeThrough(x, y)) continue;
+        const n = Math.max(Math.abs(dx), Math.abs(dy));
+        let clear = true;
+        for (let i = 1; i < n && clear; i++) {
+          const sx = Math.round(px + (dx * i) / n), sy = Math.round(py + (dy * i) / n);
+          // A wall stops the look. A tile no higher than the one you are standing on
+          // does not, however tall the step down to it is.
+          if (!g.seeThrough(sx, sy) || g.heightAt(sx, sy) > high) clear = false;
+        }
+        if (clear) out.add(g.idx(x, y));
+      }
+    }
+  }
   for (let d = 0 as Dir; d < 4; d = (d + 1) as Dir) {
     for (const [x, y] of g.rayTiles(px, py, d, 12)) {
       out.add(g.idx(x, y));
