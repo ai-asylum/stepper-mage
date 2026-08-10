@@ -281,7 +281,14 @@ const SAID_S = 3.2;
  * (`Roadmap/Casting_And_Movement.md` writes DEPTH IV) and was survivable only while
  * the label faded after a second and a half.
  */
-const ROMAN = ['I', 'II', 'III', 'IV', 'V'];
+/**
+ * Ten, because the dungeon is ten floors deep.
+ *
+ * It stopped at V and the readout CLAMPS rather than overflows, so every floor from
+ * the sixth down announced itself as DEPTH V — the deepest floor in the game wore the
+ * old midpoint's number.
+ */
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 
 /** Rounded rect path helper — the UI's one shape. */
 export function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {

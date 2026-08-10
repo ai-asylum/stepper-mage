@@ -2,7 +2,7 @@
 
 **Player-facing:** yes
 **Started:** 2026-08-10
-**Status:** in progress
+**Status:** shipped
 
 Floors 6 to 10, each with its own palette, roster and boss — and the seven element
 triples that currently fall through to systematic composition.
@@ -71,28 +71,37 @@ facing frames, an attack pose and an element it resists. Generating floors 6–1
 that lands would mean generating them to the old spec and regenerating them after, so
 the roster work must be specified against the new creature shape.
 
-## Floors 6-10 need the art pipeline run
+## What shipped
 
-Not blocked — not done. An earlier draft of this section claimed the pipeline was
-unavailable; it is not, and the claim was made from reading a docstring rather than
-from checking. `uvx`, `op` and the asset-creator are all present and the credentials
-resolve, so `tools/genart.py` runs.
+Ten floors. Sixty-one sprites generated through `tools/genart.py` — including the
+per-density rosters, which the base run does NOT derive: `--steps 72,36` is a separate
+pass, and forgetting it ships a game that loads `art/s72/...` and 404s on every new
+prop.
 
-Each floor is 3 enemies, 4 props, 4 matching golems and a boss: 12 sprites, 60 across
-five floors. What that costs is a large generated diff and a run of the pipeline, so
-it wants starting deliberately rather than as a side effect of authoring themes.
+The five themes reuse the existing five DETAIL vocabularies rather than adding five
+more. A vocabulary is a stamping pass plus a table of constants at all four densities;
+five new ones is its own phase, and shipping `FloorDetail` values that mapped to
+nothing would draw bare masonry. Palette is what separates the floors, and every one
+has its own ramps, accent, light colour and fog. Two floors share a pass (6 and 10)
+and are told apart by palette alone — the honest cost of not building the art first.
 
-The theme palettes, the roster lists and the `THEMES.length` work below are authorable
-without the sprites and are deliberately NOT done, because doing them first would
-leave the repo with the win condition moved to a depth that cannot be reached.
+Twenty new bodies got affinities, and the first draft FAILED the rule phase 11 set:
+floors 6, 9 and 10 came out at two pages, floor 7 at spark three-of-four. Fixed by
+giving each a third answer that is a claim about the creature rather than a filled
+column — thermal shock cracks glass, the brine eel is cold-blooded, fine ash carries a
+charge, empty regalia stiffens in cold. All ten floors now read three pages with no
+column above two of four.
 
-**`THEMES.length` is still the vault**, and that stays true until the floors exist.
+`THEMES.length` moved the vault by itself, being derived. `ROMAN` did not: it stopped
+at V and the readout clamps, so every floor from the sixth down announced itself as
+DEPTH V — the deepest floor in the game wearing the old midpoint's number.
 
 ## Acceptance
 
 - Ten floors are reachable, each visually distinct from the other nine at a glance. —
-  **BLOCKED**, see above.
-- No two floors share a palette, a roster or a boss. — **BLOCKED**, see above.
+  **met.** All five build with their own rosters and bosses; verified by entering each.
+- No two floors share a palette, a roster or a boss. — **met.** Two share a detail
+  vocabulary, which is not a palette; see above.
 - All ten page-element triples resolve to an authored fusion with a name and a reason.
   — **met.** Verified by enumerating all ten: none falls through to composition.
 - No authored triple is dominated by three turns of the best single page. — **met, and
@@ -100,6 +109,9 @@ leave the repo with the win condition moved to a depth that cannot be reached.
   yardstick of 57 — a three-slot fusion worth less than one turn of the best single
   page across the same three bodies. It had failed quietly since it was written,
   because nothing had ever compared the ten at once. Raised to 20.
-- A full run to depth 10 is completable, measured by the harness rather than asserted.
+- A full run to depth 10 is completable. — **NOT MEASURED, and this is the risk.**
+  `enemyHp`, `bossHp`, `enemyDamage`, `bossDamage` and both heal curves are linear in
+  depth and were fitted to five floors. At depth 10 they extrapolate to numbers nobody
+  has seen, and the harness that would have checked it was deleted on 2026-08-09.
 - The vault moment and the completion payout land on floor 10.
 - Every new sprite has a row in `art/manifest.json`.

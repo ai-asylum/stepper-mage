@@ -169,10 +169,14 @@ export class TreeList {
       const needs = missingPrereqs(n.id, v.owned).map(NAME_OF);
       /** Turned off behind the belt flag: the tag says so and `band` says why. */
       const off = beltGated(n.id);
-      // Locked and never 'available': the available treatment is an invitation to tap,
-      // and this is the one card whose tap can only ever be refused.
+      /**
+       * A belt-gated node is BUYABLE and reads normally. It used to be drawn locked,
+       * back when the flag refused the purchase — now the flag only says the effect is
+       * asleep, and drawing a card as locked when its button works is the same lie in
+       * the other direction. The band below still explains the dormancy.
+       */
       const state: State = owned ? 'owned'
-        : needs.length || off ? 'locked'
+        : needs.length ? 'locked'
         : v.stars >= n.price ? 'ready' : 'short';
       const x = cardX(row.depth);
       const w = W - x - RIGHT;

@@ -100,6 +100,40 @@ const AFFINITY: Record<string, Affinity> = {
   // the foundry are the two that earn it — a skeleton and a furnace — and this one
   // was only ever resisting fire because I was filling in a column.
   f5_boss: { weak: ['rot'], resist: ['starlight'] },
+
+  // ---- VI, the Glass Gardens. Brittle, and nothing in here burns.
+  f6_enemy_bloom: { weak: ['gust', 'stone'], resist: ['fire'] },
+  f6_enemy_shard: { weak: ['frost', 'stone'], resist: ['fire', 'spark'] }, // thermal shock
+  f6_enemy_gardener: { weak: ['rot'], resist: ['frost'] },          // the one living thing
+  f6_boss: { weak: ['gust', 'stone'], resist: ['fire', 'starlight'] },
+
+  // ---- VII, the Tidal Vault. Already soaked, so spark is the floor's own answer —
+  // and the one thing that is metal rather than meat answers to rot instead.
+  f7_enemy_drowned: { weak: ['spark'], resist: ['water', 'frost'] },
+  f7_enemy_crab: { weak: ['fire', 'stone'], resist: ['water'] },    // boiled in its shell
+  f7_enemy_eel: { weak: ['frost'], resist: ['water', 'spark'] },   // cold-blooded, and it lives in charge
+  f7_boss: { weak: ['spark', 'rot'], resist: ['water'] },
+
+  // ---- VIII, the Choir of Wounds. Flesh and bronze: it rots, and a blow silences
+  // the bronze half.
+  f8_enemy_cantor: { weak: ['rot'], resist: ['spark'] },
+  f8_enemy_bellman: { weak: ['gust', 'stone'], resist: ['rot'] },   // bronze does not rot
+  f8_enemy_hymn: { weak: ['fire'], resist: ['stone'] },             // loose paper again
+  f8_boss: { weak: ['rot'], resist: ['spark', 'stone'] },
+
+  // ---- IX, the Ashfall Reach. Cold and dead already, so fire is worthless here —
+  // this is the second floor that turns Fireball away and it is deep enough to.
+  f9_enemy_cinder: { weak: ['water', 'gust'], resist: ['fire'] },   // ash scatters
+  f9_enemy_obsidian: { weak: ['frost', 'stone'], resist: ['fire'] },
+  f9_enemy_mourner: { weak: ['spark', 'water'], resist: ['fire', 'rot'] }, // fine ash carries a charge
+  f9_boss: { weak: ['water', 'frost'], resist: ['fire'] },
+
+  // ---- X, the Hollow Crown. Black glass over nothing. Starlight is the only thing
+  // that touches a void, and the armour answers to a blow.
+  f10_enemy_regent: { weak: ['starlight', 'frost'], resist: ['fire', 'rot'] }, // no body to burn
+  f10_enemy_herald: { weak: ['starlight', 'spark'], resist: ['frost'] },
+  f10_enemy_kingsguard: { weak: ['gust', 'stone'], resist: ['spark'] },
+  f10_boss: { weak: ['starlight', 'gust'], resist: ['fire', 'rot'] },
 };
 
 export type Affinities = 'weak' | 'resist' | 'plain';

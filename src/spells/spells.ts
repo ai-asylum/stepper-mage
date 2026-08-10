@@ -764,6 +764,20 @@ const PROP_ELEMENT: Record<string, Element> = {
   // The doc lists a font under both Water and Starlight; this sprite is the STAR
   // font ("filled with liquid starlight", art/manifest.json), so it is that one.
   f5_prop_font: 'starlight',
+  // ---- floors 6-10. Every floor keeps at least one fixture element reachable, and
+  // no floor yields the element its own creatures are weakest to for free.
+  f6_prop_trough: 'water',
+  f6_prop_lantern: 'fire',
+  f7_prop_coral: 'stone',
+  f7_prop_anchor: 'stone',
+  f8_prop_censer: 'fire',
+  f8_prop_bell: 'stone',
+  f9_prop_kiln: 'fire',
+  f9_prop_column: 'stone',
+  f9_prop_bellows: 'oil',
+  f10_prop_brazier: 'fire',
+  f10_prop_reliquary: 'starlight',
+  f10_prop_throne: 'stone',
 };
 
 /**

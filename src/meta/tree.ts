@@ -272,11 +272,14 @@ const BELT_CHAIN: ReadonlySet<string> = (() => {
  * the answer to "why can I not buy this" is one grep away.
  */
 export const BELT_OFF_REASON =
-  'The belt is turned off in this build, so this chain cannot be bought'
-  + ' — see BELT_ENABLED in src/flags.ts.';
+  'The belt is turned off in this build, so this sleeps until it is back'
+  + ' — see BELT_ENABLED in src/flags.ts. Buying it is safe; refunds still work.';
 
 /**
- * Is this node unavailable because the belt is flagged off?
+ * Is this node's EFFECT asleep because the belt is flagged off?
+ *
+ * A labelling question now, not a purchase one — see `buyBlocker`, which no longer
+ * consults this.
  *
  * A PURCHASE gate and nothing more. `refundBlocker` deliberately does not consult it:
  * a save that already owns a belt node keeps it and keeps its stars back, because a
@@ -301,10 +304,22 @@ export function buyBlocker(id: string, owned: readonly string[], stars: number):
   const node = NODE_BY_ID[id];
   if (!node) return `No such node: ${id}.`;
   if (owned.includes(id)) return `${node.name} is already yours.`;
-  // Ahead of the prerequisite and the price, because it is the reason that cannot be
-  // fixed by playing: telling a player to buy Second Hand first for a chain that is
-  // switched off would be pointing them at a purchase that changes nothing.
-  if (beltGated(id)) return BELT_OFF_REASON;
+  /**
+   * The belt flag NO LONGER BLOCKS A PURCHASE.
+   *
+   * It used to, and it took half the tree with it: `belt3`, `belt6`, `corpseRaising`
+   * and the whole golem-keep chain — six of twelve nodes — were unbuyable while the
+   * strip was switched off. A player earning stars could not spend them on most of
+   * what the tree sells, which punishes them for a flag they cannot see and did not
+   * set.
+   *
+   * The old reasoning was that pointing someone at a purchase which changes nothing
+   * is dishonest. That is right, and it is a LABELLING problem: `beltGated` still
+   * answers it, and the tree list still marks these nodes dormant, so the card says
+   * the effect is asleep instead of the button refusing. Buying one is a bet on the
+   * flag coming back, and the stars are not lost — `refundBlocker` has never
+   * consulted this gate.
+   */
   const missing = missingPrereqs(id, owned);
   if (missing.length) {
     return `${node.name} needs ${missing.map((m) => NODE_BY_ID[m]?.name ?? m).join(' and ')} first.`;
