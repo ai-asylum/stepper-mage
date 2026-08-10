@@ -1,8 +1,8 @@
 # Deeper Dungeon
 
 **Player-facing:** yes
-**Started:** —
-**Status:** planned
+**Started:** 2026-08-10
+**Status:** in progress
 
 Floors 6 to 10, each with its own palette, roster and boss — and the seven element
 triples that currently fall through to systematic composition.
@@ -71,12 +71,36 @@ facing frames, an attack pose and an element it resists. Generating floors 6–1
 that lands would mean generating them to the old spec and regenerating them after, so
 the roster work must be specified against the new creature shape.
 
+## Floors 6-10 are BLOCKED on asset generation
+
+Not deferred by judgement — blocked by a dependency that is not available.
+
+Each floor is 3 enemies, 4 props, 4 matching golems and a boss: 12 sprites, 60 across
+five floors. Every one is produced by `tools/genart.py`, which generates through the
+**Scenario asset-creator CLI** — an external, paid image service. Without it the
+manifest rows can be written and the themes can be authored, but the floors would ship
+referencing sprites that do not exist and fail the moment a player descended into one.
+
+What is needed to unblock: someone with Scenario credentials runs the pipeline for the
+new manifest rows. The theme palettes, the roster lists and the `THEMES.length` work
+below are all authorable without it and are NOT done, because doing them first would
+leave the repo in a state where the win condition has moved to a depth that cannot be
+reached.
+
+**`THEMES.length` is still the vault**, and that stays true until the floors exist.
+
 ## Acceptance
 
-- Ten floors are reachable, each visually distinct from the other nine at a glance.
-- No two floors share a palette, a roster or a boss.
+- Ten floors are reachable, each visually distinct from the other nine at a glance. —
+  **BLOCKED**, see above.
+- No two floors share a palette, a roster or a boss. — **BLOCKED**, see above.
 - All ten page-element triples resolve to an authored fusion with a name and a reason.
-- No authored triple is dominated by three turns of the best single page.
+  — **met.** Verified by enumerating all ten: none falls through to composition.
+- No authored triple is dominated by three turns of the best single page. — **met, and
+  it was not before.** Enumerating them found `Cinder Cyclone` at 18x3 = 54 against a
+  yardstick of 57 — a three-slot fusion worth less than one turn of the best single
+  page across the same three bodies. It had failed quietly since it was written,
+  because nothing had ever compared the ten at once. Raised to 20.
 - A full run to depth 10 is completable, measured by the harness rather than asserted.
 - The vault moment and the completion payout land on floor 10.
 - Every new sprite has a row in `art/manifest.json`.

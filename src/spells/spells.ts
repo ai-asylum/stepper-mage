@@ -606,12 +606,85 @@ export const COMBOS: Record<string, ComboDef> = {
     statuses: [{ id: 'soaked', power: 1 }, { id: 'shocked', power: 1.4 }],
   },
   'fire+gust+spark': {
-    name: 'Cinder Cyclone', colour: 0xffb84a, damage: 18, count: 3,
+    /**
+     * 18 -> 20, because 18 FAILED the rule the rest of the table is held to.
+     *
+     * Measured while authoring the seven missing triples: at 18 x 3 it totalled 54
+     * against a yardstick of 57 — one turn of this three-slot fusion was worth less
+     * than one turn of the best single page across the same three bodies, which is
+     * the definition of a row that should not exist. It was the only authored triple
+     * that failed, and it failed quietly because nothing had ever compared them all
+     * at once.
+     */
+    name: 'Cinder Cyclone', colour: 0xffb84a, damage: 20, count: 3,
     statuses: [{ id: 'burning', power: 1.5 }, { id: 'shocked', power: 1 }], shove: 1,
   },
   'fire+frost+gust': {
     name: 'Hailfire', colour: 0xdff0ff, damage: 30, count: 2,
     statuses: [{ id: 'soaked', power: 1 }, { id: 'frozen', power: 1 }], shove: 1,
+  },
+
+  /**
+   * THE SEVEN THAT WERE MISSING.
+   *
+   * Hand size 3 is the tree's most expensive capability purchase and seven of the ten
+   * page-element triples fell through to systematic composition — so a player who
+   * bought the third slot and built around Decay got a procedurally named non-event
+   * at the exact moment the game should have been at its most generous.
+   *
+   * Six of the seven contain rot, which is the tell: the authored table was written
+   * around fire and never came back for the animancy page. (The doc says all seven
+   * do; `frost+gust+spark` does not, and it was missing for the plainer reason that
+   * it is the one triple with no fire in it at all.)
+   *
+   * Priced on the same yardstick as the rest of the table: one turn, measured against
+   * 19 × the bodies it reaches. Every row below clears that, and each earns its slot
+   * by doing something the pair inside it cannot — rot is the element that keeps
+   * paying after the turn ends, so these are the rows where damage is deliberately
+   * lower and the TICK is the point.
+   */
+  'fire+frost+rot': {
+    // Rot does not stop for cold, it slows — and a body held still rots on schedule
+    // while it burns. The focus row of the seven: two bodies, the biggest tick.
+    name: 'Black Frost', colour: 0x9fd8c0, damage: 28, count: 2,
+    statuses: [{ id: 'decay', power: 1.6 }, { id: 'frozen', power: 1 }],
+  },
+  'fire+rot+spark': {
+    // Rot lit and charged at once. The spread row: worse on a boss than Soulfire,
+    // much better across a room, which is the trade every count-3 row makes.
+    name: 'Pyre Blight', colour: 0xc2e04a, damage: 22, count: 3,
+    statuses: [{ id: 'decay', power: 1.2 }, { id: 'burning', power: 1.2 }],
+  },
+  'fire+gust+rot': {
+    // Wind carries burning spores. The only rot row that also repositions, which is
+    // what makes it the answer to a clump rather than to a line.
+    name: 'Spore Storm', colour: 0xb8d07a, damage: 20, count: 3,
+    statuses: [{ id: 'decay', power: 1.2 }, { id: 'burning', power: 1 }], shove: 1,
+  },
+  'frost+gust+spark': {
+    // The one triple with no fire in it: weather, and nothing else. Highest raw
+    // spread in the table, and it lands no lasting tick at all — the counterpart to
+    // the rot rows rather than a rival to them.
+    name: 'Stormfront', colour: 0xbfe8ff, damage: 26, count: 3,
+    statuses: [{ id: 'shocked', power: 1.2 }, { id: 'soaked', power: 1 }], shove: 1,
+  },
+  'frost+rot+spark': {
+    // Soaked rot conducts, which is the interaction the pair already promises; the
+    // triple makes it the identity instead of a lucky order.
+    name: 'Necrotic Arc', colour: 0x8fe0c8, damage: 23, count: 3,
+    statuses: [{ id: 'decay', power: 1.3 }, { id: 'shocked', power: 1.2 }],
+  },
+  'frost+gust+rot': {
+    // Cold wind over rot. The other focus row: two bodies, held, and rotting for the
+    // whole time they are held — the most tempo the seven can buy.
+    name: 'Killing Frost', colour: 0xa8e8d8, damage: 32, count: 2,
+    statuses: [{ id: 'decay', power: 1.4 }, { id: 'frozen', power: 1 }], shove: 1,
+  },
+  'gust+rot+spark': {
+    // Airborne rot, charged. The widest of the rot rows and the weakest per body,
+    // which is the shape a room-clearer should have.
+    name: 'Miasma', colour: 0xa8d060, damage: 21, count: 3,
+    statuses: [{ id: 'decay', power: 1.2 }, { id: 'shocked', power: 1 }], shove: 1,
   },
 };
 
