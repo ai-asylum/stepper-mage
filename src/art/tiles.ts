@@ -733,7 +733,17 @@ function buildFog(theme: Theme, seed: string, variant: number): Pix {
   const pale = hex(0x9aa3ad);
   for (let y = 0; y < P; y++) {
     for (let x = 0; x < P; x++) {
-      const m = 0.55 + noise.fbm(x * 0.07 + variant * 4, y * 0.07, 3) * 0.3;
+      /**
+       * A THIRD of the way to pale, not most of it.
+       *
+       * There are three washes on a fogged tile and this is only the first — the
+       * shader adds the bank's own tint and then the distance falloff on top. At the
+       * weight this started at, all three landed together and the ground inside a
+       * bank came out as a flat sheet with no floor in it. This one only has to say
+       * "the ground under the murk is greyer"; the shader says the rest, and unlike
+       * this it says it in the room's own light.
+       */
+      const m = 0.26 + noise.fbm(x * 0.07 + variant * 4, y * 0.07, 3) * 0.22;
       p.set(x, y, mix(p.get(x, y), pale, m));
     }
   }

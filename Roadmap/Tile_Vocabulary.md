@@ -122,6 +122,32 @@ way do I go — and a portal is the only surface that is a ROUTE. The other four
 what a tile is worth once you are near it and can all be seen from the doorway; four
 more colours up there would compete with the thing the map is for.
 
+### Three corrections to the fog, all of them the same mistake
+
+Fog shipped wrong first and was fixed on sight. Every one of the three was a version of
+treating the murk as something drawn OVER the world rather than something in it.
+
+- **FOG IS LIT.** `uMurkCol` is an albedo now and goes through the same illuminance the
+  surface does. Unlit, a bank was a sheet of bright white hanging in a black corridor —
+  which reads as a rendering fault, not as weather. Lit, it is dark where the room is
+  dark and it glows where the torch reaches into it. Mostly the LUMINANCE of that light
+  rather than its colour, because taking it whole made the murk wear the torch's hue,
+  and a metre from a sconce that is not a fog bank, it is a pink one.
+- **THE THREE WASHES WERE COMPOUNDING.** The tile texture bleached the ground, the bank
+  tint greyed it again, and the distance falloff greyed what was left — so a wall one
+  tile away arrived at a flat sheet. The texture does a third of what it did, and the
+  bank tint now stands down as far as you are inside the bank, because from in there
+  the distance term is already doing that job.
+- **EVERYTHING THAT DOES NOT USE THE WORLD SHADER HAD TO BE TOLD.** Sprites already had
+  the uniforms and needed the two lines; a creature drawn crisply against grey would
+  have made fog hide the room and not the thing in the room, which is worse than no fog.
+  The wall sconce is the harder case, because it is deliberately the one object in the
+  scene with a plain unlit material — a light source must never look shadowed — and
+  that made it the one thing a bank could not touch. It read as a sorting fault: a
+  full-brightness flame apparently in front of the murk that had swallowed the wall it
+  is bolted to. It fades rather than greys, because a flame does not go pale, it goes
+  away, and the halo it should leave is already baked into the wall behind it.
+
 ## Acceptance
 
 - Each surface is identifiable at a glance, with no legend.

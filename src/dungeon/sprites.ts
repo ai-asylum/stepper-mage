@@ -51,6 +51,8 @@ const SPRITE_FRAG = /* glsl */ `
 
   /** Baked light at this sprite's tile, pushed in when it moves. */
   uniform float uTileLight;
+  /** 1 if this sprite's tile is inside a fog bank. Pushed in per frame. */
+  uniform float uTileMurk;
   /** Hit flash: pushes the whole silhouette toward a colour. */
   uniform float uFlash;
   uniform vec3 uFlashCol;
@@ -130,6 +132,24 @@ const SPRITE_FRAG = /* glsl */ `
 
     float f = exp(-uFogDensity * d * d);
     c = mix(uFog, c, clamp(f, 0.0, 1.0));
+
+    /*
+     * THE SAME FOG BANK THE WALLS ARE IN.
+     *
+     * A creature standing in the murk has to go into it, or fog stops being a place
+     * where you cannot see and becomes a grey backdrop with everything dangerous
+     * drawn crisply in front of it — which is worse than no fog at all, because it
+     * hides the room and not the thing in the room. uTileMurk is this sprite's own
+     * tile, so a body inside the bank dissolves whichever side you are looking from;
+     * uMurkHere is the camera's, so everything dissolves once you are in there with
+     * it. Lit, like the walls: an unlit murk that bleached a sprite to white would
+     * make a creature in a dark bank the brightest thing on the screen.
+     */
+    float lum = dot(L, vec3(0.299, 0.587, 0.114));
+    vec3 murk = uMurkCol * mix(vec3(lum), L, 0.33);
+    float bank = exp(-uMurkHere * 0.18 * d * d);
+    c = mix(c, murk, uTileMurk * 0.6 * (1.0 - uMurkHere * 0.75));
+    c = mix(murk, c, clamp(bank, 0.0, 1.0));
 
     c = mix(c, uFlashCol, uFlash);
 
@@ -352,6 +372,7 @@ export class Sprite {
       uniforms: {
         map: { value: tex },
         uTileLight: { value: 0.4 },
+        uTileMurk: { value: 0 },
         uFlash: { value: 0 },
         uFlashCol: { value: new THREE.Color(0xffffff) },
         uTintAmt: { value: 0 },
@@ -479,6 +500,18 @@ export class Sprite {
   /** Baked light where the sprite stands. Call when it moves. */
   setTileLight(v: number): void {
     this.mat.uniforms.uTileLight.value = v;
+  }
+
+  /**
+   * Is the tile this sprite stands on inside a fog bank?
+   *
+   * Pushed per frame from `Floor.update` rather than from the ten places that push
+   * the light, because it is a fact about WHERE THE SPRITE IS and the sprite is the
+   * only thing that reliably knows that — a body walks, gets shoved, rises as a
+   * golem and dies, and every one of those paths would have had to remember.
+   */
+  setTileMurk(v: number): void {
+    this.mat.uniforms.uTileMurk.value = v;
   }
 
   setTint(color: number, amount: number): void {

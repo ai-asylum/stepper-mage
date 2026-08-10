@@ -79,18 +79,39 @@ const WORLD_FRAG = /* glsl */ `
      * A FOG BANK, in two parts, because it has to read from two places.
      *
      * FROM OUTSIDE: vMurk is how deep in the bank this surface stands, so the ground
-     * goes pale and flat at any distance and you can see the edge of the thing from
-     * across the room. That is what makes walking into it a decision.
+     * goes pale and flat and you can see the edge of the thing from across the room.
+     * That is what makes walking into it a decision.
      *
      * FROM INSIDE: uMurkHere is how fogged the tile the CAMERA is on is, and it
-     * drives a second distance falloff — a steep one — so standing in the bank
-     * dissolves the room at a couple of tiles whichever way you turn. Distance rather
-     * than depth, because from in here the murk is between you and everything,
-     * including the clear floor on the far side.
+     * drives a second distance falloff so standing in the bank dissolves the room at
+     * a few tiles whichever way you turn. Distance rather than depth, because from in
+     * here the murk is between you and everything, including the clear floor beyond.
+     *
+     * AND IT IS LIT. uMurkCol is an albedo, not a colour — it goes through the same
+     * illuminance the surface does, because fog is a thing in the room and not a
+     * value written over the top of it. Unlit, a bank was a sheet of bright white
+     * hanging in a black corridor, which read as a rendering fault rather than as
+     * weather; lit, it is dark where the room is dark and it glows where your torch
+     * reaches into it, which is what fog actually does.
+     *
+     * Mostly the LUMINANCE of that light and not its colour, though. Taking L whole
+     * meant the murk wore the torch's hue, and a metre from a sconce that is not a
+     * fog bank, it is a pink one. A third of the hue kept is enough to tie it to the
+     * room's palette without the grey going anywhere.
      */
-    float bank = exp(-uMurkHere * 0.42 * d * d);
-    c = mix(c, uMurkCol, vMurk * 0.45);
-    c = mix(uMurkCol, c, clamp(bank, 0.0, 1.0));
+    float lum = dot(L, vec3(0.299, 0.587, 0.114));
+    vec3 murk = uMurkCol * mix(vec3(lum), L, 0.33);
+
+    /*
+     * The two terms would otherwise COMPOUND. Standing in the bank, a wall one tile
+     * away was taking the full pallor of being in the murk AND the distance falloff
+     * on top of it, which is how the inside of a bank ended up a flat sheet with no
+     * near wall in it. The tint is what makes the bank visible from outside, so it
+     * fades out exactly as far as you are inside.
+     */
+    float bank = exp(-uMurkHere * 0.18 * d * d);
+    c = mix(c, murk, vMurk * 0.42 * (1.0 - uMurkHere * 0.75));
+    c = mix(murk, c, clamp(bank, 0.0, 1.0));
 
     gl_FragColor = vec4(c, 1.0);
   }
@@ -181,7 +202,9 @@ class MeshBuild {
 export class DungeonView {
   readonly group = new THREE.Group();
   readonly uniforms: WorldUniforms;
-  private sconces: { mesh: THREE.Mesh; frames: THREE.Texture[]; phase: number }[] = [];
+  private sconces: {
+    mesh: THREE.Mesh; frames: THREE.Texture[]; phase: number; tile: [number, number];
+  }[] = [];
   private disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = [];
 
   constructor(private grid: Grid, private theme: Theme, private seed: string) {
@@ -447,7 +470,9 @@ export class DungeonView {
       m.position.set(L.x + dx * 0.44, L.h, L.y + dy * 0.44);
       m.rotation.y = Math.atan2(-dx, -dy);
       this.group.add(m);
-      this.sconces.push({ mesh: m, frames, phase: (L.x * 7.13 + L.y * 3.71) % 6.283 });
+      this.sconces.push({
+        mesh: m, frames, phase: (L.x * 7.13 + L.y * 3.71) % 6.283, tile: [L.x, L.y],
+      });
     }
   }
 
@@ -480,6 +505,31 @@ export class DungeonView {
       const i = Math.floor((time * 11 + s.phase) % s.frames.length);
       const mat = s.mesh.material as THREE.MeshBasicMaterial;
       if (mat.map !== s.frames[i]) { mat.map = s.frames[i]; mat.needsUpdate = true; }
+
+      /**
+       * A TORCH HAS TO GO INTO THE FOG TOO.
+       *
+       * The sconce is the one thing in the scene drawn with a plain unlit material —
+       * deliberately, because a light source must never look shadowed — and that made
+       * it the one thing a fog bank could not touch. The result read as a sorting
+       * fault: a crisp, full-brightness flame apparently hanging in FRONT of a wall
+       * of murk that had swallowed the wall it is bolted to.
+       *
+       * It fades rather than greys, because a flame does not go pale, it goes away —
+       * and the halo it should leave behind is already there, since the light it
+       * casts is baked into the wall the murk is lit by. Same two terms as everything
+       * else: its own tile's bank, and the camera's.
+       */
+      const here = this.uniforms.uMurkHere.value as number;
+      const bank = g.surfaceAt(s.tile[0], s.tile[1]) === Surface.Fog ? 1 : 0;
+      const dist = camPos.distanceTo(s.mesh.position);
+      // Both terms exactly as the walls have them, including the bank term standing
+      // down once you are inside — otherwise the two stacked and a torch on a wall
+      // you can plainly see, two tiles away, was not drawn at all.
+      const lost = Math.min(1, bank * 0.6 * (1 - here * 0.75)
+        + (1 - Math.exp(-here * 0.18 * dist * dist)));
+      mat.opacity = 1 - lost;
+      mat.visible = mat.opacity > 0.02;
     }
   }
 

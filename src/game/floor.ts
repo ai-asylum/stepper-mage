@@ -430,6 +430,8 @@ export class Floor {
     for (const e of this.entities) {
       const [v, flip] = viewFrom(e, cam);
       e.sprite.setView(v, flip);
+      e.sprite.setTileMurk(
+        this.grid.surfaceAt(e.sprite.tx, e.sprite.ty) === Surface.Fog ? 1 : 0);
       e.sprite.update(dt, time, cam);
       if (e.sprite.isGone && e.alive) {
         e.alive = false;
