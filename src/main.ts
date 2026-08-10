@@ -21,7 +21,7 @@ import { PAGE_H, PAGE_W } from './book/pageMaterial';
 import { SPELLS as BOOK_PAGES, setBookPages, type SpellDef } from './spells/pages';
 import {
   ELEMENT_SPELLS, INGREDIENT_IDS, SPELL_BY_ID, displayName, harvestOf,
-  isIngredient, isPageElement, wantsCorpse, wantsObject,
+  isIngredient, isPageElement, rankName, wantsCorpse, wantsObject,
   type ResolvedCast,
 } from './spells/spells';
 import { harvestCard, harvestColour } from './spells/harvestCards';
@@ -1122,25 +1122,33 @@ async function boot(): Promise<void> {
         rank: 0, toRank: 1,
       };
     }
+    /**
+     * A deepened page is a DIFFERENT SPELL by name, so every rung says so: the
+     * headline is what the page becomes and the body says what it was. "Rank 1 → 2"
+     * on its own is a number that means nothing to a player who has never seen rank
+     * 2; "Frost becomes Frostbolt" is the same fact in the game's own words.
+     */
     if (rank === 1) {
       return {
-        ...base, kind: 'upgrade', name: def.name, tag: 'UPGRADE',
-        detail: 'Rank 1 → 2. Casts as two copies.', rank: 1, toRank: 2,
+        ...base, kind: 'upgrade', name: rankName(id, 2), tag: 'UPGRADE',
+        detail: `${rankName(id, 1)} becomes ${rankName(id, 2)}. Casts as two copies.`,
+        rank: 1, toRank: 2,
       };
     }
     if (rank < MAX_RANK) {
       if (!spend || spend === id) return null;
       const sp = SPELL_BY_ID[spend];
       return {
-        ...base, kind: 'sacrifice', name: def.name, tag: 'SACRIFICE',
-        detail: `Rank ${rank} → ${rank + 1}. Casts as ${rank + 1} copies.`,
-        cost: `Tears out your rank-2 ${sp?.name ?? spend} for good.`,
+        ...base, kind: 'sacrifice', name: rankName(id, rank + 1), tag: 'SACRIFICE',
+        detail: `${rankName(id, rank)} becomes ${rankName(id, rank + 1)}. `
+          + `Casts as ${rank + 1} copies.`,
+        cost: `Tears out your rank-2 ${sp ? rankName(spend, 2) : spend} for good.`,
         rank, toRank: rank + 1, spendId: spend,
       };
     }
     return {
       ...base, kind: 'star', name: starsName(2), tag: 'CELESTIAL STARS', colour: 0xffcf5c,
-      detail: `${def.name} is already mastered. Take a celestial star instead.`,
+      detail: `${rankName(id, MAX_RANK)} is already mastered. Take a celestial star instead.`,
       amount: 2, rank: MAX_RANK, toRank: 0,
     };
   };
@@ -1481,10 +1489,18 @@ async function boot(): Promise<void> {
         colour: 0x8cc8ff, amount: 1,
         detail: 'Begin with a reroll charge banked, to turn over any altar.',
       },
+      /**
+       * Named off the LADDER and not as "<page> II". A deepened Frost is a
+       * Frostbolt — that is the whole of what the rank ladder is for — so a card
+       * offering "Frost II" would be teaching the player a notation the game does
+       * not otherwise use, on the one screen where they are reading rather than
+       * reacting.
+       */
       {
-        ...blank, kind: 'blessing', id: deepen.id, name: `${deepen.name} II`, tag: 'a deeper page',
-        colour: deepen.colour, rank: 1, toRank: 2,
-        detail: `Begin with ${deepen.name} at rank 2 — it casts as two copies.`,
+        ...blank, kind: 'blessing', id: deepen.id, name: rankName(deepen.id, 2),
+        tag: 'a deeper page', colour: deepen.colour, rank: 1, toRank: 2,
+        detail: `Begin with ${rankName(deepen.id, 1)} already deepened — it casts as `
+          + `two copies, and two is a ${rankName(deepen.id, 2)}.`,
       },
     ];
   };
@@ -1709,7 +1725,9 @@ async function boot(): Promise<void> {
       claimedAltars.add(e);
       void floor.spendAltar(e);
     }
-    const pageName = SPELL_BY_ID[o.id]?.name ?? o.id;
+    // At the rank the player actually holds it, so "already mastered" names the
+    // mastered thing — an Inferno, not the Flame it was three altars ago.
+    const pageName = SPELL_BY_ID[o.id] ? rankName(o.id, state.ranks[o.id] ?? 1) : o.id;
 
     switch (o.kind) {
       case 'new':
@@ -1721,10 +1739,16 @@ async function boot(): Promise<void> {
         // run only; next run you are back to your loadout. Golden pages are the
         // one exception and they go through their own claim path.
         break;
+      /**
+       * The shout is the NEW NAME and nothing else. `o.name` already is it — the
+       * offer was built as the rung it takes you to — so the old "<page> RANK 2"
+       * would now read "FROSTBOLT RANK 2", which says the same thing twice and in
+       * two vocabularies.
+       */
       case 'upgrade':
         state.ranks[o.id] = Math.min(MAX_RANK, (state.ranks[o.id] ?? 1) + 1);
-        hud.setShout(`${o.name.toUpperCase()} RANK ${state.ranks[o.id]}`, o.colour);
-        hud.addLog(`${o.name} deepens. ${o.detail}`, o.colour);
+        hud.setShout(o.name.toUpperCase(), o.colour);
+        hud.addLog(o.detail, o.colour);
         break;
       case 'sacrifice': {
         const spend = o.spendId;
@@ -1737,9 +1761,9 @@ async function boot(): Promise<void> {
         }
         state.ranks[o.id] = Math.min(MAX_RANK, (state.ranks[o.id] ?? 1) + 1);
         burnPage(spend);
-        hud.setShout(`${o.name.toUpperCase()} RANK ${state.ranks[o.id]}`, o.colour);
+        hud.setShout(o.name.toUpperCase(), o.colour);
         hud.addLog(
-          `${o.name} reaches rank ${state.ranks[o.id]} — ${SPELL_BY_ID[spend]?.name ?? spend} burns for it.`,
+          `${o.detail} ${rankName(spend, 2)} burns for it.`,
           o.colour,
         );
         break;

@@ -105,7 +105,27 @@ export type SpellSource = 'page' | 'fixture' | 'belt';
 
 export interface SpellDef {
   id: string;
+  /**
+   * What the page is called at RANK 1 — always `ladder[0]` where there is a ladder.
+   *
+   * Kept as a plain field rather than derived, because everything that names a
+   * spell without knowing a rank reads this: the tree, a refusal message, a
+   * fixture that has no rank to know about.
+   */
   name: string;
+  /**
+   * What this element is called at rank 1, 2 and 3.
+   *
+   * A page's name IS its rank — a Flame you have deepened once is not a stronger
+   * Flame, it is a Fireball — so the ladder is authored per element rather than
+   * assembled from a `Greater`/`Mighty` prefix. The prefix still exists and still
+   * does its job on FUSIONS (`resolveCast`), which is where an adjective is the
+   * honest answer: there is no third word for a Steam Burst cast twice as hard.
+   *
+   * Exactly `MAX_RANK` entries. Only page elements carry one — a fixture is
+   * always rank 1 and a harvested Flame is a Flame however many candles are lit.
+   */
+  ladder?: readonly [string, string, string];
   glyph: string;
   role: SpellRole;
   /**
@@ -142,27 +162,32 @@ export interface SpellDef {
  */
 export const SPELLS: SpellDef[] = [
   {
-    id: 'fire', name: 'Fireball', glyph: '🔥', role: 'bolt', kind: 'element', source: 'page', element: 'fire', cost: 2,
+    id: 'fire', name: 'Flame', glyph: '🔥', role: 'bolt', kind: 'element', source: 'page', element: 'fire', cost: 2,
+    ladder: ['Flame', 'Fireball', 'Inferno'],
     colour: 0xff7a2b, effect: 'A blazing orb. Sets the target burning.',
     flavor: '"The first spell anyone learns, and the last one they need."',
   },
   {
-    id: 'frost', name: 'Frostbolt', glyph: '❄', role: 'bolt', kind: 'element', source: 'page', element: 'frost', cost: 2,
+    id: 'frost', name: 'Frost', glyph: '❄', role: 'bolt', kind: 'element', source: 'page', element: 'frost', cost: 2,
+    ladder: ['Frost', 'Frostbolt', 'Blizzard'],
     colour: 0x7ad4ff, effect: 'An ice shard. Freezes the target solid.',
     flavor: '"Cold does not kill. It simply waits with you."',
   },
   {
     id: 'spark', name: 'Spark', glyph: '⚡', role: 'bolt', kind: 'element', source: 'page', element: 'spark', cost: 2,
+    ladder: ['Spark', 'Thunderbolt', 'Thunderstorm'],
     colour: 0xffe14a, effect: 'A snapping arc. Conducts through water.',
     flavor: '"Wet things conduct. Remember that, or learn it."',
   },
   {
     id: 'gust', name: 'Gust', glyph: '💨', role: 'bolt', kind: 'element', source: 'page', element: 'gust', cost: 2,
+    ladder: ['Gust', 'Gale', 'Cyclone'],
     colour: 0xa8f0d0, effect: 'Staggers the target and shoves it back a tile.',
     flavor: '"Every locked door is only as good as its hinges."',
   },
   {
     id: 'rot', name: 'Decay', glyph: '💀', role: 'bolt', kind: 'element', source: 'page', element: 'rot', cost: 2,
+    ladder: ['Decay', 'Blight', 'Plague'],
     colour: 0x9de06a, effect: 'Rot that eats away over several turns.',
     flavor: '"Patience, rendered as a spell."',
   },
@@ -173,8 +198,11 @@ export const SPELLS: SpellDef[] = [
    * these are in it. What each does is chosen so it is NOT a page's job:
    *
    *  - `flame` is the one honest overlap, because a lit candelabra plainly gives
-   *    you fire. It resolves through the Fireball rows and is always rank 1, which
-   *    is the whole of what keeps the page worth owning.
+   *    you fire. It resolves through the fire rows and is always rank 1, and it is
+   *    named "Flame" for the same reason the rank-1 fire PAGE is: they are the same
+   *    thing, and calling them two things would be the lie. What keeps the page
+   *    worth owning is that a page climbs — a candle is a Flame for ever, and a
+   *    Flame you have deepened is a Fireball.
    *  - `stone` is raw weight with no status at all — the only element that does
    *    damage and nothing else, and the four authored Stone fusions are the reason
    *    it exists.
@@ -301,6 +329,36 @@ export const SPELL_BY_ID: Record<string, SpellDef> = Object.fromEntries(
 const ROOT_ID: Partial<Record<Element, string>> = {};
 for (const s of SPELLS) {
   if (s.kind === 'element' && !ROOT_ID[s.element]) ROOT_ID[s.element] = s.id;
+}
+
+/**
+ * Element -> its name ladder, taken off whichever spell OWNS that element's rows.
+ *
+ * Built through `ROOT_ID` and not by scanning for a `ladder` field, so harvested
+ * fire climbs the fire PAGE's ladder: a page Flame cast beside a candelabra's is
+ * two fires, and two fires is a Fireball whichever hand they came from. That is
+ * the same rule that already makes both resolve through one `COMBOS` row, and
+ * doing it twice from one lookup is what stops the two from drifting apart.
+ */
+const LADDER: Partial<Record<Element, readonly [string, string, string]>> = {};
+for (const [el, id] of Object.entries(ROOT_ID)) {
+  const l = SPELL_BY_ID[id!]?.ladder;
+  if (l) LADDER[el as Element] = l;
+}
+
+/**
+ * What a page is called at a given rank.
+ *
+ * Clamped rather than validated: rank is read off run state and off saves, and a
+ * name is not the place to discover that a number is out of range. An element with
+ * no ladder — every fixture — is its own name at every rank, which is true, because
+ * nothing the room hands you has one.
+ */
+export function rankName(id: string, rank: number): string {
+  const def = SPELL_BY_ID[id];
+  if (!def) return id;
+  if (!def.ladder) return def.name;
+  return def.ladder[Math.min(Math.max(Math.floor(rank) || 1, 1), def.ladder.length) - 1];
 }
 
 /**
@@ -442,9 +500,16 @@ export function setKey(ids: string[]): string {
  * being locked to rank 1 is what it pays for that.
  */
 export const COMBOS: Record<string, ComboDef> = {
-  // solo identities
-  fire: { name: 'Fireball', colour: 0xff7a2b, damage: 10, statuses: [{ id: 'burning', power: 1 }] },
-  frost: { name: 'Frostbolt', colour: 0x7ad4ff, damage: 8, statuses: [{ id: 'frozen', power: 1 }] },
+  /**
+   * Solo identities. For an element with a ladder these names are the RANK-1 rung
+   * and `resolveCast` overrides them from the ladder on any solo cast, so they are
+   * only ever read when the row is the strongest authored subset under a set that
+   * has no row of its own — fire beside stone, say. They are kept in step with
+   * `ladder[0]` for exactly that case: a composed cast should not be able to hand
+   * the player the word "Fireball" for a fire they never deepened.
+   */
+  fire: { name: 'Flame', colour: 0xff7a2b, damage: 10, statuses: [{ id: 'burning', power: 1 }] },
+  frost: { name: 'Frost', colour: 0x7ad4ff, damage: 8, statuses: [{ id: 'frozen', power: 1 }] },
   spark: { name: 'Spark', colour: 0xffe14a, damage: 9, statuses: [{ id: 'shocked', power: 1 }] },
   // Gust trades damage for a stagger and a shove — the page that moves a body
   // rather than the page that kills it. It is deliberately under the SHATTER
@@ -1004,6 +1069,25 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
   let statuses = (combo.statuses ?? []).map((s) => ({ ...s }));
   let shove = combo.shove ?? 0;
 
+  /**
+   * A SOLO cast is named off the element's ladder, by how many copies are in it.
+   *
+   * Only solo. A fusion has an authored identity of its own and duplicates inside
+   * one are still `Greater`/`Mighty` — there is no third word for a Steam Burst
+   * thrown twice as hard, and inventing one per pair would be forty names to keep
+   * true. So the ladder owns "how deep is this page" and the prefix owns "how hard
+   * did you throw this fusion", which are two different questions.
+   *
+   * The copy count is the ELEMENT's, so a rank-1 page beside a lit candelabra is a
+   * Fireball for the same reason a rank-2 page is: two fires arrived, and where
+   * they came from was never what the name was about.
+   */
+  const distinctEls = [...new Set(elements)];
+  const ladder = distinctEls.length === 1 ? LADDER[distinctEls[0]] : undefined;
+  if (ladder) {
+    name = ladder[Math.min(elCount[distinctEls[0]] ?? 1, ladder.length) - 1];
+  }
+
   // ---- 4. modifier forms + empowerment ---------------------------------
   if (mods.includes('grow')) {
     damage = Math.round(damage * 1.6);
@@ -1045,7 +1129,14 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
     damage = Math.round(damage * (1 + 0.15 * extraBolt));
   }
 
-  const tier = extraGrow + extraSplit + extraBolt;
+  /**
+   * `extraBolt` is deliberately absent where a ladder already spoke for it. A
+   * rank-2 Flame is a Fireball, not a Greater Fireball — the ladder IS the
+   * empowerment name — and leaving the duplicate in the tier would have named it
+   * both ways at once. What still counts is Giant and Volley, because those come
+   * off the belt and the ladder knows nothing about them.
+   */
+  const tier = extraGrow + extraSplit + (ladder ? 0 : extraBolt);
   if (tier === 1) name = `Greater ${name}`;
   else if (tier >= 2) name = `Mighty ${name}`;
 

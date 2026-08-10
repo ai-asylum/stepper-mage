@@ -73,6 +73,36 @@ export class Book {
   private introFlips = 0;
 
   /**
+   * Has the book been HANDED to the player yet?
+   *
+   * False from construction until `playIntro`, and the group is genuinely invisible
+   * for that whole stretch rather than merely closed. The run now begins with an
+   * empty grimoire and one question — which page do you carry — so for those few
+   * seconds there is no book to show: `setBookPages` falls back to a single page
+   * when the player holds none (`pages.ts`), and rising into frame to display a
+   * Flame nobody has chosen yet would answer the question before it was asked.
+   */
+  private revealedT = false;
+
+  /** Has the book been handed over yet? Readers gate page-shaped UI on it. */
+  get revealed(): boolean {
+    return this.revealedT;
+  }
+
+  /**
+   * A one-page book does not turn.
+   *
+   * Every flip in a book of one lands back on the page it left, so the curl shader
+   * runs, the paper sounds, and nothing changes — which reads as a broken gesture
+   * rather than as a book with one page in it. Refused at the three doors a flip can
+   * come through (finger, chapter tab, intro cascade) instead of inside
+   * `prepareFlip`, so a refused flip never starts and never has to be unwound.
+   */
+  private get canFlip(): boolean {
+    return SPELLS.length > 1;
+  }
+
+  /**
    * Closed/open. Local addition: a grimoire held up permanently covers the floor,
    * and in a grid crawler you need the floor to know which tile you are on. Closing
    * drops the book out of frame entirely rather than shrinking it, so nothing is
@@ -120,7 +150,9 @@ export class Book {
     const rightGeo = pageGeometry(22);
     const sheetGeo = pageGeometry(30);
 
-    // start 2 pages before Fireball so the intro's flip cascade lands on it
+    // Somewhere valid, to have art to build the materials from. The index the
+    // player actually opens on is `playIntro`'s, set once the book has its real
+    // pages in it — at construction time the run has not chosen one yet.
     this.index = (SPELLS.length - 2 + SPELLS.length) % SPELLS.length;
     const art0 = pageArt(SPELLS[this.index], this.index);
     this.leftMat = pageMaterial(art0.action, art0.lore);
@@ -143,6 +175,8 @@ export class Book {
 
     this.group.position.copy(BASE_POS);
     this.group.rotation.x = BASE_TILT;
+    // Off screen until `playIntro`. See `revealed`.
+    this.group.visible = false;
     camera.add(this.group);
 
     onUpdate((dt, t) => this.update(dt, t));
@@ -314,8 +348,9 @@ export class Book {
       goldenSparkle(p, 8, 0.05, 0.014);
     }
     haptic(8);
-    if (chapter.firstIndex === this.index && !this.flipActive) {
-      sfx.pageFlip(); // already there: the tab just tugs
+    // Already there, or nowhere else to be: the tab just tugs.
+    if ((chapter.firstIndex === this.index && !this.flipActive) || !this.canFlip) {
+      sfx.pageFlip();
       return;
     }
     sfx.shimmer(640);
@@ -411,7 +446,7 @@ export class Book {
   // ------------------------------------------------------------ input API
   /** Horizontal drag in px. Starts/updates a finger-following flip. */
   flipDrag(dx: number) {
-    if (this.introT >= 0 || this.ripDragging) return;
+    if (this.introT >= 0 || this.ripDragging || !this.canFlip) return;
     this.flipTarget = -1; // a finger on the page outranks a chapter jump
     if (!this.flipActive) {
       const dir: 1 | -1 = dx < 0 ? 1 : -1;
@@ -545,22 +580,48 @@ export class Book {
 
   /** Quick swipe without a meaningful drag. */
   swipe(dir: 1 | -1) {
-    if (this.busy) return;
+    if (this.busy || !this.canFlip) return;
     this.flipTarget = -1;
     this.prepareFlip(dir);
     this.animateFlipTo(dir === 1 ? 1 : 0);
   }
 
   // ------------------------------------------------------------ intro
+  /**
+   * Rise into frame. Called once the player has a book worth showing — which is
+   * now AFTER the mouth's page question, not at boot.
+   */
   playIntro() {
+    this.revealedT = true;
     this.introT = 0;
-    this.introFlips = 2;
+    /**
+     * Two flips, or none. The cascade exists to leaf onto the opening page and it
+     * needs somewhere to leaf FROM; a book holding the one page the player just
+     * chose is already open at it, so the flips would be two turns back onto
+     * themselves. `index` is set to match, because the constructor's "start two
+     * pages early" only makes sense when there are two pages to start early from.
+     */
+    this.introFlips = this.canFlip ? 2 : 0;
+    this.index = this.canFlip
+      ? (SPELLS.length - 2 + SPELLS.length) % SPELLS.length
+      : 0;
+    this.refresh();
     this.group.position.y = BASE_POS.y - 0.5;
     this.group.rotation.x = BASE_TILT - 0.5;
   }
 
   // ------------------------------------------------------------ update
   private update(dt: number, t: number) {
+    // Not handed over yet — no pose to hold and nothing to draw. See `revealed`.
+    if (!this.revealedT) { this.group.visible = false; return; }
+    /**
+     * Back on the moment it IS handed over, and here rather than at the end of the
+     * method, because the intro branch below returns early: leaving it to the
+     * open/close glide meant the whole rise played invisible and the book popped
+     * into frame already settled. The glide still owns hiding it again.
+     */
+    this.group.visible = true;
+
     // idle breathing
     const bobY = Math.sin(t * 1.5) * 0.0035;
     const bobR = Math.sin(t * 1.15) * 0.006;

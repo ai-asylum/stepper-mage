@@ -102,7 +102,14 @@ export type AltarOfferKind =
    * id-less offer carrying a number in `amount` and the two would resolve as each
    * other — a start-depth pick banking a reroll charge.
    */
-  | 'startDepth';
+  | 'startDepth'
+  /**
+   * THE ONE PAGE the run sets out with, chosen at the mouth out of what the star
+   * tree has bound. Its own kind rather than a `new`, because a `new` is an altar
+   * offer that has an altar behind it to spend and a stone to walk away from; this
+   * one is answered before the first turn and cannot be declined.
+   */
+  | 'startPage';
 
 /**
  * One of the three things an altar is offering.
@@ -125,6 +132,7 @@ const OFFER_LABEL: Record<string, string> = {
   heal: 'mend', stars: 'stars', star: 'stars', reroll: 'reroll',
   rank: 'deepen', upgrade: 'deepen', sacrifice: 'sacrifice',
   ingredient: 'vial', blessing: 'blessing', startDepth: 'descend',
+  startPage: 'carry',
 };
 
 export interface AltarOffer {
