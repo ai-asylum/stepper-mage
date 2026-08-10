@@ -94,6 +94,16 @@ export const enum Surface {
    * getting from it to the door is the arithmetic.
    */
   Plate = 7,
+  /**
+   * A lever. Stand on it and it stays pulled.
+   *
+   * The same gesture as a plate and deliberately so — one way to work a mechanism is
+   * one thing to learn — but the opposite kind of object. A plate is MOMENTARY and
+   * belongs to the clock; a lever is PERMANENT and belongs to the map. What it buys
+   * is never power: it opens the boss door and nothing else, which is what makes
+   * walking every room a real reason rather than another way to inflate the player.
+   */
+  Lever = 8,
 }
 
 /** How many fogged tiles a line of sight survives. Two, and the second is the last. */
@@ -154,6 +164,28 @@ export interface Door {
   turns: number;
   /** How long a press buys. */
   span: number;
+}
+
+/**
+ * The boss door, and the levers that fill its sockets.
+ *
+ * Not a `Door`, because it is the opposite kind of object: a timed gate is a question
+ * about turns and this is a question about the MAP. It never shuts once it is open,
+ * it is on no clock, and the only way through it is to have walked the rooms the
+ * compass never points at.
+ *
+ * `sockets` is drawn on the door and is the whole of the information the player gets:
+ * how many levers there are, and how many are still out there. Never WHERE — knowing
+ * the count turns exploring into a countdown you can finish, and knowing the location
+ * would turn it into an errand.
+ */
+export interface BossDoor {
+  /** Tile index of the door itself. */
+  i: number;
+  /** Tile indices of every lever that feeds it. */
+  levers: number[];
+  /** Which of them have been pulled. */
+  pulled: Set<number>;
 }
 
 /** Do spark and shock run along this surface? */
@@ -261,6 +293,8 @@ export class Grid {
   hazards: Hazard[] = [];
   /** Portcullises and their plates. */
   doors: Door[] = [];
+  /** The way into the boss room, and what opens it. Null on floors that have none. */
+  bossDoor: BossDoor | null = null;
 
   constructor(w: number, h: number) {
     this.w = w; this.h = h;

@@ -62,6 +62,7 @@ export function generate(opts: GenOpts): Grid {
   dress(g, rng, opts.depth);
   raise(g, rng, opts.depth);
   wind(g, rng, opts.depth);
+  lock(g, rng, opts.depth);
   placeLights(g, rng);
   bakeLight(g);
   return g;
@@ -759,6 +760,106 @@ function placeGate(g: Grid, rng: Rng): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * Lock the boss room, and scatter the levers that unlock it.
+ *
+ * THE REWARD FOR EXPLORING IS ACCESS, never power. The compass points at the altar and
+ * then at the boss, so once the altar is claimed the rest of a floor is a corridor —
+ * every room the compass does not name is a room with no reason to enter it. A lever
+ * fixes that for nothing: it makes the map itself the lock, and it costs the balance
+ * of the game precisely zero, because a lever gives the player no damage, no health
+ * and no page.
+ *
+ * The door goes on the way into the boss room and the levers go anywhere else. Two
+ * things are then checked rather than assumed, and they are the reason this pass can
+ * fail and give up:
+ *
+ *  - EVERY LEVER IS REACHABLE WITH THE DOOR SHUT. A lever behind its own door is a
+ *    floor nobody can finish.
+ *  - THE DOOR ACTUALLY GATES THE BOSS. If the room has a second way in, the lock is
+ *    scenery and the walk is optional, which is the one thing it must not be.
+ */
+function lock(g: Grid, rng: Rng, depth: number): void {
+  if (depth < 4) return;
+  const boss = g.rooms.find((r) => r.kind === 'boss');
+  if (!boss) return;
+
+  const own = new Set(boss.tiles.map(([x, y]) => g.idx(x, y)));
+  /**
+   * The door goes on the THRESHOLD: a tile outside the boss room with a neighbour
+   * inside it. Putting it on a room tile would leave the player standing in the boss's
+   * doorway looking at a gate behind them.
+   */
+  const thresholds: number[] = [];
+  for (let y = 1; y < g.h - 1; y++) {
+    for (let x = 1; x < g.w - 1; x++) {
+      const i = g.idx(x, y);
+      if (!g.walkable(x, y) || own.has(i)) continue;
+      if (g.surface[i] !== Surface.Plain || g.at(x, y) !== Tile.Floor) continue;
+      if (g.hazards.some((h) => g.idx(h.x, h.y) === i)) continue;
+      if (g.doors.some((d) => d.i === i || d.plate === i)) continue;
+      if (DIR_VEC.some(([dx, dy]) => own.has(g.idx(x + dx, y + dy)))) thresholds.push(i);
+    }
+  }
+  if (!thresholds.length) return;
+
+  /**
+   * EVERY TIMED GATE COUNTS AS OPEN while this pass reasons.
+   *
+   * A gate on a plate is not a barrier, it is a delay — the player can always open it,
+   * so a route into the boss room that runs through one is a route. Testing with them
+   * shut said otherwise, and accepted boss doors that gated nothing: fifteen floors in
+   * six hundred could be finished by pressing a plate and walking past the lock with
+   * every socket still dark, which is the one thing this phase must not allow.
+   */
+  const gatesWere = g.doors.map((d) => g.doorOpen[d.i]);
+  for (const d of g.doors) g.doorOpen[d.i] = 1;
+  const restore = () => { g.doors.forEach((d, k) => { g.doorOpen[d.i] = gatesWere[k]; }); };
+
+  for (const i of rng.shuffle(thresholds).slice(0, 8)) {
+    const was = g.tiles[i];
+    g.tiles[i] = Tile.Door;
+    g.doorOpen[i] = 0;
+    const shut = reachable(g);
+
+    // Does it gate the boss at all? If any boss tile is still reachable with the door
+    // shut, the room has another way in and this door is decoration.
+    let leaks = false;
+    for (const j of own) if (shut[j]) { leaks = true; break; }
+    if (leaks) { g.tiles[i] = was; g.doorOpen[i] = 0; continue; }
+
+    /**
+     * Levers go in ROOMS, one per room, as far from each other as the floor allows —
+     * spread by taking the rooms that are furthest from the boss first, so filling the
+     * sockets means crossing the map rather than sweeping one wing of it.
+     */
+    const fromBoss = g.flood(boss.cx, boss.cy, g.w * g.h);
+    const candidates = g.rooms
+      .filter((r) => r.kind !== 'boss')
+      .map((r) => {
+        const tiles = r.tiles
+          .map(([x, y]) => g.idx(x, y))
+          .filter((j) => shut[j] && g.surface[j] === Surface.Plain
+            && j !== g.idx(r.cx, r.cy) && j !== g.idx(g.start.x, g.start.y)
+            && !g.hazards.some((h) => g.idx(h.x, h.y) === j));
+        return { r, tiles, far: fromBoss[g.idx(r.cx, r.cy)] };
+      })
+      .filter((c) => c.tiles.length > 0)
+      .sort((a, b) => b.far - a.far);
+
+    const wanted = depth >= 8 ? 3 : 2;
+    if (candidates.length < wanted) { g.tiles[i] = was; g.doorOpen[i] = 0; continue; }
+
+    const levers: number[] = [];
+    for (const c of candidates.slice(0, wanted)) levers.push(rng.pick(c.tiles));
+    for (const j of levers) g.surface[j] = Surface.Lever;
+    g.bossDoor = { i, levers, pulled: new Set() };
+    restore();
+    return;
+  }
+  restore();
 }
 
 /** Which walkable tiles the start can reach right now, doors as they currently stand. */

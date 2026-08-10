@@ -45,7 +45,7 @@ played — check it before trusting it.
 | 23 | [Tile_Vocabulary](Tile_Vocabulary.md) | yes | shipped |
 | 24 | [Verticality](Verticality.md) | yes | shipped |
 | 25 | [Timing_And_Hazards](Timing_And_Hazards.md) | yes | shipped |
-| 26 | [Locks_And_Levers](Locks_And_Levers.md) | yes | planned |
+| 26 | [Locks_And_Levers](Locks_And_Levers.md) | yes | in progress |
 | 27 | [Light_And_Memory](Light_And_Memory.md) | yes | planned |
 | 28 | [Merchants](Merchants.md) | yes | planned |
 | 29 | [Mana_And_Pacing](Mana_And_Pacing.md) | yes | planned |

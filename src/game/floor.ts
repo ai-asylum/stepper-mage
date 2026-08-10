@@ -295,6 +295,26 @@ export class Floor {
   }
 
   /**
+   * Swap a lever's sprite to its thrown form.
+   *
+   * The sprite is the whole of the feedback that this lever is done — the player will
+   * walk past it again and has to be able to tell at a glance that they already have
+   * this one. Async because a step's art is fetched on demand; the caller does not
+   * wait, because a lever that pauses the game while a PNG loads would be worse than
+   * one that changes a moment late.
+   */
+  markLever(i: number): void {
+    const x = i % this.grid.w, y = (i / this.grid.w) | 0;
+    const e = this.entities.find((z) => z.kind === 'lever' && z.sprite.tx === x && z.sprite.ty === y);
+    if (!e || e.spriteId === 'lever_pulled') return;
+    e.spriteId = 'lever_pulled';
+    void loadViews('lever_pulled').then((m) => {
+      e.sprite.setViews(m);
+      e.sprite.play('rise');
+    });
+  }
+
+  /**
    * Rebuild everything that was built at a texel density, keeping the floor.
    *
    * The pixel step's one write path into a live run. It is NOT `Floor.create` again:

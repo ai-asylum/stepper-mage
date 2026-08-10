@@ -331,13 +331,19 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 26 — Locks_And_Levers
 
-- [ ] Levers, and boss doors that show how many sockets are unfilled.
+- [x] Levers, and boss doors that show how many sockets are unfilled. Sockets are pips; never locations.
 - [ ] Blocks: solid, indestructible, pushed one tile per gust.
+      NOT STARTED. Needs to break line of sight, so it is a moving TILE and not an
+      entity — `clearLine` reads the grid.
 - [ ] Pressure plates, with a different verb per floor.
+      NOT STARTED. The plate itself shipped with Timing_And_Hazards; it only ever
+      opens a gate.
 - [ ] Secret walls: drawn slightly wrong, tap and cast. Nothing cleverer.
-- [ ] Plants grown into climbable vines, which burn.
-- [ ] One camera cut that shows a door opening, and returns control where it took it.
-- [ ] Commit changes.
+      NOT STARTED. Needs a tap target on a WALL, which nothing in the game has.
+- [ ] Plants grown into climbable vines, which burn. NOT STARTED. Decay is the element — phase doc.
+- [x] One camera cut that shows a door opening, and returns control where it took it.
+      The eye never moves; only the look swings out and back.
+- [x] Commit changes.
 
 ## Phase 27 — Light_And_Memory
 

@@ -168,8 +168,11 @@ export class ClockView {
   private barGeo: THREE.PlaneGeometry;
   private pool: THREE.Mesh[] = [];
   private live = 0;
-  /** The longest countdown any door on this floor has, so the pips are built once. */
-  private span = 6;
+  /**
+   * How many pips the strip can show. Covers both readers — the longest gate
+   * countdown and the most sockets a boss door has — so the frames are built once.
+   */
+  private span = 8;
 
   constructor() {
     this.geo = new THREE.PlaneGeometry(1, 1);
@@ -274,6 +277,43 @@ export class ClockView {
        */
       m.rotation.set(0, across ? Math.PI / 2 : 0, 0);
       m.position.set(x, e + 0.86, y);
+    }
+
+    /**
+     * THE BOSS DOOR AND ITS SOCKETS.
+     *
+     * The same bars as a timed gate, because it is the same object as far as the
+     * player's feet are concerned — and the same pips, reading how many levers are
+     * still out there. What it never shows is WHERE they are: the count turns
+     * exploring into something you can finish, and a location would turn it into an
+     * errand somebody set you.
+     *
+     * The pips stay up after it opens, all lit. A door that forgot what it cost is a
+     * door that never cost anything.
+     */
+    const bd = g.bossDoor;
+    if (bd) {
+      const x = bd.i % g.w, y = (bd.i / g.w) | 0;
+      const e = g.heightAt(x, y) * STEP_H;
+      const across = g.walkable(x - 1, y) || g.walkable(x + 1, y);
+      if (!g.doorOpen[bd.i]) {
+        const m = this.take();
+        const mat = m.material as THREE.MeshBasicMaterial;
+        mat.map = this.bars;
+        mat.opacity = 1;
+        mat.needsUpdate = true;
+        m.geometry = this.barGeo;
+        m.rotation.set(0, across ? Math.PI / 2 : 0, 0);
+        m.position.set(x, e + 0.52, y);
+      }
+      const m = this.take();
+      const mat = m.material as THREE.MeshBasicMaterial;
+      mat.map = this.pips[Math.max(0, Math.min(this.span, bd.pulled.size))] ?? null;
+      mat.opacity = 1;
+      mat.needsUpdate = true;
+      m.geometry = this.pipGeo;
+      m.rotation.set(0, across ? Math.PI / 2 : 0, 0);
+      m.position.set(x, e + 0.94, y);
     }
 
     for (let i = this.live; i < this.pool.length; i++) this.pool[i].visible = false;

@@ -966,6 +966,20 @@
       "height": 176,
       "seed": 2099,
       "prompt": "A CHEST GOLEM: a squat bandy-legged humanoid built from an iron-bound treasure chest, the open lid its hinged jaw lined with lock-teeth, violet eyes burning inside the chest cavity, thick banded arms of oak and iron, stubby clawed feet. Coins and a spilled goblet rattle in its belly as it lurches."
+    },
+    {
+      "id": "lever",
+      "kind": "prop",
+      "height": 126,
+      "seed": 1301,
+      "prompt": "A FLOOR-MOUNTED IRON LEVER on a stone plinth: a heavy iron lever with a long angled handle raised UP and back, brass collar at the pivot, bolted to a small carved stone base. Cold unlit iron, an arcane rune etched into the plinth and DARK. Untouched, waiting to be thrown."
+    },
+    {
+      "id": "lever_pulled",
+      "kind": "prop",
+      "height": 126,
+      "seed": 1311,
+      "prompt": "A THROWN IRON LEVER on a stone plinth: a heavy iron lever with a clearly VISIBLE straight handle angled sharply DOWNWARD at forty-five degrees toward the viewer's right, its tip level with the top of the plinth — thrown, not removed. Brass collar at the pivot, bolted to a small carved stone base. The rune etched into the plinth GLOWS bright amber. The handle must be present and obvious; overall shape roughly as tall as it is wide."
     }
   ]
 }

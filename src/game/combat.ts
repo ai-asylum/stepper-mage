@@ -1661,6 +1661,38 @@ export class Combat {
     void g;
   }
 
+  /**
+   * Throw the lever on this tile, and open the boss door if it was the last one.
+   *
+   * Once only and permanently: a lever is a fact about the map, not a state you can
+   * lose. It gives the player nothing — no damage, no health, no page — which is the
+   * entire point of the mechanism. What it buys is ACCESS, and access is the one
+   * reward that can make exploring worth doing without inflating anything.
+   */
+  pullLever(x: number, y: number): 'pulled' | 'opened' | null {
+    const g = this.floor.grid;
+    const bd = g.bossDoor;
+    const i = g.idx(x, y);
+    if (!bd || !bd.levers.includes(i) || bd.pulled.has(i)) return null;
+
+    bd.pulled.add(i);
+    this.floor.markLever(i);
+    if (bd.pulled.size < bd.levers.length) {
+      const left = bd.levers.length - bd.pulled.size;
+      this.onEvent({
+        kind: 'status',
+        text: left > 1 ? `${left} SOCKETS STILL DARK` : 'ONE SOCKET STILL DARK',
+        colour: 0xffc23e,
+      });
+      this.floor.syncClock();
+      return 'pulled';
+    }
+    g.doorOpen[bd.i] = 1;
+    this.onEvent({ kind: 'status', text: 'THE WAY IN OPENS.', colour: 0xffc23e });
+    this.floor.syncClock();
+    return 'opened';
+  }
+
   /** Stepping onto a plate opens its gate. Called from the step, not from the clock. */
   pressPlate(x: number, y: number): boolean {
     const g = this.floor.grid;

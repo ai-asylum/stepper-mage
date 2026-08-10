@@ -821,6 +821,24 @@ async function boot(): Promise<void> {
   sinks.hitstop = (d) => { fx.hitstop = Math.max(fx.hitstop, d); };
 
   const eye = new THREE.Vector3();
+  /** How long the door cut lasts. Under a second: it is a glance, not a cutscene. */
+  const CUT_TIME = 0.85;
+  let cutT = 0;
+  let cutYaw = 0;
+  const cutAt = new THREE.Vector3();
+  const cutLook = new THREE.Vector3();
+  /**
+   * Look at what you just opened.
+   *
+   * Only ever called when the player threw the last lever, so the cut is always a
+   * consequence of an action and never a thing the camera decided. If the door is
+   * behind a wall the player still gets the turn and the sound of it — knowing WHICH
+   * WAY the thing that opened is is most of what the cut is for.
+   */
+  const cutToward = (tx: number, ty: number): void => {
+    cutAt.set(tx, 0, ty);
+    cutT = CUT_TIME;
+  };
   const tmp = new THREE.Vector3();
 
   let floor!: Floor;
@@ -2185,6 +2203,12 @@ async function boot(): Promise<void> {
        * correct: standing on the plate is itself a turn.
        */
       if (floor.grid.surfaceAt(x, y) === Surface.Plate) combat.pressPlate(x, y);
+      if (floor.grid.surfaceAt(x, y) === Surface.Lever) {
+        const bd = floor.grid.bossDoor;
+        if (combat.pullLever(x, y) === 'opened' && bd) {
+          cutToward(bd.i % floor.grid.w, (bd.i / floor.grid.w) | 0);
+        }
+      }
 
       const fell = floor.grid.dropFrom(cameFrom.x, cameFrom.y, x, y);
       if (fell > 0) {
@@ -2591,12 +2615,42 @@ async function boot(): Promise<void> {
     stepper.update(wdt);
     stepper.eye(eye, engine.time);
 
+    /**
+     * THE CUT: a brief look at the door you just opened, then straight back.
+     *
+     * The one scripted camera move in the game, and it is allowed to exist for one
+     * reason — the player DID something and the result is somewhere they are not
+     * looking. It is the exact opposite of a framing that drifts on its own, which
+     * `First_Minutes` settled against and this does not reopen: it is triggered by an
+     * action, it is under a second, and it hands control back to exactly the eye the
+     * stepper was going to produce anyway.
+     *
+     * The eye does not travel. It stays where the player is standing and only the
+     * LOOK turns, which keeps the cut cheap, keeps the player oriented, and means
+     * there is nothing to restore when it ends — the position was never taken away.
+     */
+    if (cutT > 0) {
+      cutT = Math.max(0, cutT - dt);
+      const k = 1 - cutT / CUT_TIME;
+      // ease in and out, so the turn starts and stops rather than snapping
+      const ease = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      // out and back: all the way over at the middle of the cut, home by the end
+      const swing = Math.sin(ease * Math.PI);
+      cutLook.set(cutAt.x - eye.x, 0, cutAt.z - eye.z);
+      const want = Math.atan2(cutLook.x, cutLook.z);
+      const home = stepper.yaw();
+      let d = ((want - home + Math.PI) % (Math.PI * 2)) - Math.PI;
+      if (d < -Math.PI) d += Math.PI * 2;
+      cutYaw = home + d * swing;
+    }
+
     // screen shake, applied as a positional jitter + roll
     const s = fx.shake * fx.shake;
     const jx = Math.sin(engine.time * 61) * 0.05 * s;
     const jy = Math.sin(engine.time * 47 + 1.7) * 0.05 * s;
     engine.camera.position.set(eye.x + jx, eye.y + jy, eye.z);
-    engine.camera.rotation.set(PITCH, stepper.yaw(), stepper.roll() + jx * 0.6, 'YXZ');
+    engine.camera.rotation.set(
+      PITCH, cutT > 0 ? cutYaw : stepper.yaw(), stepper.roll() + jx * 0.6, 'YXZ');
 
     floor.update(wdt, engine.time, eye);
     fx.update(dt, engine.camera.quaternion);

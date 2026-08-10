@@ -8,11 +8,11 @@
  * open middle (they are what you have to get through).
  */
 import { Rng } from '../core/rng';
-import { Grid, DIR_VEC, type Room } from '../dungeon/grid';
+import { Grid, DIR_VEC, Surface, type Room } from '../dungeon/grid';
 import type { Theme } from '../art/theme';
 import { ROOM_ENEMIES_BASE, ROOM_ENEMIES_MAX, roomEnemyChance } from './tuning';
 
-export type PlacedKind = 'prop' | 'enemy' | 'altar' | 'chest' | 'boss' | 'stairs';
+export type PlacedKind = 'prop' | 'enemy' | 'altar' | 'chest' | 'boss' | 'stairs' | 'lever';
 
 export interface Placed {
   kind: PlacedKind;
@@ -170,13 +170,33 @@ export function populate(grid: Grid, theme: Theme, seed: string, depth: number):
     }
   }
 
+  /**
+   * A LEVER FOR EVERY LEVER TILE, outside the room loop.
+   *
+   * Placed off `grid.surface` rather than off a room, because the generator already
+   * decided where they go and it decided using the whole floor — which rooms are far
+   * from the boss, which are reachable with the door shut. Re-deriving that here from
+   * room kinds would be a second opinion about the same question.
+   *
+   * It does NOT claim its tile. You throw a lever by standing on it, so a lever that
+   * blocked its own tile would be a lever nobody can reach.
+   */
+  for (let i = 0; i < grid.surface.length; i++) {
+    if (grid.surface[i] !== Surface.Lever) continue;
+    const x = i % grid.w, y = (i / grid.w) | 0;
+    out.push({
+      kind: 'lever', sprite: 'lever', x, y,
+      ox: 0, oz: 0, hover: 0, roomId: grid.roomOf[i] === 255 ? 0 : grid.roomOf[i],
+    });
+  }
+
   return out;
 }
 
 /** Every sprite id a floor needs, for preloading before the floor is shown. */
 export function spriteIdsFor(theme: Theme): string[] {
   return [
-    'altar', 'altar_empty', 'chest', 'chest_open', 'stairs_down',
+    'altar', 'altar_empty', 'chest', 'chest_open', 'stairs_down', 'lever', 'lever_pulled',
     ...theme.props, ...theme.golems, ...theme.enemies, theme.boss,
   ];
 }
