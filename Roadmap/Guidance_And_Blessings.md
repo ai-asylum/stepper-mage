@@ -1,8 +1,8 @@
 # Guidance And Blessings
 
 **Player-facing:** yes
-**Started:** —
-**Status:** planned
+**Started:** 2026-08-10
+**Status:** in progress
 
 A compass that points at the next thing worth walking to, a blessing chosen at the
 dungeon mouth, and the bestiary — the one record the player is never sold back.
@@ -49,7 +49,8 @@ inert, and this is the phase that makes them real.
 Tasks live in [_todo.md](_todo.md) under this phase's heading. Design rationale is
 in [docs/DESIGN.md](../docs/DESIGN.md); do not restate it here.
 
-Three things to resolve before building:
+Three things to resolve before building. **All three are now resolved** — the
+decisions are recorded under `## Settled during the build` below.
 
 **The bestiary's animation half is currently unreachable.** It fills as props are
 animated, and animation needs an ingredient off a belt that is switched off behind
@@ -69,14 +70,44 @@ either the arrow points at something the player has not seen — which is a reve
 wearing one arrow — or it only points at what they have found, which makes it useless
 for its main job. That tension is the whole design problem of this phase.
 
+## Settled during the build
+
+- **The compass gives BEARING and nothing else.** No distance, no marker, no room
+  shape. This is the answer to the tension the section above calls the phase's whole
+  design problem: direction is not layout. One angle reveals a single number about the
+  floor, and it points at things the player has not found because the altar they have
+  already found is the one they do not need pointing at. Distance was considered and
+  rejected — bearing plus distance over two steps triangulates the exact tile, which
+  is a revealed map wearing one arrow.
+- **The three blessings are RUN-LEVEL, on three different axes.** A wider book (a
+  fourth page), a spare hand (a reroll charge banked), a deeper page (an owned page at
+  rank 2). Breadth, agency, power — so the choice is about how you want to play rather
+  than which number is biggest. Run-level because the non-overlap rule leaves nothing
+  else honest: a blessing granting an element duplicates a page, one shaping a cast
+  duplicates an ingredient.
+- **The bestiary ships its FUSION half only.** Entries fill from each source
+  independently and only the sections that can fill are shown, so there is no
+  permanently empty column and the animation half lights up by itself whenever
+  `BELT_ENABLED` comes back. Filling it from prop DESTRUCTION instead was considered
+  and rejected: it records something different from what the entry is about, and
+  quietly redefines the bestiary rather than waiting for the feature it was designed
+  around.
+
 ## Acceptance
 
 - The compass points at the unclaimed altar, switches to the boss once the altar is
-  claimed, and to the stairs once the boss is dead.
-- A player who follows it reaches the altar on every floor of a run.
-- It never shows the layout of a room the player has not entered.
-- Three blessings are offered before floor 1 and the chosen one visibly changes the run.
+  claimed, and to the stairs once the boss is dead. — **met.**
+- A player who follows it reaches the altar on every floor of a run. — **met in
+  principle, not walked.** The bearing is correct (verified: facing south with the
+  altar to the east, the arrow reads left), but nobody has yet followed it end to end.
+- It never shows the layout of a room the player has not entered. — **met.** Only an
+  angle leaves `compassGoal`.
+- Three blessings are offered before floor 1 and the chosen one visibly changes the
+  run. — **met.**
 - Without the `blessing` node, no choice is offered and nothing hints that one was
-  missed.
-- The bestiary records a fusion the moment it is first cast, and costs nothing ever.
-- No screen anywhere offers to sell bestiary knowledge.
+  missed. — **met.** `offerBlessings` returns early and draws nothing.
+- The bestiary records a fusion the moment it is first cast, and costs nothing ever. —
+  **NOT DONE.** `Combat.discovered` already records the fusion; what is missing is a
+  screen to read it and persistence across runs.
+- No screen anywhere offers to sell bestiary knowledge. — **met vacuously**, there
+  being no bestiary screen yet.

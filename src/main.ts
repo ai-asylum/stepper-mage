@@ -876,6 +876,35 @@ async function boot(): Promise<void> {
    * so the cast went off, the shelf stood there, and the game looked broken. Your
    * own golems are excluded: they are on your side.
    */
+  /**
+   * What the compass points at, in priority order.
+   *
+   * An UNCLAIMED ALTAR first, because it is the run's only progression lever and the
+   * only thing on a floor a player can miss permanently — the boss and the stairs
+   * both come to you or wait for you, and a missed altar is a lost rank-up nothing
+   * ever mentions. Then the boss while it lives. Then the way down.
+   *
+   * Deliberately NOT gated on having seen the thing. That is the whole point: the
+   * altar you have already found is the one you do not need pointing at. What keeps
+   * this from being a revealed map is that only the BEARING leaves this function —
+   * see `Hud.drawCompass`.
+   */
+  const compassGoal = (): { x: number; y: number; label: string; colour: string } | null => {
+    const altar = floor.entities.find((e) => e.kind === 'altar' && e.alive && !e.spent);
+    if (altar) {
+      return { x: altar.sprite.tx, y: altar.sprite.ty, label: 'ALTAR', colour: '#b98cff' };
+    }
+    const boss = floor.entities.find((e) => e.kind === 'boss' && e.alive && e.hp > 0);
+    if (boss) return { x: boss.sprite.tx, y: boss.sprite.ty, label: 'BOSS', colour: '#ff6a6a' };
+    const stairs = floor.stairsOpen
+      ? floor.entities.find((e) => e.kind === 'stairs')
+      : undefined;
+    if (stairs) {
+      return { x: stairs.sprite.tx, y: stairs.sprite.ty, label: 'DOWN', colour: '#8ce0ff' };
+    }
+    return null;
+  };
+
   const isLegal = (e: Entity, ids: string[]): boolean => {
     /**
      * Coffin Moss raises the DEAD, and nothing on a floor is a corpse yet — the
@@ -1363,7 +1392,87 @@ async function boot(): Promise<void> {
   };
 
   /** Apply the offer the player picked, and empty the altar. */
+  /**
+   * The three blessings, offered at the dungeon mouth before floor 1.
+   *
+   * Floor 1 had no shape to it: every run opened identically — same three pages, same
+   * rank, same hand — so the first floor was a fixed sequence rather than a hand you
+   * were dealt. One choice at the mouth changes what the run is about before the
+   * first tile.
+   *
+   * All three are RUN-LEVEL, and that is the non-overlap rule rather than a shortage
+   * of ideas. A blessing that granted an element would duplicate a page; one that
+   * shaped a cast would duplicate an ingredient. What is left — and what is actually
+   * interesting — is what you START with, and the three sit on three different axes
+   * so the choice is about how you want to play rather than which number is largest:
+   * BREADTH (a fourth page), AGENCY (a reroll in hand), POWER (a page already deep).
+   */
+  const rollBlessings = (): AltarOffer[] => {
+    const rng = new Rng(`${meta.best}:${state.depth}:blessing`);
+    const unowned = ELEMENT_SPELLS.filter((sp) => !state.pages.includes(sp.id));
+    const extra = rng.pick(unowned.length ? unowned : ELEMENT_SPELLS);
+    const deepen = rng.pick(state.pages.map((id) => SPELL_BY_ID[id]).filter(Boolean));
+
+    const blank = {
+      cost: null, amount: 0, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
+    };
+    return [
+      {
+        ...blank, kind: 'blessing', id: extra.id, name: extra.name, tag: 'a wider book',
+        colour: extra.colour, detail: `Begin the run with ${extra.name} in the book.`,
+      },
+      {
+        ...blank, kind: 'blessing', id: '', name: 'A Second Chance', tag: 'a spare hand',
+        colour: 0x8cc8ff, amount: 1,
+        detail: 'Begin with a reroll charge banked, to turn over any altar.',
+      },
+      {
+        ...blank, kind: 'blessing', id: deepen.id, name: `${deepen.name} II`, tag: 'a deeper page',
+        colour: deepen.colour, rank: 1, toRank: 2,
+        detail: `Begin with ${deepen.name} at rank 2 — it casts as two copies.`,
+      },
+    ];
+  };
+
+  /**
+   * Offer them, if the star tree has bought the right to be asked.
+   *
+   * Without the `blessing` node nothing is offered AND nothing hints that anything
+   * was missed — a locked door the player can see is a worse experience than a door
+   * they do not know about, and the tree is where the door is bought.
+   */
+  const offerBlessings = (): void => {
+    if (!owns(meta.nodes, 'blessing')) return;
+    hud.offerTitle = 'A BLESSING AT THE MOUTH';
+    hud.offerSubtitle = 'choose one, before the first floor';
+    hud.offers = rollBlessings();
+  };
+
   const chooseOffer = (o: AltarOffer): void => {
+    /**
+     * A blessing has no altar behind it, so it resolves before the altar guard —
+     * and restores the chooser's captions on the way out, because the next thing to
+     * open it is an altar and it must not inherit this one's title.
+     */
+    if (o.kind === 'blessing') {
+      hud.offers = null;
+      hud.offerTitle = 'THE ALTAR OFFERS';
+      hud.offerSubtitle = 'choose one';
+      if (o.toRank > 0) {
+        state.ranks[o.id] = o.toRank;
+        hud.addLog(`You set out with ${o.name}. ${o.detail}`, o.colour);
+      } else if (o.id) {
+        state.ranks[o.id] = 1;
+        learnPage(o.id);
+        hud.addLog(`You set out with ${o.name} already in the book.`, o.colour);
+      } else {
+        state.rerolls += o.amount;
+        hud.addLog('You set out with a reroll charge in hand.', o.colour);
+      }
+      hud.setShout('BLESSED', o.colour);
+      return;
+    }
+
     const e = hud.offerAltar;
     hud.offers = null;
     hud.offerAltar = null;
@@ -2021,6 +2130,8 @@ async function boot(): Promise<void> {
   };
 
   await enterFloor(1);
+  // Before the first tile, and after the floor exists so the modal draws over it.
+  offerBlessings();
 
   // ------------------------------------------------------------------- the loop
 
@@ -2064,6 +2175,7 @@ async function boot(): Promise<void> {
     if (!book.busy) book.closed = !bookOnScreen();
     hud.bookClosed = book.closed;
     hud.bookBusy = book.busy;
+    hud.compassGoal = compassGoal();
     tickBook(dt, engine.time);
     // Lay the HUD out against the book's real edge too, so the cast bar and the
     // swipe boundary never disagree.

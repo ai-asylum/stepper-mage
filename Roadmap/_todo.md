@@ -197,10 +197,14 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 16 — Guidance_And_Blessings
 
-- [ ] Add a compass pointing at unclaimed altar, then living boss, then stairs.
-- [ ] Add a run-start blessing: choose one of three at the dungeon mouth.
+- [x] Add a compass pointing at unclaimed altar, then living boss, then stairs.
+      Bearing only — no distance, which would triangulate the tile. See the phase doc.
+- [x] Add a run-start blessing: choose one of three at the dungeon mouth.
+      Reuses the altar's chooser; the `blessing` tree node is now live.
 - [ ] Fill the bestiary as props are animated and fusions discovered, free and never sold.
-- [ ] Commit changes.
+      Fusion half only — decided, see the doc. `Combat.discovered` already records;
+      what is missing is persistence across runs and a screen to read it.
+- [x] Commit changes.
 
 ## Phase 17 — Deeper_Dungeon
 

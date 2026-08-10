@@ -50,7 +50,16 @@ export type AltarOfferKind =
   // A bundle of one belt ingredient. About a spell, but never about a PAGE, so it
   // does not satisfy the "no roll is spell-free" rule — see `rollExtras`, which is
   // where it is rolled and where it is gated on the belt being able to keep it.
-  | 'heal' | 'stars' | 'reroll' | 'ingredient';
+  | 'heal' | 'stars' | 'reroll' | 'ingredient'
+  /**
+   * A run-start BLESSING, chosen at the dungeon mouth before floor 1.
+   *
+   * On the altar's offer type rather than a type of its own, because it is the same
+   * gesture answering the same question — three objects, choose one — and the modal
+   * that draws it is already exactly right. A second chooser would be a second thing
+   * to keep in step with this one.
+   */
+  | 'blessing';
 
 /**
  * One of the three things an altar is offering.
@@ -67,6 +76,7 @@ export type AltarOfferKind =
  */
 const OFFER_GLYPH: Record<string, string> = {
   heal: '+', stars: '*', reroll: '~', rank: '^', sacrifice: 'X',
+  upgrade: '^', star: '*', ingredient: 'o', blessing: '!',
 };
 
 export interface AltarOffer {
@@ -340,6 +350,14 @@ export class Hud {
    */
   bookBusy = false;
 
+  /**
+   * What the open chooser is FOR. The altar sets neither and gets the default; the
+   * dungeon-mouth blessing sets both, because "THE ALTAR OFFERS" over a choice made
+   * before the first floor would be naming a thing the player has not met.
+   */
+  offerTitle = 'THE ALTAR OFFERS';
+  offerSubtitle = 'choose one';
+
   /** Rasterised offer objects, keyed on what makes one look different. */
   private offerArt = new Map<string, HTMLCanvasElement>();
 
@@ -353,6 +371,15 @@ export class Hud {
    * hint that failed (`Roadmap/First_Minutes.md`).
    */
   hasMoved = false;
+
+  /**
+   * Where the compass points, or null when nothing does.
+   *
+   * Written by `main.ts`, which is the only place that knows the priority — an
+   * unclaimed altar, then the boss while it lives, then the stairs once it is dead.
+   * The HUD draws a bearing and asks no questions about what earned it.
+   */
+  compassGoal: { x: number; y: number; label: string; colour: string } | null = null;
 
   /**
    * This floor's name, beside the depth in the top-left.
@@ -633,6 +660,7 @@ export class Hud {
     this.drawBelt(ctx, W);
     // Before the CAST bar, so that where a card's box and the bar's touch, CAST wins:
     // `hit` scans backwards, so whatever is pushed last is on top.
+    this.drawCompass(ctx, W);
     this.drawMoveHint(ctx, W, H);
     this.drawEmptySlots(ctx, W);
     this.drawFanCards(ctx, W);
@@ -1393,6 +1421,82 @@ export class Hud {
    * slots are: two instructions competing during the opening animation is how a
    * player ends up following neither.
    */
+  /**
+   * The COMPASS: one arrow, pointing at the next thing worth walking to.
+   *
+   * A floor gave no direction at all. The altar is the run's only progression lever
+   * and finding it before the boss was luck — the minimap shows a 9×9 window of what
+   * you have already seen, which answers "is there a wall beside me" and cannot
+   * answer "where is the thing I need". A player who missed the altar lost the
+   * floor's only rank-up and nothing told them it was there.
+   *
+   * ## Bearing, and nothing else
+   *
+   * This is the phase's whole design problem: the altar is usually in a room the
+   * player has not entered, so an arrow that points at it is pointing at something
+   * unseen — and an arrow that only points at what has been found is useless, because
+   * the altar you have already found is the one you do not need pointing at.
+   *
+   * The resolution is that DIRECTION is not LAYOUT. One angle reveals a single number
+   * about the floor; it says "that way" and never how far, what is between, or what
+   * shape the room is. Distance was considered and rejected: bearing plus distance
+   * over two steps triangulates the exact tile, which is a revealed map wearing one
+   * arrow.
+   *
+   * Rotated into the player's frame, like the minimap, so up is always forward.
+   */
+  private drawCompass(ctx: CanvasRenderingContext2D, W: number): void {
+    const goal = this.compassGoal;
+    if (!goal) return;
+    const m = this.map?.();
+    if (!m) return;
+
+    const dx = goal.x - m.x, dy = goal.y - m.y;
+    if (!dx && !dy) return;
+
+    // World -> player-relative, the same rotation the minimap applies, so the two
+    // readouts can never disagree about which way is forward.
+    const [fx, fy] = DIR_VEC[m.dir];
+    const [rx, ry] = DIR_VEC[((m.dir + 1) % 4) as Dir];
+    const ahead = dx * fx + dy * fy;
+    const side = dx * rx + dy * ry;
+    const angle = Math.atan2(side, ahead);
+
+    const cx = W - 62, cy = 196, r = 15;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.beginPath();
+    ctx.arc(0, 0, r + 5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(14,9,18,0.72)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(185,140,255,0.35)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r * 0.62, r * 0.7);
+    ctx.lineTo(0, r * 0.34);
+    ctx.lineTo(-r * 0.62, r * 0.7);
+    ctx.closePath();
+    ctx.fillStyle = goal.colour;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(8,5,10,0.8)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.restore();
+
+    // What it is pointing AT, because an unlabelled arrow is a direction without a
+    // reason and the player has to decide whether following it is worth the turns.
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 8px ui-monospace, monospace';
+    ctx.fillStyle = goal.colour;
+    ctx.fillText(goal.label, cx, cy + r + 10);
+    ctx.textAlign = 'left';
+  }
+
   private drawMoveHint(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     if (this.hasMoved || this.offers) return;
 
@@ -2585,10 +2689,10 @@ export class Hud {
     ctx.textAlign = 'center';
     ctx.font = 'bold 12px ui-monospace, monospace';
     ctx.fillStyle = '#b98cff';
-    ctx.fillText('THE ALTAR OFFERS', W / 2, H * 0.13);
+    ctx.fillText(this.offerTitle, W / 2, H * 0.13);
     ctx.font = '9px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(232,217,176,0.55)';
-    ctx.fillText('choose one', W / 2, H * 0.13 + 16);
+    ctx.fillText(this.offerSubtitle, W / 2, H * 0.13 + 16);
 
     /**
      * THREE COLUMNS, LEFT TO RIGHT. Not a list.

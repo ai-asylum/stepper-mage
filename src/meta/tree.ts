@@ -159,7 +159,7 @@ export const TREE: readonly TreeNode[] = [
   },
   {
     id: 'blessing', name: 'Dungeon Mouth Blessing', price: PRICES.blessing, requires: [],
-    live: false, lands: 'phase 7 — Guidance_And_Blessings',
+    live: true,
     effect: 'Choose one of three blessings before you set foot on the first floor.',
   },
   {
