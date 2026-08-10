@@ -269,3 +269,103 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Show "you have nowhere to keep it" and pulse the strap when the belt is locked.
 - [x] Consume an ingredient only on cast; taking one out stays returnable.
 - [x] Commit changes.
+
+## Phase 21 — Grid_Vocabulary
+
+- [ ] Add `Tile.Gap`: blocks movement, passes sight. `walkable` no, `clearLine` yes.
+- [ ] Make a volume stop at a gap, with no special case in `Grid.fill`.
+- [ ] Draw a gap on the minimap as neither wall nor floor.
+- [ ] Add per-tile height to the grid as data. Decide how many levels.
+- [ ] Commit changes.
+
+## Phase 22 — Layout_Generators
+
+- [ ] Turn `generate()` into a choice of generator behind one interface.
+- [ ] Teach placement to work without rectangles — a cave has no rooms.
+- [ ] Write the ten flat generators: rooms, cave, ring, spiral, hub, grid city, cathedral, gauntlet, labyrinth, warren.
+- [ ] Write nested, and the three that need Grid_Vocabulary: islands, chasm, terraces.
+- [ ] Assign one generator per floor, and let it brief that floor's roster.
+- [ ] Commit changes.
+
+## Phase 23 — Tile_Vocabulary
+
+- [ ] Add a surface byte to the grid, beside `variant` and `roomOf`.
+- [ ] Iron plating: extend `CONDUCTION_ARC` rather than copying it.
+- [ ] Shallow water: spark chains, fire refuses to light.
+- [ ] Rubble: two moves to cross, gust clears it.
+- [ ] Portals: a lit pair, step on one and arrive at the other.
+- [ ] Fog: decide tile or floor-wide, then cut sight to two tiles.
+- [ ] Commit changes.
+
+## Phase 24 — Verticality
+
+- [ ] Build floor, wall and ceiling quads at per-tile height.
+- [ ] Sort sprites correctly when two occupy a column at different heights.
+- [ ] Fall damage, scaled by the drop, for bodies and the player.
+- [ ] Gust off a ledge. Ladders to climb back.
+- [ ] Verify the camera framing never changes.
+- [ ] Commit changes.
+
+## Phase 25 — Timing_And_Hazards
+
+- [ ] Tick hazards inside `enemyRound`, so nothing drifts out of phase.
+- [ ] Blades, floor spikes and wall spikes on a countable beat.
+- [ ] Make hazards hit creatures, and make baiting one possible.
+- [ ] Timed doors, with the countdown drawn on the door.
+- [ ] Ice as traversal: frost on the ground carries you further per step.
+- [ ] Traps, including a fall to the floor below.
+- [ ] Commit changes.
+
+## Phase 26 — Locks_And_Levers
+
+- [ ] Levers, and boss doors that show how many sockets are unfilled.
+- [ ] Blocks: solid, indestructible, pushed one tile per gust.
+- [ ] Pressure plates, with a different verb per floor.
+- [ ] Secret walls: drawn slightly wrong, tap and cast. Nothing cleverer.
+- [ ] Plants grown into climbable vines, which burn.
+- [ ] One camera cut that shows a door opening, and returns control where it took it.
+- [ ] Commit changes.
+
+## Phase 27 — Light_And_Memory
+
+- [ ] Let a spell light an object, and let that object be destroyed.
+- [ ] Make `grid.explored` a light LEVEL rather than a flag.
+- [ ] Draw the minimap from that level, and never let it dim.
+- [ ] Commit changes.
+
+## Phase 28 — Merchants
+
+- [ ] Add a room kind a merchant can stand in.
+- [ ] Buy and sell through the altar's chooser, using `AltarOffer.cost`.
+- [ ] Decide the currency, and whether a merchant persists across floors.
+- [ ] Commit changes.
+
+## Phase 29 — Mana_And_Pacing
+
+- [ ] Read `combat.ts`'s header and `tuning.ts` before moving anything.
+- [ ] Gain mana on a move, spend one per spell.
+- [ ] Decide what a turn still costs once mana is the price of casting.
+- [ ] Max mana and regen as star tree nodes.
+- [ ] Life steal as Decay's focus combo — worst damage in the book, returns HP.
+- [ ] Put a mana readout somewhere the HUD has room for.
+- [ ] Correct every comment that says there is no mana.
+- [ ] Commit changes.
+
+## Phase 30 — Difficulty_Rebase
+
+- [ ] Slow the empowerment ladder: rank and hand size compound today.
+- [ ] Make deep creatures resist single elements, so a fusion is a key not a hammer.
+- [ ] Keep every floor at three pages with no column above two of four.
+- [ ] Re-tune the curves by playing. There is no harness.
+- [ ] Commit changes.
+
+## Phase 31 — Creature_Behaviour
+
+- [ ] Turn `enemyRound`'s hostile branch into a small set of behaviours.
+- [ ] A statue: an obstacle while looked at, using `stepper.dir` and the targeting cone.
+- [ ] A spell-eater that drinks ground effects.
+- [ ] Something that bursts on death, hitting its tile and its neighbours.
+- [ ] Something that strengthens as its kin die.
+- [ ] Ranged creatures, and creatures that do not close in a straight line.
+- [ ] Keep `isAlerted` and the threat set honest for all of them.
+- [ ] Commit changes.
