@@ -818,7 +818,16 @@ export class Hud {
         const corner = { x: 0, y: 0, behind: false };
         const pts: [number, number][] = [];
         for (const [ox, oz] of [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]] as const) {
-          project(new THREE.Vector3(c.x + ox, 0.05, c.y + oz), corner);
+          /**
+           * y = 0 exactly, which is the floor plane the tiles are built on.
+           *
+           * It was 0.05 — lifted, the way the fire decal is, to avoid z-fighting.
+           * But this outline is drawn by the HUD in 2D over the frame, so it can
+           * never z-fight with anything; all the lift did was project the corners
+           * from five centimetres above the ground, and at this camera's grazing
+           * angle that is a visible slide up-frame. The outline sat off its own tile.
+           */
+          project(new THREE.Vector3(c.x + ox, 0, c.y + oz), corner);
           if (corner.behind) { pts.length = 0; break; }
           pts.push([corner.x, corner.y]);
         }
