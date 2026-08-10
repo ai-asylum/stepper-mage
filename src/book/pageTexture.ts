@@ -53,8 +53,9 @@ const C_INK_FAINT = hex(0x7a6480);
  * carry a vignette without banding.
  */
 const PARCH = new Ramp([0xb08f5e, 0xc9a878, 0xdcc296, 0xe8d3ab, 0xf3e5c6]);
-const C_GOLD = hex(0xd9a03c);
-const C_GOLD_HI = hex(0xffe0a0);
+/** Kept: the lore page and the gilt pass still ink in gold. */
+export const C_GOLD = hex(0xd9a03c);
+export const C_GOLD_HI = hex(0xffe0a0);
 
 // deterministic-ish wobble
 function wob(seed: number, t: number, freq = 5): number {
@@ -1075,20 +1076,19 @@ export function actionPage(spell: SpellDef, index: number): Pix {
   const top = FOLD - lines.length * (CELL_H - 1);
   lines.forEach((line, i) => drawCentered(p, line, PIX_W / 2, top + i * (CELL_H - 1), C_INK));
 
-  // LOCAL: upstream prints the spell's mana cost here. This game has no mana —
-  // tearing a page is free and the CAST costs one turn — so the pip row states that
-  // instead. One pip, because a cast is always one turn however many pages went into
-  // it; what a fusion costs is hand slots, which the hand already shows.
-  const pipX = PIX_W / 2, pipY = 128;
-  lozenge(p, pipX, pipY, 4, shade(C_GOLD, 0.62));
-  lozenge(p, pipX, pipY, 3, C_GOLD);
-  lozenge(p, pipX - 1, pipY - 1, 1, C_GOLD_HI);
-  drawCentered(p, 'CAST · ONE TURN', pipX, 137, C_INK_MID);
-
+  /**
+   * REMOVED: the "CAST · ONE TURN" pip row.
+   *
+   * Upstream printed a mana cost here. This game has no mana, so the row was rewritten
+   * to state the turn rule instead — and it states it on every page, identically,
+   * forever. A line that is the same on all ten pages carries no information about the
+   * page it is on; it is a rule about the game, and the page is the wrong place to
+   * keep repeating it.
+   */
   // The foot of the page. Below the fold in the book, but a torn card shows its
   // whole face, and a card with an empty quarter reads as an unfinished page.
   inkRun(p, 26, 150, PIX_W - 27, 150, C_INK_FAINT, seed + 91);
-  for (const dx of [-7, 0, 7]) lozenge(p, pipX + dx, 156, 1, C_INK_FAINT);
+  for (const dx of [-7, 0, 7]) lozenge(p, PIX_W / 2 + dx, 156, 1, C_INK_FAINT);
   return p;
 }
 

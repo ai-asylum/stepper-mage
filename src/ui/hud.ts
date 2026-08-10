@@ -116,9 +116,14 @@ export type AltarOfferKind =
  * The mark on a non-spell offer's scroll — a glyph, not a word, because the copy
  * under the card already says it and a scroll with a sentence on it is a page.
  */
-const OFFER_GLYPH: Record<string, string> = {
-  heal: '+', stars: '*', reroll: '~', rank: '^', sacrifice: 'X',
-  upgrade: '^', star: '*', ingredient: 'o', blessing: '!', startDepth: 'v',
+/**
+ * The word under a scroll's sigil. The sigil says WHAT, this says which — and the
+ * copy beneath the card says the rest.
+ */
+const OFFER_LABEL: Record<string, string> = {
+  heal: 'mend', stars: 'stars', star: 'stars', reroll: 'reroll',
+  rank: 'deepen', upgrade: 'deepen', sacrifice: 'sacrifice',
+  ingredient: 'vial', blessing: 'blessing', startDepth: 'descend',
 };
 
 export interface AltarOffer {
@@ -2972,11 +2977,33 @@ export class Hud {
    */
   private drawOffers(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     const offers = this.offers!;
-    ctx.fillStyle = 'rgba(8,5,12,0.86)';
+    /**
+     * A VEIL, not a curtain.
+     *
+     * It was a flat 0.86 black and it hid the altar completely — the one moment in a
+     * run where the room matters most, and the stone with the open book and the
+     * flames above it was painted out to make space for cards describing what that
+     * stone is offering. Darkened enough that the type holds, clear enough that you
+     * can still see what you are standing at.
+     *
+     * Heavier at the top and bottom than through the middle, so the two bands that
+     * carry text get their contrast and the altar itself stays visible in the gap.
+     */
+    const veil = ctx.createLinearGradient(0, 0, 0, H);
+    veil.addColorStop(0, 'rgba(8,5,12,0.82)');
+    veil.addColorStop(0.42, 'rgba(8,5,12,0.62)');
+    veil.addColorStop(0.72, 'rgba(8,5,12,0.42)');
+    veil.addColorStop(1, 'rgba(8,5,12,0.78)');
+    ctx.fillStyle = veil;
     ctx.fillRect(0, 0, W, H);
 
     ctx.textAlign = 'center';
     ctx.font = 'bold 12px ui-monospace, monospace';
+    // Outlined, because the veil is thin enough now that a torch behind the title
+    // can reach it — the same trick the depth row uses over the world.
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(6,4,9,0.85)';
+    ctx.strokeText(this.offerTitle, W / 2, H * 0.13);
     ctx.fillStyle = '#b98cff';
     ctx.fillText(this.offerTitle, W / 2, H * 0.13);
     ctx.font = '9px ui-monospace, monospace';
@@ -3148,7 +3175,7 @@ export class Hud {
       // it names a page, because what it hands over is a transaction and not a sheet.
       const pix = spell && o.kind !== 'sacrifice'
         ? pageCard(spell, ALL_PAGES.indexOf(spell), o.golden)
-        : scrollCard(o.colour, OFFER_GLYPH[o.kind] ?? '\u2726', o.kind, o.golden);
+        : scrollCard(o.colour, o.kind, OFFER_LABEL[o.kind] ?? o.kind, o.golden);
       c = pix.toCanvas();
       this.offerArt.set(key, c);
     }

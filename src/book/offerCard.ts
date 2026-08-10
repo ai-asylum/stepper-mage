@@ -23,7 +23,7 @@
  * So `actionPage` is called directly, at the book's own 128×168, and the layout gives
  * it as much of the screen as there is.
  */
-import { Pix, Ramp, rgba } from '../art/pixel';
+import { Pix, Ramp, rgba, type Col } from '../art/pixel';
 import { drawCentered } from '../art/bitfont';
 import { PIX_H, PIX_W, actionPage } from './pageTexture';
 import { GOLD, GOLD_HI, giltify } from './giltify';
@@ -55,7 +55,80 @@ export function pageCard(spell: SpellDef, index: number, golden: boolean): Pix {
  * peer; a different SILHOUETTE — rolled ends top and bottom, a narrower sheet, no
  * squared corners — so the three offers sort by shape before a word is read.
  */
-export function scrollCard(colour: number, glyph: string, label: string, golden = false): Pix {
+/**
+ * The SIGIL a scroll carries, drawn rather than typed.
+ *
+ * These were bitfont characters — `~` for a reroll, `*` for stars — set in a disc,
+ * and at this size a tilde is a dash and an asterisk is a smudge. A glyph borrowed
+ * from a text face is not an icon; it is a letter standing in for one, and the
+ * player reads it as noise.
+ *
+ * Drawn at the sigil's own scale in the page's ink, so they sit in the same hand as
+ * everything else on the card.
+ */
+function scrollSigil(p: Pix, kind: string, cx: number, cy: number, ink: Col, hi: Col): void {
+  switch (kind) {
+    case 'reroll': {
+      // A ring with a bite out of it and an arrowhead on the open end: the shape of
+      // turning something over, which is exactly what the charge does.
+      p.ellipseFrame(cx, cy, 11, 11, ink);
+      p.ellipseFrame(cx, cy, 10, 10, ink);
+      // erase the bite, top-right
+      for (let a = -0.5; a < 0.9; a += 0.03) {
+        for (let r = 8; r <= 13; r++) {
+          p.set(Math.round(cx + Math.cos(a) * r), Math.round(cy - Math.sin(a) * r), 0);
+        }
+      }
+      // arrowhead at the open end
+      p.poly([[cx + 6, cy - 12], [cx + 14, cy - 9], [cx + 6, cy - 5]], ink);
+      break;
+    }
+    case 'stars':
+    case 'star': {
+      // A four-point star with a long vertical, the same mark the HUD uses for the
+      // star total — so the card and the counter name the same currency.
+      p.taper(cx, cy - 14, cx, cy + 14, 1, 4, ink);
+      p.taper(cx - 11, cy, cx + 11, cy, 1, 4, ink);
+      p.ellipse(cx, cy, 3, 3, ink);
+      p.ellipse(cx - 1, cy - 1, 1, 1, hi);
+      break;
+    }
+    case 'heal': {
+      // A cross of even arms — a dose, not a religious mark.
+      p.rect(cx - 3, cy - 11, 7, 23, ink);
+      p.rect(cx - 11, cy - 3, 23, 7, ink);
+      p.rect(cx - 1, cy - 9, 2, 6, hi);
+      break;
+    }
+    case 'rank':
+    case 'upgrade': {
+      // Two chevrons pointing up: a step, and there is always another one.
+      for (const dy of [4, -6]) {
+        p.taper(cx - 10, cy + dy + 5, cx, cy + dy - 4, 3, 3, ink);
+        p.taper(cx + 10, cy + dy + 5, cx, cy + dy - 4, 3, 3, ink);
+      }
+      break;
+    }
+    case 'sacrifice': {
+      // A page with a tear through it. The offer destroys one, and the icon says so
+      // before the price line does.
+      p.rect(cx - 9, cy - 12, 18, 24, ink);
+      p.rect(cx - 7, cy - 10, 14, 20, hi);
+      for (let y = -12; y <= 12; y++) {
+        const j = Math.round(Math.sin(y * 0.8) * 2);
+        p.set(cx + j, cy + y, ink);
+        p.set(cx + j + 1, cy + y, ink);
+      }
+      break;
+    }
+    default: {
+      p.ellipseFrame(cx, cy, 10, 10, ink);
+      p.ellipse(cx, cy, 4, 4, ink);
+    }
+  }
+}
+
+export function scrollCard(colour: number, kind: string, label: string, golden = false): Pix {
   const p = new Pix(PIX_W, PIX_H);
 
   const PARCH = new Ramp([0xb08f5e, 0xc9a878, 0xdcc296, 0xe8d3ab, 0xf3e5c6]);
@@ -87,7 +160,7 @@ export function scrollCard(colour: number, glyph: string, label: string, golden 
   p.ellipseFrame(cx, cy, 26, 26, inkMid);
   p.ellipseFrame(cx, cy, 22, 22, ink);
   p.ellipse(cx, cy, 18, 18, tint);
-  drawCentered(p, glyph, cx, cy - 8, ink, { scale: 2, bold: true });
+  scrollSigil(p, kind, cx, cy, ink, PARCH.step(0.95));
 
   drawCentered(p, label.toUpperCase(), cx, 118, ink);
   for (let x = inset + 14; x < PIX_W - inset - 14; x++) p.set(x, 132, inkMid);
