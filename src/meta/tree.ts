@@ -122,9 +122,18 @@ export const TREE: readonly TreeNode[] = [
     effect: 'Three loops on the strap. Ingredients can be picked up and kept.',
   },
   {
+    /**
+     * FIVE loops, not six. There are exactly five ingredients in the game, so the
+     * sixth loop was capacity nothing could ever fill — and the node's own promise,
+     * "carry every shape at once instead of choosing at the drop", is delivered in
+     * full by five. It was selling one empty pouch on top of a true claim.
+     *
+     * Sized off the roster rather than off a round number, so a sixth ingredient
+     * would move this deliberately instead of quietly making the node correct.
+     */
     id: 'belt6', name: 'Deep Belt', price: PRICES.belt6, requires: ['belt3'],
-    live: true, beltSlots: 6,
-    effect: 'Six loops. Carry every shape at once instead of choosing at the drop.',
+    live: true, beltSlots: 5,
+    effect: 'A loop for every shape. Carry them all instead of choosing at the drop.',
   },
   {
     // Corpse raising is a CAPABILITY and Coffin Moss is its per-use limiter

@@ -227,10 +227,21 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Fix golems stalling instead of following.
 - [ ] Break the monochrome orange cast; make each floor read as its own palette.
 - [ ] Add a chest golem sprite and let Animate target chests.
+      BLOCKED on the sprite — `tools/genart.py` needs the Scenario CLI. The TARGETING
+      half is already done: `isCastableObject` accepts a spent chest (phase 10).
 - [ ] Untangle the HUD text layer: log lines, captions, name plates and cards overdraw each other.
-- [ ] Re-check free-turn attrition; the turn rule change may already have dissolved it.
-- [ ] Stop the resting reticle preferring furniture over the creature in the room.
-- [ ] Give the sixth belt loop and the fourth loadout slot something to hold, or remove them.
+- [x] Re-check free-turn attrition; the turn rule change may already have dissolved it.
+      DISSOLVED, as the doc predicted. `enemyRound` is reached only from a cast or a
+      step; taking and returning components never touches it, so there is no loop to
+      farm. Closed by Casting_And_Movement without anyone editing this.
+- [x] Stop the resting reticle preferring furniture over the creature in the room.
+      Already closed. Auto-select is narrowed to a hostile that is ALERTED and
+      DIRECTLY AHEAD, so it cannot land on a bookshelf at any distance.
+- [x] Give the sixth belt loop and the fourth loadout slot something to hold, or remove them.
+      The belt's sixth loop is removed — five ingredients exist, so it sold an empty
+      pouch on top of a true claim. The fourth loadout slot is FINE and was a false
+      entry: five page elements exist, so four is fillable. The second real offender
+      is `altarPages`, which is already correctly `live: false` behind Deeper_Dungeon.
 - [ ] Step the torch sconce's resolution; it is the last thing in the world drawn at 144.
       `buildSconce` uses absolute 144-space texel offsets, so it needs rewriting per step.
 - [ ] Commit changes.
