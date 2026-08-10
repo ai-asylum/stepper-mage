@@ -1929,6 +1929,20 @@ async function boot(): Promise<void> {
       hud.addLog(ev.text, ev.colour ?? 0xd8c9a0);
     };
 
+    /**
+     * THE FLOOR OPENED. You are on the next one.
+     *
+     * A trapdoor is the one thing in the game that takes a floor off you without the
+     * boss falling, and that is deliberate: `Verticality` refused to let a ledge do
+     * it so that the two reads stay apart — a drop inside a floor is damage you chose
+     * and this is the ground giving way. It costs the rest of the floor: the altar
+     * you had not claimed, the boss you had not killed, and whatever they were worth.
+     */
+    combat.onPitfall = () => {
+      hud.addLog('The floor opens. You go down with it.', 0x9aa3ad);
+      fx.shake = Math.min(1.5, fx.shake + 0.9);
+      void descend();
+    };
     combat.onPlayerHurt = (amount, by) => {
       /**
        * The STRIKE only plays for something you are looking at.
@@ -2093,6 +2107,8 @@ async function boot(): Promise<void> {
       return body ? e : null;
     };
     stepper.swappable = (x, y) => bodyAt(x, y) !== null;
+    // Frost on standing water is a floor you keep going on. See `Stepper.slippery`.
+    stepper.slippery = (x, y) => floor.ground.at(floor.grid.idx(x, y)) === 'ice';
     /**
      * The tile the current step started on, for the arrival to measure the drop
      * against. `onArrive` is only told where you landed, and by then the stepper's
@@ -2159,6 +2175,17 @@ async function boot(): Promise<void> {
        * Nothing here is a special case for the player. `fallDamage` is the same
        * function the shove uses, asked the same question.
        */
+      /**
+       * THE PLATE FIRES ON ARRIVAL AND BEFORE THE ROUND.
+       *
+       * Before, because the gate opening is the consequence of the step the player
+       * just spent, and a countdown that started a round late would be a countdown
+       * that lies by one — which on a five-turn walk is twenty per cent of the
+       * mechanic. The first tick then comes off it in the same round, which is
+       * correct: standing on the plate is itself a turn.
+       */
+      if (floor.grid.surfaceAt(x, y) === Surface.Plate) combat.pressPlate(x, y);
+
       const fell = floor.grid.dropFrom(cameFrom.x, cameFrom.y, x, y);
       if (fell > 0) {
         const dmg = fallDamage(fell);

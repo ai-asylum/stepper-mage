@@ -32,7 +32,7 @@ const FALLOFF = 2;
 const MIN_TURNS = 2;
 
 /** What is lying on a tile. One per tile — see the header. */
-export type Substance = 'fire' | 'oil' | 'water';
+export type Substance = 'fire' | 'oil' | 'water' | 'ice';
 
 /**
  * What happens when a substance arrives on a tile that already holds another.
@@ -57,6 +57,18 @@ function react(had: Substance, got: Substance): { left: Substance | null; full: 
   if (had === 'fire' && got === 'oil') return { left: 'fire', full: true };
   if (had === 'water' && got === 'fire') return { left: null, full: false };
   if (had === 'fire' && got === 'water') return { left: null, full: false };
+  /**
+   * ICE, the fourth row, and the only one that is TRAVERSAL rather than damage.
+   *
+   * Frost onto standing water freezes it, which is the play — a puddle you made or
+   * found becomes a floor you slide across, so a movement option exists without a
+   * movement spell existing. Fire melts it straight back to the water it was, which
+   * keeps the pair reversible and gives fire something to do to a tile besides burn
+   * it. Frost onto bare ground still lays ice; it is just a smaller patch.
+   */
+  if (had === 'water' && got === 'ice') return { left: 'ice', full: true };
+  if (had === 'ice' && got === 'fire') return { left: 'water', full: false };
+  if (had === 'fire' && got === 'ice') return { left: null, full: false };
   return { left: got, full: false };
 }
 
@@ -83,7 +95,10 @@ export type GroundUse = 'grow' | 'consume' | 'clear';
 const FEEDS: Record<Substance, readonly Element[]> = {
   fire: ['fire', 'oil'],
   oil: ['oil'],
-  water: ['water', 'frost'],
+  // Frost no longer feeds water — it FREEZES it, which is a reaction and not a
+  // top-up. Leaving it here would have made the interesting case unreachable.
+  water: ['water'],
+  ice: ['frost', 'water'],
 };
 
 /**

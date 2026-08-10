@@ -304,6 +304,32 @@ Facing matters as much as distance: an altar behind you is not an altar you are 
 The prompt has to describe something the player can see, or it reads as the game
 firing at random.
 
+## The room has a clock, and it counts in turns
+
+Every problem used to be "what do I cast at that", because nothing in a room changed on
+its own. A hazard on a beat adds the other half of the question — **when** — and it
+costs nothing to express, because this game is already a clock: a cast is a turn and a
+step is a turn, and the player counts them whether they mean to or not.
+
+- **Turns, never seconds.** A blade that swings every third turn is readable without a
+  tooltip and plannable without a UI. One tick, one round, one meaning — a hazard on
+  its own timer would drift out of phase the moment anything else took a turn, and it
+  would drift out of phase precisely for a player who had learnt it.
+- **A wind-up before every strike.** The beat before it goes live, a hazard shows the
+  same silhouette at a third of the size. That is what makes it fair rather than
+  random, and it is also what makes BAITING possible: something shoved onto the tile on
+  the wind-up is still there for the swing.
+- **A hazard never asks who stood on it.** It hits creatures exactly as it hits you,
+  which turns the room's furniture into a weapon and gives the player another answer to
+  a monster that is not damage.
+- **A hazard cannot be jammed.** It is a metronome, not a puzzle piece. Something you
+  can switch off needs a verb to switch it off with, and then it stops being terrain
+  you plan around and becomes a chore you complete.
+- **A timed door makes turns the currency, out loud.** Five turns is five actions, and
+  walking spends them at exactly the rate casting does. The countdown is drawn on the
+  gate, because a number the player has to remember is a number they will misremember
+  while being chased.
+
 ## Height is the second spatial question
 
 Everything used to be at one level, so a fight was a plan view and the player had

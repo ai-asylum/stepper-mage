@@ -105,6 +105,8 @@ export class Stepper {
   private holdAt = 1;
   /** Paused at `holdAt`, waiting for `release`. */
   private holding = false;
+  /** Stretches this step's duration. Only a slide sets it — see `startMove`. */
+  private moveScale = 1;
 
   private fromYaw: number;
   private toYaw: number;
@@ -162,6 +164,14 @@ export class Stepper {
    * wall grid still refuses, so this only ever loosens `blocked`, never the map.
    */
   swappable: (x: number, y: number) => boolean = () => false;
+  /**
+   * Is this tile ICE — does landing on it carry you on?
+   *
+   * A hook rather than a grid read, because ice is not part of the floor: it is frost
+   * cast onto standing water, so it lives in `Ground` with everything else a spell
+   * left behind, and the stepper deliberately knows nothing about `Ground`.
+   */
+  slippery: (x: number, y: number) => boolean = () => false;
 
   constructor(private grid: Grid, x: number, y: number, dir: Dir) {
     this.x = x; this.y = y; this.dir = dir;
@@ -293,10 +303,40 @@ export class Stepper {
     }
     this.fromX = this.x; this.fromY = this.y;
     this.x = nx; this.y = ny;
+
+    /**
+     * ICE CARRIES YOU ON, and the whole slide is ONE turn.
+     *
+     * Which is the entire reason frost is traversal rather than decoration: the cast
+     * that laid the ice buys back the turns the walk would have cost, so a spell
+     * becomes a movement option without a movement spell existing. You slide while
+     * the tile under you is ice and stop on the first tile that is not, or against
+     * whatever is in the way — the rule everybody already knows from every other game
+     * with ice in it, which is worth more here than a cleverer one.
+     *
+     * Refused by exactly the things that refuse a step: a wall, a shut gate, a ledge
+     * you cannot climb, a body. A slide is not a licence to pass through anything.
+     */
+    let slid = 0;
+    while (this.slippery(this.x, this.y) && slid < 8) {
+      const sx = this.x + dx, sy = this.y + dy;
+      if (!this.grid.walkable(sx, sy) || !this.grid.canClimb(this.x, this.y, sx, sy)) break;
+      if (this.blocked(sx, sy)) break;
+      this.x = sx; this.y = sy;
+      slid++;
+    }
+
     this.moveT = 0;
     this.moveKind = m;
+    /**
+     * A longer slide takes longer, but sub-linearly — the glide has to read as one
+     * motion rather than as four steps played fast, and a slide that took four times
+     * as long as a step would hand the room four turns' worth of waiting for one.
+     */
+    this.moveScale = slid ? 1 + slid * 0.35 : 1;
     // A tile of rubble is crossed in two halves, with a round of the room in between.
-    this.holdAt = this.onHalfway && this.grid.surfaceAt(nx, ny) === Surface.Rubble ? 0.5 : 1;
+    this.holdAt = this.onHalfway && !slid && this.grid.surfaceAt(nx, ny) === Surface.Rubble
+      ? 0.5 : 1;
     this.holding = false;
     this.onDepart?.(this.fromX, this.fromY, nx, ny);
     // The turn rides along with the step — one action, one round. See `MoveInput`.
@@ -305,7 +345,7 @@ export class Stepper {
 
   update(dt: number): void {
     if (this.moveT < 1 && !this.holding) {
-      this.moveT = Math.min(this.holdAt, this.moveT + dt / STEP_TIME);
+      this.moveT = Math.min(this.holdAt, this.moveT + dt / (STEP_TIME * this.moveScale));
       // one full bob cycle per step, so footfalls land on arrival
       this.bobPhase += dt / STEP_TIME;
       if (this.holdAt < 1 && this.moveT >= this.holdAt) {

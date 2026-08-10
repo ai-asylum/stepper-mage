@@ -17,6 +17,7 @@ import { themeForDepth, type Theme } from '../art/theme';
 import { bossHp, enemyHp } from './tuning';
 import { Ground } from './ground';
 import { FireView } from '../dungeon/fireView';
+import { ClockView } from '../dungeon/clockView';
 
 export interface Entity {
   sprite: Sprite;
@@ -160,6 +161,8 @@ export class Floor {
    */
   readonly ground = new Ground();
   readonly fireView = new FireView();
+  /** Blades, spikes, trapdoors and the countdown on a gate. */
+  readonly clockView = new ClockView();
 
   private constructor(readonly depth: number, readonly seed: string) {
     this.theme = themeForDepth(depth);
@@ -171,6 +174,8 @@ export class Floor {
     this.view = new DungeonView(this.grid, this.theme, seed);
     this.group.add(this.view.group);
     this.group.add(this.fireView.group);
+    this.group.add(this.clockView.group);
+    this.clockView.sync(this.grid);
   }
 
   /** Build a floor, preloading every sprite it needs before returning. */
@@ -280,6 +285,16 @@ export class Floor {
   }
 
   /**
+   * Redraw the clock: every hazard's state and every gate's countdown.
+   *
+   * Called when the beat advances and when a plate is pressed, and from nowhere else.
+   * The clock does not animate between turns on purpose — see `ClockView.sync`.
+   */
+  syncClock(): void {
+    this.clockView.sync(this.grid);
+  }
+
+  /**
    * Rebuild everything that was built at a texel density, keeping the floor.
    *
    * The pixel step's one write path into a live run. It is NOT `Floor.create` again:
@@ -292,6 +307,8 @@ export class Floor {
   async restep(): Promise<void> {
     this.view.restep();
     this.fireView.restep();
+    this.clockView.restep();
+    this.clockView.sync(this.grid);
     // Fetch the whole roster at the new step before touching a single sprite, so
     // the floor changes density all at once instead of creature by creature as
     // each PNG lands. `Sprite.id` is authoritative here rather than `spriteId` —
@@ -448,6 +465,7 @@ export class Floor {
     this.entities.length = 0;
     this.view.dispose();
     this.fireView.dispose();
+    this.clockView.dispose();
     this.group.clear();
   }
 }

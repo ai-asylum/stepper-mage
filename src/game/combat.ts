@@ -25,7 +25,9 @@
  * it bounds an algorithm rather than a fight.)
  */
 import { Rng } from '../core/rng';
-import { DIR_VEC, FOG_SIGHT, Surface, conducts, type Grid } from '../dungeon/grid';
+import {
+  DIR_VEC, FOG_SIGHT, Surface, conducts, hazardState, type Grid, type Hazard,
+} from '../dungeon/grid';
 import { faceToward, type Entity, type Floor } from './floor';
 import { groundUse, type GroundUse, type Substance } from './ground';
 import { affinityMult, affinityOf, type Affinities } from './affinity';
@@ -279,6 +281,15 @@ export class Combat {
    */
   onReactionFx: (fx: ReactionFx) => void = () => {};
   onPlayerHurt: (amount: number, by: Entity | null) => void = () => {};
+  /**
+   * The floor opened and the player went through it.
+   *
+   * A callback rather than a descent taken from in here, because descending owns a
+   * whole sequence — the heal, the catch-up, the next floor's art — and `Combat` has
+   * no business knowing any of it. This says what happened; `main` decides what that
+   * means.
+   */
+  onPitfall: () => void = () => {};
   /**
    * What the player has learned this run, by sprite id.
    *
@@ -731,7 +742,8 @@ export class Combat {
       } else if (leaves === 'fire') {
         this.floor.ground.ignite(filled);
       } else {
-        this.floor.ground.spill(filled, leaves as 'oil' | 'water');
+        // Frost is the one element whose name is not its substance: it leaves ICE.
+        this.floor.ground.spill(filled, leaves === 'frost' ? 'ice' : leaves as 'oil' | 'water');
       }
       this.syncGround();
     }
@@ -1347,6 +1359,7 @@ export class Combat {
 
     this.tickStatuses();
     this.tickGround();
+    this.tickClock();
     /**
      * Re-cull, because bodies MOVED.
      *
@@ -1560,6 +1573,110 @@ export class Combat {
   /** Push the ground layer at the thing that draws it. One truth, one direction. */
   private syncGround(): void {
     this.floor.fireView.sync(this.floor.ground.patches(), this.floor.grid.w);
+  }
+
+  /**
+   * ONE BEAT OF THE FLOOR'S OWN CLOCK: every hazard advances, every door counts down.
+   *
+   * Here, beside the statuses and the ground, because that is the only way a beat can
+   * mean one thing. A hazard on its own timer would drift out of phase with the round
+   * the moment anything else took a turn, and "the blade swings every third turn"
+   * would stop being true in exactly the situations the player was relying on it —
+   * which is worse than having no hazards, because they would have LEARNED it first.
+   *
+   * Advance, THEN resolve. A hazard that struck on the beat it advanced into would
+   * give the player no turn between the wind-up they can see and the blow they take,
+   * and the wind-up is the whole reason this is fair rather than random.
+   */
+  private tickClock(): void {
+    const g = this.floor.grid;
+
+    for (const h of g.hazards) {
+      h.beat = (h.beat + 1) % h.period;
+      if (hazardState(h) !== 'live') continue;
+      this.hazardBites(h);
+    }
+
+    for (const d of g.doors) {
+      if (d.turns <= 0) continue;
+      d.turns--;
+      if (d.turns > 0) continue;
+      /**
+       * SHUTTING ON SOMETHING is not allowed to trap it inside the geometry. The
+       * portcullis simply stays up while a body is under it, which reads as the door
+       * being blocked and costs the player a turn of the countdown they were
+       * spending — a better answer than either crushing the thing or clipping it.
+       */
+      if (this.floor.entityAt(d.i % g.w, (d.i / g.w) | 0)
+        || (this.playerTile.x + this.playerTile.y * g.w) === d.i) {
+        d.turns = 1;
+        continue;
+      }
+      g.doorOpen[d.i] = 0;
+      this.onEvent({ kind: 'status', text: 'THE GATE FALLS.', colour: 0x9aa3ad });
+    }
+    this.floor.syncClock();
+  }
+
+  /** Everything standing on a live hazard takes it — bodies and the player alike. */
+  private hazardBites(h: Hazard): void {
+    const g = this.floor.grid;
+    const victim = this.floor.entityAt(h.x, h.y);
+
+    /**
+     * A TRAPDOOR DOES NOT DAMAGE, IT REMOVES. Whatever is standing on it when it
+     * opens is on the floor below — which for a creature is the same as gone, and
+     * for the player is the descent taken the hard way. `Verticality` deliberately
+     * refused to let a ledge do this so that the two reads stay separate: a drop
+     * inside a floor is damage you chose, and this is the floor opening under you.
+     */
+    if (h.kind === 'trapdoor') {
+      if (victim && victim.alive && victim.kind !== 'stairs') {
+        this.onEvent({ kind: 'status', text: 'GONE.', colour: 0x9aa3ad, at: { x: h.x, y: h.y } });
+        this.kill(victim);
+      }
+      if (this.playerTile.x === h.x && this.playerTile.y === h.y) this.onPitfall();
+      return;
+    }
+
+    if (victim && victim.alive && victim.kind !== 'stairs') {
+      this.onEvent({
+        kind: 'status',
+        text: h.kind === 'blade' ? 'THE BLADE!' : 'SPIKES!',
+        colour: 0xd8dbe0,
+        at: { x: h.x, y: h.y },
+      });
+      this.damage(victim, h.damage, 0xd8dbe0);
+    }
+    if (this.playerTile.x === h.x && this.playerTile.y === h.y) {
+      this.state.hp -= h.damage;
+      this.onPlayerHurt(h.damage, null);
+      this.onEvent({
+        kind: 'hit',
+        text: h.kind === 'blade' ? `The blade opens you for ${h.damage}.`
+          : `The spikes come up for ${h.damage}.`,
+        colour: 0xd8dbe0,
+      });
+    }
+    void g;
+  }
+
+  /** Stepping onto a plate opens its gate. Called from the step, not from the clock. */
+  pressPlate(x: number, y: number): boolean {
+    const g = this.floor.grid;
+    const i = g.idx(x, y);
+    let any = false;
+    for (const d of g.doors) {
+      if (d.plate !== i) continue;
+      d.turns = d.span;
+      g.doorOpen[d.i] = 1;
+      any = true;
+    }
+    if (any) {
+      this.onEvent({ kind: 'status', text: 'THE GATE GRINDS UP.', colour: 0xffc23e });
+      this.floor.syncClock();
+    }
+    return any;
   }
 
   private tickStatuses(): void {

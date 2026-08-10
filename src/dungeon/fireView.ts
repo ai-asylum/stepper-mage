@@ -27,7 +27,7 @@ import { Pix, rgba } from '../art/pixel';
 import { ppu } from '../art/steps';
 import type { Substance } from '../game/ground';
 
-const SUBSTANCES: readonly Substance[] = ['fire', 'oil', 'water'];
+const SUBSTANCES: readonly Substance[] = ['fire', 'oil', 'water', 'ice'];
 
 const FRAMES = 4;
 
@@ -69,6 +69,9 @@ const PALETTE = {
   // oil looks like.
   oil: { core: rgba(122, 106, 62), mid: rgba(52, 42, 26), crust: rgba(24, 18, 12) },
   water: { core: rgba(150, 214, 240), mid: rgba(58, 122, 168), crust: rgba(28, 62, 96) },
+  // Ice reads by being PALER and harder-edged than the water it froze from — the
+  // player has to be able to tell at a glance which puddle will carry them.
+  ice: { core: rgba(236, 250, 255), mid: rgba(168, 214, 232), crust: rgba(96, 146, 176) },
 } as const;
 
 function emberTile(n: number, frame: number, what: Substance): Pix {

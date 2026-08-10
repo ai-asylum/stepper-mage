@@ -319,13 +319,15 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 25 — Timing_And_Hazards
 
-- [ ] Tick hazards inside `enemyRound`, so nothing drifts out of phase.
-- [ ] Blades, floor spikes and wall spikes on a countable beat.
-- [ ] Make hazards hit creatures, and make baiting one possible.
-- [ ] Timed doors, with the countdown drawn on the door.
-- [ ] Ice as traversal: frost on the ground carries you further per step.
-- [ ] Traps, including a fall to the floor below.
-- [ ] Commit changes.
+- [x] Tick hazards inside `enemyRound`, so nothing drifts out of phase. `Combat.tickClock`.
+- [x] Blades, floor spikes and wall spikes on a countable beat.
+      Blade, spikes and trapdoor. Wall spikes were cut: the same silhouette as floor
+      spikes from a camera that never looks up, so it would be a second name for one thing.
+- [x] Make hazards hit creatures, and make baiting one possible. One function, never asks who.
+- [x] Timed doors, with the countdown drawn on the door. Pips, not a number — see the phase doc.
+- [x] Ice as traversal: frost on the ground carries you further per step. The slide is one turn.
+- [x] Traps, including a fall to the floor below. The trapdoor: a hazard whose live beat is a hole.
+- [x] Commit changes.
 
 ## Phase 26 — Locks_And_Levers
 

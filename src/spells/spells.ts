@@ -69,7 +69,7 @@ export const VOLUME_ELEMENTS: ReadonlySet<Element> = new Set<Element>(['fire', '
  * holds one substance, so a cast has to leave one thing, and this list is where that
  * is decided rather than in whichever `if` happened to be written first.
  */
-export const GROUND_ELEMENTS: readonly Element[] = ['fire', 'gust', 'oil', 'water'];
+export const GROUND_ELEMENTS: readonly Element[] = ['fire', 'gust', 'oil', 'water', 'frost'];
 
 /** Does this cast fill space, rather than reach a distance? */
 export function isVolume(elements: readonly Element[]): boolean {

@@ -36,6 +36,15 @@ export const enum Tile {
    * floor tile several levels down, not a second tile kind — see `height`.
    */
   Gap = 3,
+  /**
+   * A portcullis. Shut it stops you; open it does not; either way you see through it.
+   *
+   * A `Tile` and not a `Surface` because it changes WALKABILITY, which is the one
+   * thing a surface never does — and see-through on purpose, so the room beyond and
+   * the countdown on the bars are both readable from the wrong side of it. A door you
+   * cannot see past is a wall with a story.
+   */
+  Door = 4,
 }
 
 /**
@@ -74,10 +83,78 @@ export const enum Surface {
    * back up before you commit to going down.
    */
   Ladder = 6,
+  /**
+   * A pressure plate. Stand on it and its door opens for a few turns.
+   *
+   * THE LEVER IS A TILE, and that is the decision worth writing down: a lever on a
+   * wall would need a verb, a prompt, a reach test and a tap target, and every one of
+   * those is a thing to teach. A plate needs none — this is a stepper, so "put your
+   * weight on that" is the one instruction the player already has. It also puts the
+   * cost exactly where the phase wants it, because a plate is somewhere ELSE, and
+   * getting from it to the door is the arithmetic.
+   */
+  Plate = 7,
 }
 
 /** How many fogged tiles a line of sight survives. Two, and the second is the last. */
 export const FOG_SIGHT = 2;
+
+/**
+ * A hazard on a beat, anchored to a tile.
+ *
+ * Turns and not seconds, because this game is already a clock: a cast is a turn and a
+ * step is a turn, and the player counts them whether they mean to or not. So a blade
+ * on a three-beat cycle needs no tooltip, no timer bar and no tutorial — you watch it
+ * once and you know it forever.
+ */
+export type HazardKind = 'blade' | 'spikes' | 'trapdoor';
+
+export interface Hazard {
+  x: number; y: number;
+  kind: HazardKind;
+  /** Turns in one full cycle. */
+  period: number;
+  /** How many beats at the START of the cycle it is dangerous. */
+  live: number;
+  /** Where in the cycle it is now, 0..period-1. Advanced once per round. */
+  beat: number;
+  damage: number;
+}
+
+/** What a hazard is doing this beat. The three states the art has to tell apart. */
+export type HazardState = 'live' | 'winding' | 'idle';
+
+/**
+ * Live, about to be live, or resting.
+ *
+ * The WINDING beat is the whole reason a hazard is fair. It is always the last beat of
+ * the cycle, so the tell and the strike are adjacent and the player learns the pair as
+ * one event — and it means a hazard can be baited: you can put something on the tile
+ * on the wind-up and it is still there for the swing.
+ */
+export function hazardState(h: Hazard): HazardState {
+  if (h.beat < h.live) return 'live';
+  if (h.beat === h.period - 1) return 'winding';
+  return 'idle';
+}
+
+/**
+ * A portcullis and the plate that opens it.
+ *
+ * `turns` is the countdown and it is the whole mechanic: five turns is five ACTIONS,
+ * and walking spends them at the same rate as casting does. The player who plans gets
+ * through and the player who wanders does not.
+ */
+export interface Door {
+  /** Tile index of the portcullis. */
+  i: number;
+  /** Tile index of the plate that opens it. */
+  plate: number;
+  /** Turns left before it shuts. 0 when shut. */
+  turns: number;
+  /** How long a press buys. */
+  span: number;
+}
 
 /** Do spark and shock run along this surface? */
 export function conducts(s: Surface): boolean {
@@ -161,6 +238,14 @@ export class Grid {
   readonly height: Int8Array;
   /** What each tile DOES — see `Surface`. A second byte beside `variant`. */
   readonly surface: Uint8Array;
+  /**
+   * 1 where a `Tile.Door` is currently open.
+   *
+   * A parallel array rather than a lookup in `doors`, because `walkable` is the
+   * hottest question in the codebase — every flood, every fill, every step of every
+   * body's pathing — and it must not become a linear scan over a list.
+   */
+  readonly doorOpen: Uint8Array;
 
   rooms: Room[] = [];
   lights: LightSource[] = [];
@@ -172,6 +257,10 @@ export class Grid {
    * byte — which can only say "portal", not "which one".
    */
   portals: { a: number; b: number }[] = [];
+  /** Everything on a beat. Ticked by the enemy round and nowhere else. */
+  hazards: Hazard[] = [];
+  /** Portcullises and their plates. */
+  doors: Door[] = [];
 
   constructor(w: number, h: number) {
     this.w = w; this.h = h;
@@ -183,6 +272,7 @@ export class Grid {
     this.visited = new Uint8Array(w * h);
     this.height = new Int8Array(w * h);
     this.surface = new Uint8Array(w * h);
+    this.doorOpen = new Uint8Array(w * h);
   }
 
   idx(x: number, y: number): number { return y * this.w + x; }
@@ -206,7 +296,11 @@ export class Grid {
    */
   walkable(x: number, y: number): boolean {
     const t = this.at(x, y);
-    return t !== Tile.Wall && t !== Tile.Gap;
+    if (t === Tile.Wall || t === Tile.Gap) return false;
+    // A shut portcullis is as solid as the wall it hangs in — to the flood, to the
+    // volume, to every body's pathing and to the player's feet, all from this line.
+    if (t === Tile.Door) return this.doorOpen[this.idx(x, y)] === 1;
+    return true;
   }
 
   /**

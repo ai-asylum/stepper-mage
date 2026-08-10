@@ -14,7 +14,7 @@
 import { Rng } from '../core/rng';
 import {
   Grid, Tile, Surface, DIR_VEC, bakeLight,
-  type Room, type Dir, type LightSource,
+  type Room, type Dir, type LightSource, type HazardKind,
 } from './grid';
 import { WALL_H } from '../art/tiles';
 import { LAYOUTS, layoutFor, recentre, type LayoutId } from './layouts';
@@ -61,6 +61,7 @@ export function generate(opts: GenOpts): Grid {
 
   dress(g, rng, opts.depth);
   raise(g, rng, opts.depth);
+  wind(g, rng, opts.depth);
   placeLights(g, rng);
   bakeLight(g);
   return g;
@@ -608,6 +609,178 @@ function raise(g: Grid, rng: Rng, depth: number): void {
       break;
     }
   }
+}
+
+/**
+ * Wind the floor's clock: hazards on a beat, and one gate with a plate to open it.
+ *
+ * Last of the four dressing passes, so it can see the elevation and the surfaces and
+ * refuse to sit on top of either. Introduced a kind at a time for the reason every
+ * other vocabulary in this game is: a beat you have to learn is only learnable if it
+ * is the only new thing in the room.
+ *
+ * Floors 1-2 have no clock at all. A blade arrives on 3, spikes on 5, the gate on 6,
+ * and the trapdoor last on 8 — it is the only one that can take a floor off you, and
+ * it should arrive to a player who already trusts that a wind-up means something.
+ */
+function wind(g: Grid, rng: Rng, depth: number): void {
+  if (depth < 3) return;
+
+  const sacred = new Set<number>([g.idx(g.start.x, g.start.y)]);
+  if (g.stairs) sacred.add(g.idx(g.stairs.x, g.stairs.y));
+  for (const r of g.rooms) sacred.add(g.idx(r.cx, r.cy));
+
+  const free = (i: number): boolean => {
+    const x = i % g.w, y = (i / g.w) | 0;
+    return g.walkable(x, y) && !sacred.has(i) && g.surface[i] === Surface.Plain
+      && g.at(x, y) !== Tile.Door && !g.hazards.some((h) => g.idx(h.x, h.y) === i);
+  };
+
+  /**
+   * Hazards want NARROW tiles — a doorway, a corridor, the one way round a pillar.
+   * A blade in the middle of a room is a tile you walk round without noticing, and
+   * the whole point is that it should make you count. Where a floor has no narrow
+   * tiles the open ones will do, but they are the second choice.
+   */
+  const narrow: number[] = [];
+  const wide: number[] = [];
+  for (let y = 1; y < g.h - 1; y++) {
+    for (let x = 1; x < g.w - 1; x++) {
+      const i = g.idx(x, y);
+      if (!free(i)) continue;
+      let open = 0;
+      for (const [dx, dy] of DIR_VEC) if (g.walkable(x + dx, y + dy)) open++;
+      (open <= 2 ? narrow : wide).push(i);
+    }
+  }
+
+  const kinds: HazardKind[] = ['blade'];
+  if (depth >= 5) kinds.push('spikes');
+  if (depth >= 8) kinds.push('trapdoor');
+
+  const spots = rng.shuffle([...(narrow.length >= 4 ? narrow : [...narrow, ...wide])]);
+  const want = Math.min(spots.length, 2 + Math.floor(depth / 3));
+  for (let n = 0; n < want; n++) {
+    const i = spots[n];
+    const x = i % g.w, y = (i / g.w) | 0;
+    // Two tiles apart at least, or a pair of blades reads as one long hazard and the
+    // player cannot tell which beat belongs to which.
+    if (g.hazards.some((h) => Math.abs(h.x - x) + Math.abs(h.y - y) < 3)) continue;
+    const kind = rng.pick(kinds);
+    /**
+     * PERIOD 3 OR 4, LIVE FOR ONE. Long enough to walk through on the idle beat,
+     * short enough that waiting for it is a real cost, and never live for two in a
+     * row — a hazard you cannot cross at all is a wall that took a turn to explain.
+     */
+    const period = rng.int(3, 4);
+    g.hazards.push({
+      x, y, kind, period, live: 1,
+      beat: rng.int(0, period - 1),
+      damage: kind === 'trapdoor' ? 0 : 5 + depth,
+    });
+  }
+
+  if (depth >= 6) placeGate(g, rng);
+}
+
+/**
+ * One portcullis and the plate that lifts it.
+ *
+ * The gate goes on a corridor tile and the plate goes in a different room, so getting
+ * from one to the other is the arithmetic the phase is about. Two things have to be
+ * true and both are checked rather than reasoned about, because a gate is the one
+ * piece of furniture in this game that can make a floor unfinishable:
+ *
+ *  - WITH IT SHUT, the plate is still reachable. Otherwise the player arrives at a
+ *    locked gate holding the only key on the far side of it.
+ *  - WITH IT OPEN, everything is reachable. Otherwise the gate is not a gate, it is
+ *    a wall somebody left a switch next to.
+ */
+function placeGate(g: Grid, rng: Rng): boolean {
+  const sacred = new Set<number>([g.idx(g.start.x, g.start.y)]);
+  if (g.stairs) sacred.add(g.idx(g.stairs.x, g.stairs.y));
+  for (const r of g.rooms) sacred.add(g.idx(r.cx, r.cy));
+
+  const corridors: number[] = [];
+  for (let y = 1; y < g.h - 1; y++) {
+    for (let x = 1; x < g.w - 1; x++) {
+      const i = g.idx(x, y);
+      if (!g.walkable(x, y) || sacred.has(i)) continue;
+      if (g.roomOf[i] !== 255 || g.surface[i] !== Surface.Plain) continue;
+      if (g.hazards.some((h) => g.idx(h.x, h.y) === i)) continue;
+      let open = 0;
+      for (const [dx, dy] of DIR_VEC) if (g.walkable(x + dx, y + dy)) open++;
+      if (open === 2) corridors.push(i);          // a real passage, not a junction
+    }
+  }
+
+  for (const i of rng.shuffle(corridors).slice(0, 12)) {
+    const x = i % g.w, y = (i / g.w) | 0;
+    const wasTile = g.tiles[i];
+    g.tiles[i] = Tile.Door;
+    g.doorOpen[i] = 0;
+
+    // Reachable with the gate SHUT — this is the set the plate has to be inside.
+    const shut = reachable(g);
+    g.doorOpen[i] = 1;
+    const open = reachable(g);
+    g.doorOpen[i] = 0;
+
+    // It has to gate something: a door that changes nothing is scenery with a timer.
+    let gated = 0;
+    for (let j = 0; j < open.length; j++) if (open[j] && !shut[j]) gated++;
+    if (gated < 6) { g.tiles[i] = wasTile; continue; }
+
+    const plates: number[] = [];
+    for (let j = 0; j < shut.length; j++) {
+      if (!shut[j] || sacred.has(j) || g.surface[j] !== Surface.Plain) continue;
+      if (g.roomOf[j] === 255) continue;                  // a plate belongs in a room
+      if (g.hazards.some((h) => g.idx(h.x, h.y) === j)) continue;
+      const px = j % g.w, py = (j / g.w) | 0;
+      const d = Math.abs(px - x) + Math.abs(py - y);
+      // Far enough that the walk costs turns, near enough that it is walkable in the
+      // span the gate stays up for.
+      if (d >= 4 && d <= 9) plates.push(j);
+    }
+    if (!plates.length) { g.tiles[i] = wasTile; continue; }
+
+    const plate = rng.pick(plates);
+    g.surface[plate] = Surface.Plate;
+    const px = plate % g.w, py = (plate / g.w) | 0;
+    /**
+     * The span is the walk plus a couple of turns of slack, so the gate is
+     * REACHABLE BY A PLAYER WHO PLANS and not by one who wanders. Measured against
+     * the actual path with the gate open, not against the map distance — the whole
+     * point is that the arithmetic is honest.
+     */
+    const dist = g.flood(px, py, g.w * g.h);
+    const steps = dist[i];
+    g.doors.push({ i, plate, turns: 0, span: Math.max(4, Math.min(8, (steps < 0 ? 6 : steps) + 2)) });
+    return true;
+  }
+  return false;
+}
+
+/** Which walkable tiles the start can reach right now, doors as they currently stand. */
+function reachable(g: Grid): Uint8Array {
+  const seen = new Uint8Array(g.w * g.h);
+  const start = g.idx(g.start.x, g.start.y);
+  if (!g.walkable(g.start.x, g.start.y)) return seen;
+  const q = [start];
+  seen[start] = 1;
+  for (let qi = 0; qi < q.length; qi++) {
+    const i = q[qi];
+    const x = i % g.w, y = (i / g.w) | 0;
+    for (const [dx, dy] of DIR_VEC) {
+      const nx = x + dx, ny = y + dy;
+      if (!g.walkable(nx, ny) || !g.canClimb(x, y, nx, ny)) continue;
+      const ni = g.idx(nx, ny);
+      if (seen[ni]) continue;
+      seen[ni] = 1;
+      q.push(ni);
+    }
+  }
+  return seen;
 }
 
 /**
