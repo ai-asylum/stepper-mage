@@ -1,19 +1,23 @@
 /**
- * The dungeon grid and its generator.
+ * The dungeon grid: what a floor IS, and every question the game asks one.
  *
- * A floor is rooms joined by corridors on a small integer grid. The player
- * occupies one tile and faces one of four directions — this is a stepper, so
- * every position in the game is an integer and every turn is 90 degrees. That
- * constraint is what makes spell targeting legible on a phone: at any moment
- * there is a small, countable set of things in front of you.
+ * A floor is open space on a small integer grid. The player occupies one tile and
+ * faces one of four directions — this is a stepper, so every position in the game is
+ * an integer and every turn is 90 degrees. That constraint is what makes spell
+ * targeting legible on a phone: at any moment there is a small, countable set of
+ * things in front of you.
+ *
+ * WHAT SHAPE that space is is not decided here. Thirteen generators carve it
+ * (`layouts.ts`) and one shared pass turns a carve into a playable floor
+ * (`generate.ts`); this file is only the data and the questions — `walkable`,
+ * `seeThrough`, `flood`, `fill` — and it deliberately does not know which layout it
+ * is holding.
  *
  * Light is BAKED per tile at generation time (`bakeLight`). The player's torch
  * is added per-fragment at render time on top of it, so a room with a lit brazier
  * reads as lit before you walk into it — you can see where you're going, which
  * matters a lot when the alternative is a corridor of identical black squares.
  */
-import { Rng } from '../core/rng';
-import { WALL_H } from '../art/tiles';
 
 export const enum Tile {
   Wall = 0,
@@ -307,175 +311,6 @@ export class Grid {
   }
 }
 
-/** Rectangles overlap test with a 1-tile margin so rooms never share a wall. */
-function overlaps(a: Room, b: Room): boolean {
-  return a.x - 1 < b.x + b.w + 1 && a.x + a.w + 1 > b.x - 1 &&
-         a.y - 1 < b.y + b.h + 1 && a.y + a.h + 1 > b.y - 1;
-}
-
-export interface GenOpts {
-  depth: number;
-  seed: string;
-  /** Grid grows a little with depth so later floors feel bigger. */
-  size?: number;
-}
-
-export function generate(opts: GenOpts): Grid {
-  const rng = new Rng(opts.seed);
-  const size = opts.size ?? Math.min(34, 22 + opts.depth * 2);
-  const g = new Grid(size, size);
-
-  // ---- rooms ------------------------------------------------------------
-  const wanted = 6 + Math.min(4, Math.floor(opts.depth / 1.5));
-  const rooms: Room[] = [];
-  let guard = 0;
-  while (rooms.length < wanted && guard++ < 700) {
-    // The boss room wants to be big; normal rooms vary so combat spaces differ.
-    const big = rooms.length === 1;
-    const w = big ? rng.int(7, 9) : rng.int(4, 7);
-    const h = big ? rng.int(7, 9) : rng.int(4, 7);
-    const x = rng.int(1, g.w - w - 2);
-    const y = rng.int(1, g.h - h - 2);
-    const cand: Room = {
-      x, y, w, h, kind: 'normal', tiles: [], cx: x + (w >> 1), cy: y + (h >> 1),
-      seen: false, cleared: false, id: rooms.length,
-    };
-    if (rooms.some((r) => overlaps(cand, r))) continue;
-    rooms.push(cand);
-  }
-  if (rooms.length < 3) return generate({ ...opts, seed: opts.seed + 'r' });
-  g.rooms = rooms;
-
-  // carve
-  for (const r of rooms) {
-    for (let y = r.y; y < r.y + r.h; y++) {
-      for (let x = r.x; x < r.x + r.w; x++) {
-        g.tiles[g.idx(x, y)] = Tile.Floor;
-        g.roomOf[g.idx(x, y)] = r.id;
-        r.tiles.push([x, y]);
-      }
-    }
-  }
-
-  // ---- corridors --------------------------------------------------------
-  // Connect each room to the previous one (guarantees a spanning path), then add
-  // a couple of extra links so the floor has loops rather than being a pure tree
-  // — loops matter because retreating is a real tactic once enemies chase.
-  const carveCorridor = (ax: number, ay: number, bx: number, by: number) => {
-    let x = ax, y = ay;
-    const horizFirst = rng.chance(0.5);
-    const stepTo = (tx: number, ty: number) => {
-      while (x !== tx) { x += Math.sign(tx - x); if (g.tiles[g.idx(x, y)] === Tile.Wall) g.tiles[g.idx(x, y)] = Tile.Floor; }
-      while (y !== ty) { y += Math.sign(ty - y); if (g.tiles[g.idx(x, y)] === Tile.Wall) g.tiles[g.idx(x, y)] = Tile.Floor; }
-    };
-    if (horizFirst) { stepTo(bx, y); stepTo(bx, by); }
-    else { stepTo(x, by); stepTo(bx, by); }
-  };
-
-  for (let i = 1; i < rooms.length; i++) {
-    carveCorridor(rooms[i - 1].cx, rooms[i - 1].cy, rooms[i].cx, rooms[i].cy);
-  }
-  const extra = 1 + Math.floor(opts.depth / 2);
-  for (let i = 0; i < extra; i++) {
-    const a = rng.pick(rooms), b = rng.pick(rooms);
-    if (a !== b) carveCorridor(a.cx, a.cy, b.cx, b.cy);
-  }
-
-  // ---- room roles -------------------------------------------------------
-  // Entrance is one end of the longest room-to-room span; the boss sits at the
-  // other. Walking the whole floor to reach the boss is the pacing.
-  let bestA = rooms[0], bestB = rooms[1], bestD = -1;
-  for (const a of rooms) {
-    for (const b of rooms) {
-      const d = Math.abs(a.cx - b.cx) + Math.abs(a.cy - b.cy);
-      if (d > bestD) { bestD = d; bestA = a; bestB = b; }
-    }
-  }
-  // the boss gets the bigger of the two ends
-  const bossRoom = bestA.w * bestA.h >= bestB.w * bestB.h ? bestA : bestB;
-  const entrance = bossRoom === bestA ? bestB : bestA;
-  entrance.kind = 'entrance';
-  bossRoom.kind = 'boss';
-
-  const rest = rooms.filter((r) => r.kind === 'normal');
-  if (rest.length) {
-    // The altar goes in the room FURTHEST from the boss that isn't the entrance,
-    // so picking up your new spell is a detour you choose, not a gimme on the way.
-    let altar = rest[0], far = -1;
-    for (const r of rest) {
-      const d = Math.abs(r.cx - bossRoom.cx) + Math.abs(r.cy - bossRoom.cy);
-      if (d > far) { far = d; altar = r; }
-    }
-    altar.kind = 'altar';
-    const others = rest.filter((r) => r.kind === 'normal');
-    if (others.length) rng.pick(others).kind = 'treasure';
-  }
-
-  g.start = { x: entrance.cx, y: entrance.cy, dir: rng.int(0, 3) as Dir };
-  // stairs are revealed in the boss room once the boss dies
-  g.stairs = { x: bossRoom.cx, y: bossRoom.cy };
-
-  // ---- surface variants -------------------------------------------------
-  for (let y = 0; y < g.h; y++) {
-    for (let x = 0; x < g.w; x++) {
-      g.variant[g.idx(x, y)] = rng.int(0, 255);
-    }
-  }
-
-  placeLights(g, rng, opts.depth);
-  bakeLight(g);
-  return g;
-}
-
-/**
- * Wall sconces in corridors and braziers in rooms. Placement is deliberate:
- * every room gets at least one so it reads on approach, and long corridors get
- * them at intervals so a passage has rhythm instead of being a black tube.
- */
-function placeLights(g: Grid, rng: Rng, depth: number): void {
-  const isCorridor = (x: number, y: number) => g.walkable(x, y) && g.roomOf[g.idx(x, y)] === 255;
-
-  // rooms: 1-3 sconces on the wall, biased to corners
-  for (const r of g.rooms) {
-    const n = r.kind === 'boss' ? 4 : r.kind === 'altar' ? 3 : rng.int(1, 2);
-    const cands: LightSource[] = [];
-    for (const [x, y] of r.tiles) {
-      for (let f = 0; f < 4; f++) {
-        const [dx, dy] = DIR_VEC[f];
-        // A sconce needs a WALL to hang on, not merely something you cannot walk
-        // into: mounted against a gap it is a torch floating over a chasm.
-        if (g.seeThrough(x + dx, y + dy)) continue;
-        cands.push({ x, y, h: WALL_H * 0.49, reach: 4.4, strength: 0.85, face: f });
-      }
-    }
-    rng.shuffle(cands);
-    // spread them out — no two sconces within 3 tiles
-    const taken: LightSource[] = [];
-    for (const c of cands) {
-      if (taken.length >= n) break;
-      if (taken.some((t) => Math.abs(t.x - c.x) + Math.abs(t.y - c.y) < 3)) continue;
-      taken.push(c);
-    }
-    g.lights.push(...taken);
-  }
-
-  // corridors: every ~5 tiles, on whichever side has a wall
-  const period = 5;
-  for (let y = 0; y < g.h; y++) {
-    for (let x = 0; x < g.w; x++) {
-      if (!isCorridor(x, y)) continue;
-      if ((x * 7 + y * 13) % period !== 0) continue;
-      if (!rng.chance(0.55)) continue;
-      for (let f = 0; f < 4; f++) {
-        const [dx, dy] = DIR_VEC[f];
-        if (g.seeThrough(x + dx, y + dy)) continue;
-        g.lights.push({ x, y, h: WALL_H * 0.49, reach: 3.8, strength: 0.7, face: f });
-        break;
-      }
-    }
-  }
-  void depth;
-}
 
 /**
  * Flood light out from every source with distance falloff, occluded by walls.

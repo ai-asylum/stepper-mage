@@ -304,6 +304,30 @@ Facing matters as much as distance: an altar behind you is not an altar you are 
 The prompt has to describe something the player can see, or it reads as the game
 firing at random.
 
+## A layout is not a look
+
+**Every floor is a different shape, and the shape is the argument.** A ring means you
+can always go round; a gauntlet means you cannot. A cathedral means everything sees you
+the moment you step in; a labyrinth means nothing does until it is adjacent. Ten floors
+of one algorithm in ten palettes is one floor ten times, and the player learns it once.
+
+The test a layout has to pass is that **it changes how you MOVE.** If the only
+difference is what the walls look like, it is a theme. That test is also what decides
+where a floor sits in the run: each one should take away something the floors before it
+taught you to rely on — the straight sightline, the way round, the dead end, distance
+itself — and it should take it away in a way you can SEE, because a rule you have to be
+told is a theme wearing a mechanic's coat.
+
+Two consequences worth writing down, because both were invisible while there was only
+one generator:
+
+- **Rooms are the unit the game counts in.** Bodies, props, torches and the minimap's
+  sense of "a place" all come off `grid.rooms`, so a shape that declares twenty rooms
+  has quietly tripled the floor's difficulty. Room count is a difficulty knob.
+- **Far means walked, not measured.** The boss goes at the far end of the floor, and on
+  a spiral or a nest the far end is the nearest thing on the map. Anything that reasons
+  about distance in this game reasons about path distance.
+
 ## Obstacles have two axes, not one
 
 **A wall stops sight and footing. A gap stops only footing.** Until the grid could

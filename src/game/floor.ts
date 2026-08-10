@@ -6,7 +6,8 @@
  * list from here; nothing else needs to know how a floor is put together.
  */
 import * as THREE from 'three';
-import { Grid, generate, visibleTiles, type Dir } from '../dungeon/grid';
+import { Grid, visibleTiles, type Dir } from '../dungeon/grid';
+import { generate } from '../dungeon/generate';
 import { DungeonView } from '../dungeon/render';
 import { Sprite, preloadSprites, loadSprite } from '../dungeon/sprites';
 import { viewsFor, type SpriteView } from '../art/views';

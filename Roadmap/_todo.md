@@ -283,12 +283,17 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 22 — Layout_Generators
 
-- [ ] Turn `generate()` into a choice of generator behind one interface.
-- [ ] Teach placement to work without rectangles — a cave has no rooms.
-- [ ] Write the ten flat generators: rooms, cave, ring, spiral, hub, grid city, cathedral, gauntlet, labyrinth, warren.
-- [ ] Write nested, and the three that need Grid_Vocabulary: islands, chasm, terraces.
-- [ ] Assign one generator per floor, and let it brief that floor's roster.
-- [ ] Commit changes.
+- [x] Turn `generate()` into a choice of generator behind one interface.
+      `layouts.ts` carves, `generate.ts` is the shared pass, `grid.ts` generates nothing.
+- [x] Teach placement to work without rectangles — a cave has no rooms.
+      Every generator declares rooms; a cave's are found by `pockets`. `populate` untouched.
+- [x] Write the ten flat generators: rooms, cave, ring, spiral, hub, grid city, cathedral, gauntlet, labyrinth, warren.
+- [~] Write nested, and the three that need Grid_Vocabulary: islands, chasm, terraces.
+      Nested, islands and chasm are in. TERRACES IS NOT: it needs elevation drawn, not
+      stored, and `render.ts` puts every tile at y=0. It waits for Verticality.
+- [x] Assign one generator per floor, and let it brief that floor's roster.
+      `BY_DEPTH` in `layouts.ts`; each layout carries a one-line `brief` for the roster phases.
+- [x] Commit changes.
 
 ## Phase 23 — Tile_Vocabulary
 
