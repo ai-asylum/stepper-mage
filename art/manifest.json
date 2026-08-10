@@ -357,6 +357,326 @@
       "attack": "the vast gold zodiac ring behind it spun up and blazing, all six arms spread wide with the star map snapped taut between two of them, the blue star in its armillary head flaring to white"
     },
     {
+      "$floor": 6,
+      "$name": "The Glass Gardens"
+    },
+    {
+      "id": "f6_prop_pane",
+      "kind": "prop",
+      "height": 140,
+      "seed": 6001,
+      "prompt": "A STANDING PANE: a tall freestanding sheet of leaded garden glass in a wrought frame, stained in green and amber, a spidering crack across one corner. Ivy of clear glass climbs the frame."
+    },
+    {
+      "id": "f6_prop_cloche",
+      "kind": "prop",
+      "height": 144,
+      "seed": 6002,
+      "prompt": "A GLASS CLOCHE: a great bell-shaped garden cloche over a dead rosebush, condensation fogging the inside, a brass handle at its crown."
+    },
+    {
+      "id": "f6_prop_trough",
+      "kind": "prop",
+      "height": 148,
+      "seed": 6003,
+      "prompt": "A GLASS TROUGH: a long planter of thick green glass full of still black water, glass reeds growing from it, algae fused into the walls."
+    },
+    {
+      "id": "f6_prop_lantern",
+      "kind": "prop",
+      "height": 152,
+      "seed": 6004,
+      "prompt": "A GARDEN LANTERN: a tall iron post lantern with four coloured glass faces, the flame inside long dead, moths of glass fused to its panes."
+    },
+    {
+      "id": "f6_enemy_bloom",
+      "kind": "creature",
+      "height": 155,
+      "seed": 6101,
+      "prompt": "A GLASS BLOOM: a stalking flower-thing of fused coloured glass, a fanged tulip head on a whip-thin stem body, four petal-blades spread like a collar, root-tendrils of clear glass walking it forward. Light refracts through it in green and gold. Hairline fractures glow from within.",
+      "attack": "the tulip head snapped forward on the whipping stem and the four petal-blades flung wide, shards of coloured glass thrown off the fracture lines"
+    },
+    {
+      "id": "f6_enemy_shard",
+      "kind": "creature",
+      "height": 160,
+      "seed": 6102,
+      "prompt": "A SHARD HOUND: a lean four-legged predator assembled from broken window glass, its back a ridge of jagged panes, no eyes but a long muzzle of splintered edges. Lead came still runs through its flanks like veins. Moves in a scatter of light.",
+      "attack": "the splintered muzzle driven forward in a lunging bite, the ridge of panes along its back flared, cracked glass sloughing from its shoulders"
+    },
+    {
+      "id": "f6_enemy_gardener",
+      "kind": "creature",
+      "height": 165,
+      "seed": 6103,
+      "prompt": "THE GLASS GARDENER: a tall stooped figure in a vitrified apron, hands fused into pruning shears of green glass, its head a bell jar containing a single still-living flower. Body is clouded milk glass, cracked and mended with gold.",
+      "attack": "both shear-hands scissored shut in a wide cross-cut, the bell-jar head tipped forward, the flower inside thrashing"
+    },
+    {
+      "id": "f6_boss",
+      "kind": "boss",
+      "height": 190,
+      "seed": 6150,
+      "prompt": "THE PRISM WARDEN, a glass gardens boss: a colossal seated figure of clear cut crystal, its body a single enormous faceted gem shaped like a kneeling gardener, splitting the light into hard rainbows across the room. Its head is a rough uncut geode with a violet glow deep inside. Vines of glass climb its arms.",
+      "attack": "the great faceted body leaned forward and both crystal arms swept in from the sides, hard rainbow light lancing out of every facet at once, glass vines whipping"
+    },
+    {
+      "$floor": 7,
+      "$name": "The Tidal Vault"
+    },
+    {
+      "id": "f7_prop_hoard",
+      "kind": "prop",
+      "height": 140,
+      "seed": 7001,
+      "prompt": "A HOARD PILE: a heaped drift of drowned gold coins, goblets and crowns, strung through with kelp and crusted with barnacles, seawater pooling at its base."
+    },
+    {
+      "id": "f7_prop_coral",
+      "kind": "prop",
+      "height": 144,
+      "seed": 7002,
+      "prompt": "A CORAL COLUMN: a vault pillar entirely overtaken by brain and fan coral in dull pink and ochre, its carved stone base still visible, small fish bones caught in it."
+    },
+    {
+      "id": "f7_prop_strongbox",
+      "kind": "prop",
+      "height": 148,
+      "seed": 7003,
+      "prompt": "A STRONGBOX: a squat iron-banded vault strongbox, its lock burst open, seawater and a few coins trickling from the seam. Rust runs down its faces."
+    },
+    {
+      "id": "f7_prop_anchor",
+      "kind": "prop",
+      "height": 152,
+      "seed": 7004,
+      "prompt": "A VAULT ANCHOR: an enormous ship's anchor driven through the vault floor, chain heaped around it, crusted with salt and small shells."
+    },
+    {
+      "id": "f7_enemy_drowned",
+      "kind": "creature",
+      "height": 155,
+      "seed": 7101,
+      "prompt": "A DROWNED CLAIMANT: a bloated waterlogged corpse in a merchant's fine coat, pockets and hands overflowing with gold coins, barnacles across one shoulder, seawater pouring endlessly from its sleeves and mouth. Eyes are two coins.",
+      "attack": "both coin-laden hands flung forward in a grasping lunge, a gout of seawater vomited out with them, gold coins scattering off the arc"
+    },
+    {
+      "id": "f7_enemy_crab",
+      "kind": "creature",
+      "height": 160,
+      "seed": 7102,
+      "prompt": "A COFFER CRAB: a broad crab whose shell is an iron-bound treasure chest, the lid its carapace, gold spilling from the gap. Two enormous pincers of corroded brass. Small eyes on stalks peering over the lid.",
+      "attack": "both brass pincers slammed together in a scissoring snap, the chest-lid carapace thrown open, coins bursting out of the gap"
+    },
+    {
+      "id": "f7_enemy_eel",
+      "kind": "creature",
+      "height": 165,
+      "seed": 7103,
+      "prompt": "A BRINE EEL: a long ribbon of an eel coiling through the air as though still swimming, its skin translucent and full of swallowed coins and rings, a lantern-jawed head of needle teeth. Trails a wake of water.",
+      "attack": "the whole ribbon body recoiled and struck straight out like a spear, needle jaws spread wide, swallowed coins glinting through the translucent skin"
+    },
+    {
+      "id": "f7_boss",
+      "kind": "boss",
+      "height": 190,
+      "seed": 7150,
+      "prompt": "THE DROWNED FACTOR, a tidal vault boss: a vast bloated figure in the ruined finery of a treasury master, seated on a throne of heaped coin, its body swollen with seawater and split to show gold packed inside like organs. A great iron ledger chained to its wrist. Crowned with coral. Water pours constantly from beneath it.",
+      "attack": "the chained iron ledger swung round in a heavy arc and the split torso heaved forward, a wall of seawater and loose gold driven out ahead of it"
+    },
+    {
+      "$floor": 8,
+      "$name": "The Choir of Wounds"
+    },
+    {
+      "id": "f8_prop_pulpit",
+      "kind": "prop",
+      "height": 140,
+      "seed": 8001,
+      "prompt": "A LECTERN OF SKIN: a reading pulpit of pale stretched hide over bone, an open hymnal on it whose pages turn by themselves, a single candle guttering."
+    },
+    {
+      "id": "f8_prop_bell",
+      "kind": "prop",
+      "height": 144,
+      "seed": 8002,
+      "prompt": "A HANGING BELL: a great cracked bronze bell hung from a blackened beam, its lip split, a long fraying bell-rope trailing to the floor."
+    },
+    {
+      "id": "f8_prop_organ",
+      "kind": "prop",
+      "height": 148,
+      "seed": 8003,
+      "prompt": "AN ORGAN RANK: a bank of tarnished organ pipes of uneven height set into the wall, several bent, breathing faintly on their own."
+    },
+    {
+      "id": "f8_prop_censer",
+      "kind": "prop",
+      "height": 152,
+      "seed": 8004,
+      "prompt": "A STANDING CENSER: a tall brass censer on a chain stand, still smoking, its pierced lid worked with open mouths, ash heaped at its foot."
+    },
+    {
+      "id": "f8_enemy_cantor",
+      "kind": "creature",
+      "height": 155,
+      "seed": 8101,
+      "prompt": "A FLAYED CANTOR: a lean robed singer whose face has been opened into a second vertical mouth from brow to chin, both mouths held wide in song. Hands clasped in devotion. The choir robe is stitched to the flesh beneath.",
+      "attack": "both mouths stretched impossibly wide and the head thrown forward, a visible ring of sound punched out ahead of it, the clasped hands flung open"
+    },
+    {
+      "id": "f8_enemy_bellman",
+      "kind": "creature",
+      "height": 160,
+      "seed": 8102,
+      "prompt": "A BELL-HEADED PENITENT: a stooped figure whose entire head is a heavy bronze handbell, clapper hanging where a throat would be, wearing a rope-belted habit. Deaf, and swinging its own head to hear.",
+      "attack": "the whole bronze bell head swung round on the neck like a hammer, the clapper snapping, a hard shock of sound thrown off the strike"
+    },
+    {
+      "id": "f8_enemy_hymn",
+      "kind": "creature",
+      "height": 165,
+      "seed": 8103,
+      "prompt": "A HYMN OF WOUNDS: a hovering knot of loose hymn-sheet parchment and red ribbon wound around nothing, page edges rimmed with dried blood, small mouths opening across the pages as it drifts.",
+      "attack": "the knot of pages unfurled outward all at once into a wide flaring sheet, every small mouth on it opening together"
+    },
+    {
+      "id": "f8_boss",
+      "kind": "boss",
+      "height": 190,
+      "seed": 8150,
+      "prompt": "THE GREAT PRECENTOR, a choir boss: an immense conductor of flesh and bronze risen from the choir stalls, six long arms ending in bell-clappers, its head a vast open mouth ringed with smaller mouths in place of a face, robed in stitched hymn-sheets. Sound visibly distorts the air around it.",
+      "attack": "all six clapper-arms brought down together in a conductor's cut, the vast ringed mouth thrown open, the air itself buckling outward in rings"
+    },
+    {
+      "$floor": 9,
+      "$name": "The Ashfall Reach"
+    },
+    {
+      "id": "f9_prop_column",
+      "kind": "prop",
+      "height": 140,
+      "seed": 9001,
+      "prompt": "A PETRIFIED COLUMN: a fluted stone column half-buried in drifted grey ash, its top sheared off, the ash piled waist-high around it."
+    },
+    {
+      "id": "f9_prop_kiln",
+      "kind": "prop",
+      "height": 144,
+      "seed": 9002,
+      "prompt": "A COLD KILN: a squat brick kiln with its iron door hanging open, the fire long dead, grey ash spilling out over the floor."
+    },
+    {
+      "id": "f9_prop_bellows",
+      "kind": "prop",
+      "height": 148,
+      "seed": 9003,
+      "prompt": "A SPLIT BELLOWS: a huge leather-and-iron forge bellows, the leather split and hanging, its nozzle choked with cold ash."
+    },
+    {
+      "id": "f9_prop_cairn",
+      "kind": "prop",
+      "height": 152,
+      "seed": 9004,
+      "prompt": "AN ASH CAIRN: a stacked cairn of black volcanic stones with grey ash drifted against one side, a single petrified hand reaching from beneath it."
+    },
+    {
+      "id": "f9_enemy_cinder",
+      "kind": "creature",
+      "height": 155,
+      "seed": 9101,
+      "prompt": "A CINDER WALKER: a tall thin figure of packed grey ash holding its shape, cracks across its surface showing dull orange deep inside, no face. Ash sloughs from it constantly and reforms.",
+      "attack": "one long ash arm swung round in a wide flail that half-disintegrates on the arc, the orange cracks flaring bright through the body"
+    },
+    {
+      "id": "f9_enemy_obsidian",
+      "kind": "creature",
+      "height": 160,
+      "seed": 9102,
+      "prompt": "AN OBSIDIAN HOUND: a low heavy quadruped of black volcanic glass, its edges knapped sharp like a blade tool, a dull red glow at its joints. No eyes. Ash caked along its spine.",
+      "attack": "the whole knapped body driven forward in a low shoulder-charge, the glassy edges flared, chips of black glass thrown off"
+    },
+    {
+      "id": "f9_enemy_mourner",
+      "kind": "creature",
+      "height": 165,
+      "seed": 9103,
+      "prompt": "AN ASH MOURNER: a kneeling petrified figure caught mid-grief, hands over its face, entirely grey — but risen and walking, cracked at every joint, ash pouring from the fractures.",
+      "attack": "the hands torn away from the petrified face to reveal a hollow of glowing ash, both arms flung outward, a cloud of grey ash driven forward"
+    },
+    {
+      "id": "f9_boss",
+      "kind": "boss",
+      "height": 190,
+      "seed": 9150,
+      "prompt": "THE LAST STOKER, an ashfall boss: an enormous figure of packed ash and cooled magma, hunched under the weight of a great iron shovel it still carries, its chest a dead firebox hanging open and full of cold grey ash. Orange light bleeds from the deepest cracks. Ash falls from it constantly like weather.",
+      "attack": "the great iron shovel swung two-handed in a low scooping arc, a wave of grey ash and cold cinders driven up and forward, the firebox chest flaring orange"
+    },
+    {
+      "$floor": 10,
+      "$name": "The Hollow Crown"
+    },
+    {
+      "id": "f10_prop_throne",
+      "kind": "prop",
+      "height": 140,
+      "seed": 10001,
+      "prompt": "THE HOLLOW THRONE: a tall seat of carved obsidian, its back worked into a crown of thorns, absolutely empty, a thin cold light pooling in the seat."
+    },
+    {
+      "id": "f10_prop_banner",
+      "kind": "prop",
+      "height": 144,
+      "seed": 10002,
+      "prompt": "A FALLEN BANNER: a huge royal banner of black cloth on a broken pole, its sigil unpicked and missing, the fabric heavy and still."
+    },
+    {
+      "id": "f10_prop_reliquary",
+      "kind": "prop",
+      "height": 148,
+      "seed": 10003,
+      "prompt": "A ROYAL RELIQUARY: a black glass casket on a low bier, its lid slid aside, containing only a single thin gold circlet on velvet."
+    },
+    {
+      "id": "f10_prop_brazier",
+      "kind": "prop",
+      "height": 152,
+      "seed": 10004,
+      "prompt": "A COLD BRAZIER: a great standing brazier of black iron worked with crowns, its coals long dead and grey, tipped slightly on a broken leg."
+    },
+    {
+      "id": "f10_enemy_regent",
+      "kind": "creature",
+      "height": 155,
+      "seed": 10101,
+      "prompt": "A HOLLOW REGENT: a standing suit of black regalia — ermine collar, sash, heavy rings — with absolutely nothing inside it, the clothing holding a royal posture. Where the head should be, a floating thin gold circlet and a smear of starless dark.",
+      "attack": "the empty sleeves flung wide in a commanding gesture and the floating circlet driven forward, the starless dark inside the collar reaching out"
+    },
+    {
+      "id": "f10_enemy_herald",
+      "kind": "creature",
+      "height": 160,
+      "seed": 10102,
+      "prompt": "A VOID HERALD: a tall thin figure in a tabard of black cloth sewn with dead stars, carrying a long trumpet of obsidian, its face a smooth featureless oval of the same black glass.",
+      "attack": "the obsidian trumpet raised and blown, a cone of visible silence and dead starlight punched out of the bell"
+    },
+    {
+      "id": "f10_enemy_kingsguard",
+      "kind": "creature",
+      "height": 165,
+      "seed": 10103,
+      "prompt": "AN OBSIDIAN KINGSGUARD: a heavy armoured figure in plate of black volcanic glass over nothing, a tower shield of the same glass, a straight sword. The visor is open and empty.",
+      "attack": "the tower shield driven forward in a shield-bash and the straight sword thrust past it, black glass plate grinding"
+    },
+    {
+      "id": "f10_boss",
+      "kind": "boss",
+      "height": 190,
+      "seed": 10150,
+      "prompt": "THE HOLLOW CROWN ITSELF, the final boss: a colossal ruined king of black glass and empty regalia, kneeling and vast, its enormous body a hollow shell of obsidian plate with nothing inside but a slow-turning void full of dead stars. A single thin gold circlet floats where its head should be, far too small for the body. Ermine and chain hang from its shoulders.",
+      "attack": "the colossal hollow body straightened and both empty gauntlets swept together overhead, the void inside the chest yawning open, dead stars pouring out of it"
+    },
+    {
       "$comment": "Golem forms. Animating a prop is the core verb, so every prop has an authored risen form. Shared cues: violet arcane eyes, a hunched bipedal stance built from the object's own material, the object still recognisable in the silhouette.",
       "$golems": true
     },
@@ -499,6 +819,153 @@
       "height": 171,
       "seed": 2514,
       "prompt": "A FONT GOLEM: a creature carrying a carved pale stone basin as its own hollow chest, filled with liquid starlight that slops over the edge, pinpricks of light drifting up out of it, limbs of pouring luminous starwater held in shape, gold constellation inlay glowing on its stone shoulders, two glowing violet eyes above the basin rim, light spilling down its legs."
+    },
+    {
+      "id": "g_f6_pane",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2601,
+      "prompt": "A PANE GOLEM: a humanoid built from a standing leaded window, its torso the stained sheet with violet eyes burning where two panes meet, arms of wrought iron came, legs of splintered mullion. Light throws coloured shapes through its chest."
+    },
+    {
+      "id": "g_f6_cloche",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2602,
+      "prompt": "A CLOCHE GOLEM: a hunched humanoid whose head and chest are one enormous fogged bell jar with a dead rose inside, violet eyes lit in the condensation, limbs of thin brass framing. The rose inside turns to watch."
+    },
+    {
+      "id": "g_f6_trough",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2603,
+      "prompt": "A TROUGH GOLEM: a squat wide humanoid formed from a green glass planter, black water sloshing visibly inside its barrel torso, violet eyes below the waterline, arms of fused glass reeds, stubby legs."
+    },
+    {
+      "id": "g_f6_lantern",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2604,
+      "prompt": "A LANTERN GOLEM: a spindly tall humanoid built around an iron post lantern, its head the four-faced lamp with violet fire relit inside, long thin limbs of iron post, glass moths orbiting it."
+    },
+    {
+      "id": "g_f7_hoard",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2701,
+      "prompt": "A HOARD GOLEM: a lurching humanoid of drowned gold, coins and goblets packed and crusted into limbs, kelp hanging from it like hair, violet eyes in a face of pressed crowns, seawater running out of every seam."
+    },
+    {
+      "id": "g_f7_coral",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2702,
+      "prompt": "A CORAL GOLEM: a broad humanoid grown from vault coral, fan-coral shoulders spread wide, brain coral for a skull with violet eyes sunk in the folds, fists of blunt stony branch."
+    },
+    {
+      "id": "g_f7_strongbox",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2703,
+      "prompt": "A STRONGBOX GOLEM: a heavy stunted humanoid, torso a burst iron strongbox with violet light pouring from the broken lock, thick banded arms, tiny legs, coins rattling inside it as it walks."
+    },
+    {
+      "id": "g_f7_anchor",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2704,
+      "prompt": "AN ANCHOR GOLEM: a tall lean humanoid whose spine and skull are a ship's anchor, chain wrapped around its limbs as muscle, violet eyes at the anchor's crown, dragging a tail of heavy chain."
+    },
+    {
+      "id": "g_f8_pulpit",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2801,
+      "prompt": "A PULPIT GOLEM: a stooped humanoid of stretched hide and bone framing, an open hymnal fused into its chest with pages turning, violet eyes above it, long thin arms of bone, reading itself aloud."
+    },
+    {
+      "id": "g_f8_bell",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2802,
+      "prompt": "A BELL GOLEM: a broad heavy humanoid whose torso and head are one cracked bronze bell, violet light in the split, arms of knotted bell-rope, short thick legs, tolling with every step."
+    },
+    {
+      "id": "g_f8_organ",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2803,
+      "prompt": "AN ORGAN GOLEM: a tall broad humanoid built from a rank of tarnished organ pipes, pipes of uneven height rising from its shoulders like a crown, violet eyes deep in the pipe-mouths, wheezing air as it moves."
+    },
+    {
+      "id": "g_f8_censer",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2804,
+      "prompt": "A CENSER GOLEM: a lean humanoid built around a swinging brass censer, its head the pierced smoking lid with violet eyes in the piercings, chains for arms, a constant trail of incense smoke."
+    },
+    {
+      "id": "g_f9_column",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2901,
+      "prompt": "A COLUMN GOLEM: a tall broad humanoid built from a sheared fluted column, ash pouring from its joints, violet eyes in a cracked capital head, blocky stone limbs, hugely heavy."
+    },
+    {
+      "id": "g_f9_kiln",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2902,
+      "prompt": "A KILN GOLEM: a squat wide humanoid whose torso is a brick kiln with its iron door hanging open, violet fire relit deep inside, short thick brick limbs, trailing ash."
+    },
+    {
+      "id": "g_f9_bellows",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2903,
+      "prompt": "A BELLOWS GOLEM: a lopsided humanoid built around a great split bellows, the leather lung wheezing on its back, violet eyes above the nozzle, one huge arm and one small, breathing ash."
+    },
+    {
+      "id": "g_f9_cairn",
+      "kind": "creature",
+      "height": 180,
+      "seed": 2904,
+      "prompt": "A CAIRN GOLEM: a lumpen humanoid of stacked black volcanic stones held together by nothing visible, violet light showing between the stones, a petrified hand still caught in its chest."
+    },
+    {
+      "id": "g_f10_throne",
+      "kind": "creature",
+      "height": 180,
+      "seed": 3001,
+      "prompt": "A THRONE GOLEM: a hulking humanoid built from a carved obsidian throne, the crown-of-thorns seat back rising over its shoulders, violet eyes deep in the empty seat set into its chest, heavy black glass limbs."
+    },
+    {
+      "id": "g_f10_banner",
+      "kind": "creature",
+      "height": 180,
+      "seed": 3002,
+      "prompt": "A BANNER GOLEM: a tall thin humanoid draped in a heavy black royal banner, the broken pole its spine, violet eyes burning through the unpicked hole where the sigil was, cloth moving as though underwater."
+    },
+    {
+      "id": "g_f10_reliquary",
+      "kind": "creature",
+      "height": 180,
+      "seed": 3003,
+      "prompt": "A RELIQUARY GOLEM: a squat humanoid whose torso is a black glass casket with the lid ajar, a gold circlet floating inside, violet eyes above it, short heavy limbs of glass and gilt."
+    },
+    {
+      "id": "g_f10_brazier",
+      "kind": "creature",
+      "height": 180,
+      "seed": 3004,
+      "prompt": "A BRAZIER GOLEM: a tall spindly humanoid built around a black iron brazier, its bowl-head full of relit violet fire, thin crown-worked iron limbs, scattering dead coals."
+    },
+    {
+      "id": "g_chest",
+      "kind": "creature",
+      "height": 176,
+      "seed": 2099,
+      "prompt": "A CHEST GOLEM: a squat bandy-legged humanoid built from an iron-bound treasure chest, the open lid its hinged jaw lined with lock-teeth, violet eyes burning inside the chest cavity, thick banded arms of oak and iron, stubby clawed feet. Coins and a spilled goblet rattle in its belly as it lurches."
     }
   ]
 }
