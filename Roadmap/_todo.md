@@ -170,7 +170,8 @@ every phase. Never list tasks for editing this file or a phase doc.
 ## Phase 13 — First_Minutes
 
 - [x] Lock the world to 72 texels and delete the chip, the setting and its harness.
-- [ ] Stop the camera changing pitch when the grimoire rises.
+- [x] Stop the camera changing pitch when the grimoire rises. Never a measurement —
+      the settled shift is 0.132 at every viewport, so it is a constant now.
       Needs the settled `frameShift` read off a running loop — see the phase doc.
 - [x] Hide the empty hand slots while the book plays its intro. `Hud.bookBusy`.
 - [x] Add a movement hint that clears on the first step and never returns.

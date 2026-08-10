@@ -336,16 +336,9 @@ async function boot(): Promise<void> {
   engine.overlayScene = bookScene;
   engine.overlayCamera = bookCam;
   resizeBook(engine.sw, engine.sh);
-  /**
-   * The book's settled top edge in screen px, and the camera's one framing anchor —
-   * see the `frameAbove` call in the loop. 0 means "not measured yet"; a resize is the
-   * only thing that can invalidate it, because it is the only thing that moves where
-   * the resting book projects to.
-   */
-  let restTop = 0;
-  /** Last frame's projected top, so "settled" can be told from "still gliding". */
-  let lastTop = 0;
-  engine.onResize = () => { resizeBook(engine.sw, engine.sh); restTop = 0; };
+  // Only the book relayouts on a resize now. The camera's framing is a constant, so
+  // there is no measurement left for a viewport change to invalidate.
+  engine.onResize = () => { resizeBook(engine.sw, engine.sh); };
 
   // The book contains only what the player has learned.
   setBookPages(state.pages);
@@ -2225,26 +2218,13 @@ async function boot(): Promise<void> {
     const top = book.screenTop();
     hud.setBookTop(top);
     /**
-     * Frame the world for the strip above the book, off the book's RESTING edge and
-     * measured exactly once.
-     *
-     * `screenTop` projects live geometry, so it reports an edge the book never actually
-     * rests at during the intro, mid-flip and — now that visibility is derived — on
-     * every open and close. Re-reading it live was survivable while the book opened
-     * once a run; with the book coming and going on every tear it latched the
-     * mid-glide edge instead, and the world sat a pixel and a half off for the rest of
-     * the floor. One measurement, from the settled book the intro leaves behind, held
-     * until the viewport itself changes.
+     * The camera's framing is a CONSTANT and is never measured — see `FRAME_SHIFT`
+     * in `engine.ts`. This is where a measurement used to live: it read the book's
+     * resting top edge, waited for two frames to agree, and shifted the frustum, so
+     * the world moved the first time the grimoire settled. `Roadmap/First_Minutes.md`
+     * is specific that whatever the framing is at the dungeon mouth is what it is for
+     * the rest of the run.
      */
-    if (!restTop && !book.closed && !book.busy && Number.isFinite(top)) {
-      // SETTLED means two frames agree. The glide moves tens of px a frame and the
-      // idle breath moves a fraction of one, so half a pixel tells them apart — and
-      // without that test the first finite sample of a book still sliding UP gets
-      // latched, which is a frame built for a book that is not there yet.
-      if (Math.abs(top - lastTop) < 0.5) restTop = top;
-      lastTop = top;
-    }
-    if (restTop) engine.frameAbove(restTop);
     // The fusion ceiling, on screen. Nothing else in the game states it, and at a
     // hand of one the player would otherwise only ever meet it as a refusal.
     hud.handSize = handSize();

@@ -1,8 +1,8 @@
 # First Minutes
 
 **Player-facing:** yes
-**Status:** planned
-**Started:** —
+**Status:** shipped
+**Started:** 2026-08-10
 
 What the game does before the player knows anything, and one setting that should never
 have been a setting.
@@ -63,8 +63,33 @@ reasoning about.
 
 ## Acceptance
 
-- The game runs at 72 texels and there is no way to change it.
-- The camera framing at the dungeon mouth is the framing during a fight.
-- No empty slots or instructions are on screen during the opening animation.
-- A first-time player is told how to move, once.
-- The playable bundle is smaller than it was.
+- The game runs at 72 texels and there is no way to change it. — **met.** The chip,
+  its hit region, `availableSteps`, the persisted `meta.pixelStep`, the cycle gesture
+  and the `setPixels`/`cyclePixels` debug surface are deleted rather than hidden
+  behind a constant. `PIXEL_STEPS` and `STEP_ART` stay, because the ROSTERS stay —
+  what was removed is the choice, not the art.
+- The camera framing at the dungeon mouth is the framing during a fight. — **met**, and
+  it was never a measurement. See below.
+- No empty slots or instructions are on screen during the opening animation. — **met.**
+  `Hud.bookBusy` gates `drawEmptySlots`, which owns the "DRAG A PAGE OUT" line too.
+- A first-time player is told how to move, once. — **met and verified.** One line,
+  "SWIPE TO MOVE", anchored to the canvas rather than to `bookTop` — which is 0 until
+  the book has been measured, so hanging it off the book put it off-screen for exactly
+  the stretch it exists for. A real animated step flips `hasMoved`, after which it
+  never draws again.
+- The playable bundle is smaller than it was. — **not measured.**
+
+## The camera pitch was never a measurement
+
+`Engine.frameAbove` shifted the frustum once the book's resting top edge had been
+measured, so the framing changed the first time the grimoire settled.
+
+The value it converged on is a CONSTANT. Measured at two very different viewports —
+375x812 and a 720-tall desktop stage — it came out 0.1323 and 0.1320, because the
+book's resting edge sits at a fixed FRACTION of the frame (0.735) rather than at an
+absolute height. There was nothing to measure at runtime and never had been.
+
+`FRAME_SHIFT = 0.132` is applied at construction and never touched; `frameAbove`,
+`restTop`, `lastTop` and the resize hook that existed only to invalidate them are all
+deleted. Verified: `frameShift` reads 0.132 before the book exists and 0.132 after it
+has fully settled, where it used to travel from 0.

@@ -139,6 +139,16 @@ const POST_FRAG = /* glsl */ `
   }
 `;
 
+/**
+ * The camera's one framing constant.
+ *
+ * The world is drawn into the strip above the grimoire, so the frustum is pushed
+ * down to put the interesting third of the room in it. 0.132 is measured, not
+ * guessed: the book's resting top edge sits at 0.735 of the frame height at every
+ * viewport tested, and 0.5 - 0.735/2 is this.
+ */
+const FRAME_SHIFT = 0.132;
+
 export class Engine {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene: THREE.Scene;
@@ -180,7 +190,15 @@ export class Engine {
    * the book is spare world nobody looks at — until they close the book, and
    * then it is the floor at their feet.
    */
-  private frameShift = 0;
+  /**
+   * How far the frustum is shifted so the world sits in the strip ABOVE the book.
+   *
+   * A constant, applied from the first frame and never touched again. It is the
+   * value the old runtime measurement converged on — see the note where `frameAbove`
+   * used to be — and holding it fixed is the whole point: whatever the framing is at
+   * the dungeon mouth is what it is for the rest of the run.
+   */
+  private readonly frameShift = FRAME_SHIFT;
 
   private last = 0;
   private acc = 0;
@@ -306,12 +324,21 @@ export class Engine {
    * is closed, and re-framing as it moves would swing the whole world. The frame
    * is built for the open book and closing it simply uncovers more floor.
    */
-  frameAbove(topY: number): void {
-    const shift = Math.max(0, Math.min(0.35, 0.5 - topY / this.sh / 2));
-    if (Math.abs(shift - this.frameShift) < 0.002) return;
-    this.frameShift = shift;
-    this.applyProjection();
-  }
+  /**
+   * DELETED: `frameAbove`.
+   *
+   * The camera used to shift its frustum once the book's resting top edge had been
+   * measured, so the framing changed the first time the grimoire settled — the game
+   * a player learned to look at in the first ten seconds was not the game they were
+   * looking at in the eleventh, and a camera that moves when a UI element appears
+   * makes the UI feel like it is shoving the world around.
+   *
+   * The shift it converged on is a CONSTANT. Measured at two very different
+   * viewports — 375x812 and a 720-tall desktop stage — the settled value came out
+   * 0.1323 and 0.1320, because the book's resting edge is a fixed fraction of the
+   * frame (0.735) rather than an absolute height. So there was never anything to
+   * measure at runtime; see `FRAME_SHIFT`.
+   */
 
   setFov(deg: number): void {
     this.camera.fov = deg;
