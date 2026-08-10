@@ -272,8 +272,8 @@ const BELT_CHAIN: ReadonlySet<string> = (() => {
  * the answer to "why can I not buy this" is one grep away.
  */
 export const BELT_OFF_REASON =
-  'The belt is turned off in this build, so this sleeps until it is back'
-  + ' — see BELT_ENABLED in src/flags.ts. Buying it is safe; refunds still work.';
+  'The belt is off in this build, so this node sleeps until it is back.'
+  + ' You can still buy it, and selling it always returns every star.';
 
 /**
  * Is this node's EFFECT asleep because the belt is flagged off?

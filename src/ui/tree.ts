@@ -457,7 +457,7 @@ export class TreeScreen {
        * than a sixth state invented: dashed rim, dim icon, and the panel says why.
        */
       const state: State = owned ? 'owned'
-        : missing || beltGated(n.id) ? 'locked'
+        : missing ? 'locked'
         : v.stars >= n.price ? 'ready' : 'short';
       const cx = SIDE + pitch * (COL[n.id] + 0.5);
       const cy = top + offset + contentH - (TIER[n.id] + 0.5) * rowPitch;
@@ -878,10 +878,16 @@ export class TreeScreen {
      * for its price, so this only changes what an UNBOUGHT one says.
      */
     const off = beltGated(id);
+    /**
+     * A belt-gated node is BUYABLE and reads like any other.
+     *
+     * It used to be forced to 'locked' and given a dead plate instead of a button,
+     * because the flag refused the purchase. It does not any more — the flag only
+     * says the EFFECT sleeps — so drawing it locked and refusing the tap would be the
+     * same lie the purchase gate was.
+     */
     const state: State = owned ? 'owned'
-      // Locked and never 'ready', for the reason the lattice gives: the ready treatment
-      // is an invitation to spend, and this is the one node that cannot be spent on.
-      : missing.length || off ? 'locked'
+      : missing.length ? 'locked'
       : v.stars >= n.price ? 'ready' : 'short';
     const held = owned ? refundBlocker(id, v.owned) : null;
 
@@ -896,7 +902,9 @@ export class TreeScreen {
       : hexCss(colour, state === 'ready' ? 0.9 : 0.6);
     ctx.fillText(
       owned ? (held ? '✓ OWNED · HELD' : '✓ OWNED')
-        : off ? 'TURNED OFF'
+        // Still says so — the effect really is asleep — but as a note beside a live
+        // button rather than in place of one.
+        : off ? 'DORMANT'
         : state === 'locked' ? 'LOCKED'
         : state === 'ready' ? 'READY TO BUY'
         : `SAVING UP · ${n.price - v.stars} SHORT`,
@@ -1020,19 +1028,6 @@ export class TreeScreen {
       // Dimmed and STILL tappable: the leaves-only rule is taught by asking and
       // being told what to sell first, so the gesture has to stay available.
       this.hits.push({ rect: [bx, btnY - 4, bw, btnH + 8], action: { kind: 'sell', id } });
-      return;
-    }
-    if (off) {
-      /**
-       * The one state with no gesture at all, and the only place on this screen that has
-       * none. Everything else here is tappable-and-refused on purpose, because the
-       * refusal teaches the rule — but this rule is not about the tree, so there is
-       * nothing to learn from asking, and SAVE FOR THIS would pin a route that cannot be
-       * walked to the end. The plate keeps the button's footprint so the panel does not
-       * reflow between one node and the next.
-       */
-      this.button(ctx, bx, btnY, bw, btnH, 'UNAVAILABLE  ·  TURNED OFF',
-        0x161a2c, 'rgba(154,168,224,0.5)', 'rgba(188,198,238,0.8)', 0.55);
       return;
     }
     if (buyBlocker(id, v.owned, v.stars) === null) {

@@ -312,7 +312,7 @@ export class TreeList {
       : hexCss(c.colour, state === 'ready' ? 0.85 : 0.5);
     ctx.fillText(
       state === 'owned' ? '✓ OWNED'
-        : c.off ? 'TURNED OFF'
+        : c.off ? 'DORMANT'
         : state === 'locked' ? 'LOCKED'
         : state === 'ready' ? 'AVAILABLE' : 'SAVING UP',
       x + 16, y + 9,
