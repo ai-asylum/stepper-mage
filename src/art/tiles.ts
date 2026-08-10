@@ -650,30 +650,51 @@ export function buildTileSet(theme: Theme, seed: string): TileSet {
 export function buildSconce(theme: Theme, seed: string): Pix[] {
   const frames: Pix[] = [];
   const { w: W, h: H } = stepArt().sconce;
+  /**
+   * Everything below is a FRACTION of the frame, not a texel offset.
+   *
+   * It used to be absolute numbers authored against the 144 sconce — a bracket at
+   * y=16 on a 40-texel canvas — so halving W and H put the bracket below the frame
+   * and the flame off the top. That is why all four steps declared 26x40 and the
+   * torch stayed the one thing in the world still drawn at 144, reading finer than
+   * the stone it is bolted to.
+   *
+   * Proportional, it survives any canvas the step asks for.
+   */
   for (let fi = 0; fi < 4; fi++) {
     const rng = new Rng(`${seed}-sconce-${fi}`);
     const p = new Pix(W, H);
-    // iron bracket
+    const cxr = W / 2;
+
+    // iron bracket: a stem down the lower two-thirds, a lip, and a wall plate
     const iron = hex(0x241a1c), ironLit = hex(0x4a3a38);
-    p.rect(W / 2 - 2, 16, 4, H - 18, iron);
-    p.taper(W / 2, 18, W / 2, 14, 3, 2, ironLit);
-    p.rect(W / 2 - 5, 12, 10, 5, iron);
-    p.frame(W / 2 - 5, 12, 10, 5, ironLit);
+    const stemTop = H * 0.40, stemW = Math.max(2, W * 0.15);
+    p.rect(cxr - stemW / 2, stemTop, stemW, H - stemTop - H * 0.05, iron);
+    p.taper(cxr, stemTop + H * 0.05, cxr, stemTop - H * 0.10, W * 0.12, W * 0.08, ironLit);
+    const plateW = Math.max(4, W * 0.38), plateH = Math.max(2, H * 0.12);
+    p.rect(cxr - plateW / 2, H * 0.30, plateW, plateH, iron);
+    p.frame(cxr - plateW / 2, H * 0.30, plateW, plateH, ironLit);
+
     // Flame — three quantised layers, shifted per frame. These take their
     // colour from the floor's LIGHT colour, not its arcane accent: a torch is
     // fire, and tinting it violet made every sconce look like a spell effect.
-    const sway = Math.sin(fi * 1.57) * 1.6;
-    const lift = fi % 2;
-    const cx = W / 2 + sway;
+    const sway = Math.sin(fi * 1.57) * (W * 0.062);
+    const lift = (fi % 2) * (H * 0.025);
+    const cx = cxr + sway;
+    const fy = H * 0.225 - lift;
     const outer = mix(theme.lightCol, hex(0x7a2a08), 0.55);
-    p.ellipse(cx, 9 - lift, 5, 7, outer);
-    p.ellipse(cx + sway * 0.3, 8 - lift, 3.6, 5.4, theme.lightCol);
-    p.ellipse(cx + sway * 0.4, 7 - lift, 2, 3.4, hex(0xfff2c4));
+    p.ellipse(cx, fy, W * 0.19, H * 0.175, outer);
+    p.ellipse(cx + sway * 0.3, fy - H * 0.025, W * 0.138, H * 0.135, theme.lightCol);
+    p.ellipse(cx + sway * 0.4, fy - H * 0.05, W * 0.077, H * 0.085, hex(0xfff2c4));
     // embers
     for (let i = 0; i < 3; i++) {
-      p.set(Math.round(cx + rng.range(-4, 4)), Math.round(rng.range(0, 6)), hex(0xffd489));
+      p.set(
+        Math.round(cx + rng.range(-W * 0.154, W * 0.154)),
+        Math.round(rng.range(0, H * 0.15)),
+        hex(0xffd489),
+      );
     }
-    p.glow(cx, 8, 16, theme.lightCol, 0.55, 4);
+    p.glow(cx, H * 0.2, W * 0.62, theme.lightCol, 0.55, 4);
     frames.push(p);
   }
   return frames;

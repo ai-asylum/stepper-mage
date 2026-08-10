@@ -45,6 +45,7 @@ const POST_FRAG = /* glsl */ `
   uniform vec3 uFlashCol;
   uniform float uDesat;
   uniform float uExposure;
+  uniform float uBleach;
   uniform float uDither;
 
   /**
@@ -71,9 +72,36 @@ const POST_FRAG = /* glsl */ `
    * clips every channel and the wall becomes one flat saturated slab; with it,
    * highlights desaturate toward white the way real overexposure does.
    */
+  vec3 acesRGB(vec3 c) {
+    return clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0);
+  }
+
+  float acesLum(float l) {
+    return clamp((l * (2.51 * l + 0.03)) / (l * (2.43 * l + 0.59) + 0.14), 0.0, 1.0);
+  }
+
+  /**
+   * Tonemap the LUMINANCE and keep the chroma, then bleed back toward the
+   * per-channel curve only at the top.
+   *
+   * Per-channel ACES was the whole cause of the monochrome orange. It rolls each
+   * channel off independently, so the instant the torch brings a surface up, the
+   * red channel saturates first and green and blue catch up — every wall on every
+   * floor converges on the torch's own warm, and five hand-authored palettes read
+   * as one. The theme data was never the problem; this curve was eating it.
+   *
+   * Scaling by the ratio of tonemapped to original luminance keeps a tile's hue
+   * exactly where the palette put it, whatever the exposure. The uBleach blend
+   * back to per-channel is what preserves the ORIGINAL intent of the rolloff:
+   * standing right next to a brazier should still wash out toward white, because
+   * that is what overexposure does — it just should not happen across the whole
+   * mid-range.
+   */
   vec3 tonemap(vec3 c) {
     c *= uExposure;
-    return clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0);
+    float l = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-5);
+    vec3 chroma = c * (acesLum(l) / l);
+    return clamp(mix(chroma, acesRGB(c), uBleach), 0.0, 1.0);
   }
 
   vec3 linearToSrgb(vec3 c) {
@@ -224,6 +252,13 @@ export class Engine {
         uFlashCol: { value: new THREE.Color(1, 1, 1) },
         uDesat: { value: 0 },
         uExposure: { value: 1.12 },
+        /**
+         * How much of the per-channel rolloff survives. 0 keeps every hue exactly as
+         * authored and never bleaches; 1 is the old behaviour that flattened five
+         * palettes into one warm. A third keeps the blown-out-next-to-a-torch look
+         * where it belongs — at the very top of the range — and nowhere else.
+         */
+        uBleach: { value: 0.32 },
         uDither: { value: 0.5 },
       },
     });

@@ -297,17 +297,13 @@ export interface StepArt {
   ceil: CeilArt;
   crack: CrackArt;
   /**
-   * The torch sconce, in texels. All four steps say 26x40, and that is a known
-   * loose end rather than a considered answer.
+   * The torch sconce, in texels — and it STEPS now.
    *
-   * Its quad is sized in WORLD units off `WALL_H` — a torch that does not scale
-   * with the ceiling hangs through it — so nothing here changes its size, only
-   * its resolution. Stepping that resolution needs `buildSconce` rewritten per
-   * step the way the wall generators were: it draws the bracket and the three
-   * flame layers at absolute 144-space texel offsets, so halving W and H alone
-   * puts the bracket below the frame. Until then the torch is the one thing in
-   * the world still drawn at 144, and at 18 it reads finer than the stone it is
-   * bolted to.
+   * Its quad is sized in WORLD units off `WALL_H`, because a torch that does not
+   * scale with the ceiling hangs through it, so this changes resolution and not
+   * size. It used to read 26x40 at every step, which made the torch the one thing
+   * in the world still drawn at 144: at 18 it read finer than the stone it was
+   * bolted to. `buildSconce` is proportional now, so these can differ.
    */
   sconce: { w: number; h: number };
   detail: DetailArt;
@@ -486,7 +482,7 @@ const STEP_72: StepArt = {
     beamH: 6,
   },
   crack: { core: 0.42, side: 0.12, below: 0.06, branchChance: 0.05, branchLen: 0.45 },
-  sconce: { w: 26, h: 40 },
+  sconce: { w: 13, h: 20 },
   detail: {
     waterline: {
       lineFrac: 0.58, lineJitter: 3, waveFreq: 0.22, waveAmp: 1.1,
@@ -610,7 +606,7 @@ const STEP_36: StepArt = {
     beamH: 4,
   },
   crack: { core: 0.46, side: 0, below: 0, branchChance: 0.04, branchLen: 0.5 },
-  sconce: { w: 26, h: 40 },
+  sconce: { w: 7, h: 10 },
   detail: {
     waterline: {
       lineFrac: 0.58, lineJitter: 2, waveFreq: 0.4, waveAmp: 0.8,
@@ -746,7 +742,7 @@ const STEP_18: StepArt = {
     beamH: 3,
   },
   crack: { core: 0.5, side: 0, below: 0, branchChance: 0, branchLen: 0.45 },
-  sconce: { w: 26, h: 40 },
+  sconce: { w: 4, h: 6 },
   detail: {
     waterline: {
       lineFrac: 0.6, lineJitter: 1, waveFreq: 0.5, waveAmp: 0.9,
