@@ -7,7 +7,7 @@
  * this game is in the constants at the top of this file.
  */
 import * as THREE from 'three';
-import { Grid, DIR_VEC, type Dir } from '../dungeon/grid';
+import { Grid, DIR_VEC, Surface, type Dir } from '../dungeon/grid';
 
 /** Seconds per one-tile step. */
 const STEP_TIME = 0.235;
@@ -93,6 +93,17 @@ export class Stepper {
   private fromY: number;
   private moveT = 1;
   private moveKind: MoveKind = 'forward';
+  /**
+   * How far into this step the stride pauses, or 1 for a step that does not.
+   *
+   * Rubble is the only thing that sets it. Half a tile in is where a clamber reads
+   * best: far enough that the player is visibly committed and standing IN the stuff,
+   * near enough that they have not arrived, so the round that fires there is one they
+   * take while off balance.
+   */
+  private holdAt = 1;
+  /** Paused at `holdAt`, waiting for `release`. */
+  private holding = false;
 
   private fromYaw: number;
   private toYaw: number;
@@ -115,6 +126,20 @@ export class Stepper {
   private bobPhase = 0;
   /** Fires when a step completes on a new tile. */
   onArrive: ((x: number, y: number) => void) | null = null;
+  /**
+   * Fired PART-WAY through a step that has to be taken in two.
+   *
+   * The step stops dead where it is and does not finish until `release` is called,
+   * so the game can run a round of enemies while the player is mid-stride. One swipe
+   * still means one step — the input is never refused and never has to be repeated,
+   * which is the whole reason this exists rather than a first press that bounces off:
+   * a press that visibly does nothing is indistinguishable from a dropped swipe, and
+   * the player would learn to distrust the control instead of the terrain.
+   *
+   * If nothing is listening, nothing ever holds — the hold is only ever armed for a
+   * caller that has said it will release it.
+   */
+  onHalfway: ((x: number, y: number) => void) | null = null;
   onBump: ((b: Bump) => void) | null = null;
   /**
    * Fired the instant a step is committed, with both tiles. The game uses this to
@@ -202,6 +227,15 @@ export class Stepper {
     this.turnT = 0;
   }
 
+  /**
+   * Let a held step finish. Safe to call when nothing is held, and safe to call
+   * twice — a soft-locked stepper is a soft-locked game, so this never asserts.
+   */
+  release(): void {
+    this.holding = false;
+    this.holdAt = 1;
+  }
+
   /** Turn to a facing by the shortest route, spinning clockwise for a 180. */
   private turnTo(d: Dir): void {
     const q = ((((d - this.dir) % 4) + 4) % 4);
@@ -235,21 +269,30 @@ export class Stepper {
     this.x = nx; this.y = ny;
     this.moveT = 0;
     this.moveKind = m;
+    // A tile of rubble is crossed in two halves, with a round of the room in between.
+    this.holdAt = this.onHalfway && this.grid.surfaceAt(nx, ny) === Surface.Rubble ? 0.5 : 1;
+    this.holding = false;
     this.onDepart?.(this.fromX, this.fromY, nx, ny);
     // The turn rides along with the step — one action, one round. See `MoveInput`.
     if (compound) this.turnTo(swap ? (((d + 2) % 4) as Dir) : (((this.dir + 2) % 4) as Dir));
   }
 
   update(dt: number): void {
-    if (this.moveT < 1) {
-      this.moveT = Math.min(1, this.moveT + dt / STEP_TIME);
+    if (this.moveT < 1 && !this.holding) {
+      this.moveT = Math.min(this.holdAt, this.moveT + dt / STEP_TIME);
       // one full bob cycle per step, so footfalls land on arrival
       this.bobPhase += dt / STEP_TIME;
-      if (this.moveT >= 1) {
+      if (this.holdAt < 1 && this.moveT >= this.holdAt) {
+        // Stop mid-stride and hand the round over. `fromX/fromY` is the tile the
+        // player still counts as standing on: they are climbing INTO the rubble, not
+        // out of it, and the room answers from where they actually are.
+        this.holding = true;
+        this.onHalfway?.(this.fromX, this.fromY);
+      } else if (this.moveT >= 1) {
         this.bobPhase = Math.round(this.bobPhase);
         this.onArrive?.(this.x, this.y);
       }
-    } else {
+    } else if (this.moveT >= 1) {
       this.bobPhase += dt * 0.22; // idle breathing
     }
 

@@ -42,7 +42,7 @@ played — check it before trusting it.
 | 20 | [Ingredient_Belt](Ingredient_Belt.md) | yes | shipped, flagged off |
 | 21 | [Grid_Vocabulary](Grid_Vocabulary.md) | yes | shipped |
 | 22 | [Layout_Generators](Layout_Generators.md) | yes | shipped, less terraces |
-| 23 | [Tile_Vocabulary](Tile_Vocabulary.md) | yes | planned |
+| 23 | [Tile_Vocabulary](Tile_Vocabulary.md) | yes | shipped |
 | 24 | [Verticality](Verticality.md) | yes | planned |
 | 25 | [Timing_And_Hazards](Timing_And_Hazards.md) | yes | planned |
 | 26 | [Locks_And_Levers](Locks_And_Levers.md) | yes | planned |

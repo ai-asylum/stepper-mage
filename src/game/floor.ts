@@ -6,7 +6,7 @@
  * list from here; nothing else needs to know how a floor is put together.
  */
 import * as THREE from 'three';
-import { Grid, visibleTiles, type Dir } from '../dungeon/grid';
+import { Grid, Surface, visibleTiles, type Dir } from '../dungeon/grid';
 import { generate } from '../dungeon/generate';
 import { DungeonView } from '../dungeon/render';
 import { Sprite, preloadSprites, loadSprite } from '../dungeon/sprites';
@@ -163,6 +163,10 @@ export class Floor {
   private constructor(readonly depth: number, readonly seed: string) {
     this.theme = themeForDepth(depth);
     this.grid = generate({ depth, seed });
+    // Shallow water will not take a flame. `Ground` deliberately knows nothing about
+    // tiles, so the one place holding both it and the grid is where the rule goes.
+    this.ground.refuses = (i, what) =>
+      what === 'fire' && this.grid.surface[i] === Surface.Water;
     this.view = new DungeonView(this.grid, this.theme, seed);
     this.group.add(this.view.group);
     this.group.add(this.fireView.group);
@@ -258,6 +262,20 @@ export class Floor {
     e.hp = e.maxHp = castHp + this.depth * 6;
     risen.play('rise');
     return true;
+  }
+
+  /**
+   * The floor's SURFACE changed under the player, so the geometry has to say so.
+   *
+   * Only gust clearing rubble does this today, and it is the only thing that can:
+   * every other surface is part of the floor for the whole descent. The tile textures
+   * are rebuilt along with the quads, which is more than is strictly needed — a
+   * surface change moves a tile from one batch to another and invents no new texture —
+   * but it is the one build path there is, it costs what entering a floor costs, and
+   * it happens at most a handful of times in a run.
+   */
+  resurface(): void {
+    this.view.restep();
   }
 
   /**

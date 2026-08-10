@@ -8,19 +8,22 @@
  * budget for the spell VFX later.
  */
 import * as THREE from 'three';
-import { Grid, Tile, DIR_VEC } from './grid';
+import { Grid, Tile, Surface, DIR_VEC } from './grid';
 import { WALL_H, buildTileSet, buildSconce, colToHex } from '../art/tiles';
 import type { Theme } from '../art/theme';
 import type { Pix } from '../art/pixel';
 
 const WORLD_VERT = /* glsl */ `
   attribute float alight;
+  attribute float amurk;
   varying vec2 vUv;
   varying float vLight;
+  varying float vMurk;
   varying vec3 vWorld;
   void main() {
     vUv = uv;
     vLight = alight;
+    vMurk = amurk;
     vec4 wp = modelMatrix * vec4(position, 1.0);
     vWorld = wp.xyz;
     gl_Position = projectionMatrix * viewMatrix * wp;
@@ -41,8 +44,11 @@ const WORLD_FRAG = /* glsl */ `
   uniform float uTorchGain;
   uniform vec3 uFog;
   uniform float uFogDensity;
+  uniform vec3 uMurkCol;
+  uniform float uMurkHere;
   varying vec2 vUv;
   varying float vLight;
+  varying float vMurk;
   varying vec3 vWorld;
 
   void main() {
@@ -69,6 +75,23 @@ const WORLD_FRAG = /* glsl */ `
     float f = exp(-uFogDensity * d * d);
     c = mix(uFog, c, clamp(f, 0.0, 1.0));
 
+    /*
+     * A FOG BANK, in two parts, because it has to read from two places.
+     *
+     * FROM OUTSIDE: vMurk is how deep in the bank this surface stands, so the ground
+     * goes pale and flat at any distance and you can see the edge of the thing from
+     * across the room. That is what makes walking into it a decision.
+     *
+     * FROM INSIDE: uMurkHere is how fogged the tile the CAMERA is on is, and it
+     * drives a second distance falloff — a steep one — so standing in the bank
+     * dissolves the room at a couple of tiles whichever way you turn. Distance rather
+     * than depth, because from in here the murk is between you and everything,
+     * including the clear floor on the far side.
+     */
+    float bank = exp(-uMurkHere * 0.42 * d * d);
+    c = mix(c, uMurkCol, vMurk * 0.45);
+    c = mix(uMurkCol, c, clamp(bank, 0.0, 1.0));
+
     gl_FragColor = vec4(c, 1.0);
   }
 `;
@@ -85,6 +108,8 @@ export interface WorldUniforms {
   uTorchGain: { value: number };
   uFog: { value: THREE.Color };
   uFogDensity: { value: number };
+  uMurkCol: { value: THREE.Color };
+  uMurkHere: { value: number };
   [k: string]: { value: unknown };
 }
 
@@ -93,8 +118,11 @@ class MeshBuild {
   pos: number[] = [];
   uv: number[] = [];
   light: number[] = [];
+  murk: number[] = [];
   idx: number[] = [];
   private n = 0;
+  /** Fog depth for the next quad's corners, in the same order as the light. */
+  fog: [number, number, number, number] = [0, 0, 0, 0];
 
   quad(
     a: [number, number, number], b: [number, number, number],
@@ -124,6 +152,7 @@ class MeshBuild {
     const vHi = flipV ? vh : 0;
     this.uv.push(0, vLo, uw, vLo, uw, vHi, 0, vHi);
     this.light.push(la, lb, lc, ld);
+    this.murk.push(...this.fog);
     const i = this.n;
     this.idx.push(i, i + 1, i + 2, i, i + 2, i + 3);
     this.n += 4;
@@ -135,6 +164,7 @@ class MeshBuild {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     geo.setAttribute('alight', new THREE.Float32BufferAttribute(this.light, 1));
+    geo.setAttribute('amurk', new THREE.Float32BufferAttribute(this.murk, 1));
     geo.setIndex(this.idx);
     geo.computeBoundingSphere();
     const mat = new THREE.ShaderMaterial({
@@ -167,6 +197,8 @@ export class DungeonView {
       uTorchGain: { value: 3.6 },
       uFog: { value: new THREE.Color(colToHex(theme.fog)) },
       uFogDensity: { value: 0.016 },
+      uMurkCol: { value: new THREE.Color(0x8d949c) },
+      uMurkHere: { value: 0 },
     };
     this.build(seed);
   }
@@ -210,12 +242,50 @@ export class DungeonView {
     return n ? sum / n : 0;
   }
 
+  /**
+   * How deep in a fog bank a floor CORNER is, 0..1 — the same four-tile average the
+   * light uses, and for the same reason: sampled per tile, the edge of a bank is a
+   * hard sawtooth against the tile grid, and a bank with a hard edge reads as a
+   * decal. Averaged per corner it has a shoreline.
+   */
+  private cornerMurk(cx: number, cy: number): number {
+    const g = this.grid;
+    let sum = 0, n = 0;
+    for (let dy = -1; dy <= 0; dy++) {
+      for (let dx = -1; dx <= 0; dx++) {
+        const x = cx + dx, y = cy + dy;
+        if (!g.seeThrough(x, y)) continue;
+        sum += g.surfaceAt(x, y) === Surface.Fog ? 1 : 0;
+        n++;
+      }
+    }
+    return n ? sum / n : 0;
+  }
+
   private build(seed: string): void {
     const g = this.grid;
-    const tiles = buildTileSet(this.theme, seed);
+    const tiles = buildTileSet(this.theme, seed, g.portals.length);
     const wallB = tiles.walls.map(() => new MeshBuild());
     const floorB = tiles.floors.map(() => new MeshBuild());
     const ceilB = tiles.ceils.map(() => new MeshBuild());
+    /**
+     * One batch per surface texture, exactly like the floor variants — a surface is
+     * not a special case in the renderer, it is another texture a floor quad can go
+     * to. That is what keeps the draw call count a small constant: the whole floor is
+     * still one mesh per texture, and a floor carrying three surfaces costs three
+     * more of them.
+     */
+    const ironB = tiles.iron.map(() => new MeshBuild());
+    const waterB = tiles.water.map(() => new MeshBuild());
+    const rubbleB = tiles.rubble.map(() => new MeshBuild());
+    const fogB = tiles.fog.map(() => new MeshBuild());
+    const portalB = tiles.portal.map(() => new MeshBuild());
+    const surfaceB: Record<number, MeshBuild[]> = {
+      [Surface.Iron]: ironB,
+      [Surface.Water]: waterB,
+      [Surface.Rubble]: rubbleB,
+      [Surface.Fog]: fogB,
+    };
 
     // ONE. Not `WALL_H`, which is what it used to be and what put a strip of the
     // top of every wall along the bottom of every wall.
@@ -256,10 +326,27 @@ export class DungeonView {
         const l11 = this.cornerLight(x + 1, y + 1);
         const l01 = this.cornerLight(x, y + 1);
 
+        // corner fog depth, same four corners, carried into every quad of this tile
+        const m00 = this.cornerMurk(x, y);
+        const m10 = this.cornerMurk(x + 1, y);
+        const m11 = this.cornerMurk(x + 1, y + 1);
+        const m01 = this.cornerMurk(x, y + 1);
+
         // Floor, normal +y. Winding runs from the far edge to the near edge —
         // the opposite order reads as facing down and gets backface-culled.
         if (!gap) {
-          const fb = floorB[v % floorB.length];
+          const surf = g.surfaceAt(x, y);
+          let fb: MeshBuild;
+          if (surf === Surface.Portal) {
+            // A mouth belongs to its PAIR's batch, which is what makes two of them
+            // the same colour and no two pairs the same.
+            const pair = g.portals.findIndex((p) => p.a === g.idx(x, y) || p.b === g.idx(x, y));
+            fb = portalB[pair >= 0 ? pair : 0] ?? floorB[v % floorB.length];
+          } else {
+            const set = surfaceB[surf];
+            fb = set ? set[v % set.length] : floorB[v % floorB.length];
+          }
+          fb.fog = [m01, m11, m10, m00];
           fb.quad(
             [x - 0.5, 0, y + 0.5], [x + 0.5, 0, y + 0.5],
             [x + 0.5, 0, y - 0.5], [x - 0.5, 0, y - 0.5],
@@ -269,6 +356,7 @@ export class DungeonView {
 
         // Ceiling, normal -y (pointing down at the player).
         const cb = ceilB[v % ceilB.length];
+        cb.fog = [m00, m10, m11, m01];
         cb.quad(
           [x - 0.5, WALL_H, y - 0.5], [x + 0.5, WALL_H, y - 0.5],
           [x + 0.5, WALL_H, y + 0.5], [x - 0.5, WALL_H, y + 0.5],
@@ -282,6 +370,10 @@ export class DungeonView {
           if (g.seeThrough(nx, ny)) continue;
 
           const wb = wallB[(v + f * 3) % wallB.length];
+          // A wall bounding a fogged tile is in the bank too, or the murk would stop
+          // dead at the skirting and the room's edges would stay crisp inside it.
+          const wm = g.surfaceAt(x, y) === Surface.Fog ? 1 : 0;
+          wb.fog = [wm, wm, wm, wm];
           const lb = g.lightAt(x, y);
           // top of a wall is shaded — the ceiling occludes it
           const lt = lb * 0.45;
@@ -317,6 +409,11 @@ export class DungeonView {
     addAll(wallB, tiles.walls);
     addAll(floorB, tiles.floors);
     addAll(ceilB, tiles.ceils);
+    addAll(ironB, tiles.iron);
+    addAll(waterB, tiles.water);
+    addAll(rubbleB, tiles.rubble);
+    addAll(fogB, tiles.fog);
+    addAll(portalB, tiles.portal);
 
     this.buildSconces(seed);
   }
@@ -354,9 +451,22 @@ export class DungeonView {
     }
   }
 
-  /** Per-frame: torch flicker + sconce animation. */
+  /** Per-frame: torch flicker + sconce animation + how deep in the murk the eye is. */
   update(time: number, camPos: THREE.Vector3): void {
     (this.uniforms.uCam.value as THREE.Vector3).copy(camPos);
+
+    /**
+     * The camera's own fog depth, EASED rather than switched.
+     *
+     * Read off the tile the eye is over, which moves continuously during a step, so
+     * a hard read would snap the whole room from clear to blind on the frame the
+     * player crosses the shoreline. Chasing it at a fixed rate per frame gives the
+     * bank a threshold you walk through instead of a light switch.
+     */
+    const g = this.grid;
+    const want = g.surfaceAt(Math.round(camPos.x), Math.round(camPos.z)) === Surface.Fog ? 1 : 0;
+    const at = this.uniforms.uMurkHere.value as number;
+    this.uniforms.uMurkHere.value = at + (want - at) * 0.08;
 
     // Two out-of-phase sines plus a rare dip: reads as fire, not as a pulse.
     const f =

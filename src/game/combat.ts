@@ -25,7 +25,7 @@
  * it bounds an algorithm rather than a fight.)
  */
 import { Rng } from '../core/rng';
-import { DIR_VEC, type Grid } from '../dungeon/grid';
+import { DIR_VEC, FOG_SIGHT, Surface, conducts, type Grid } from '../dungeon/grid';
 import { faceToward, type Entity, type Floor } from './floor';
 import { groundUse, type GroundUse, type Substance } from './ground';
 import { affinityMult, affinityOf, type Affinities } from './affinity';
@@ -680,6 +680,25 @@ export class Combat {
        */
       if (leaves === 'gust') {
         this.floor.ground.extinguish(filled.map((t) => t.i));
+        /**
+         * AND IT SWEEPS THE RUBBLE, which is the one surface the player can edit.
+         *
+         * A slow tile you can delete is a different object from a slow tile you have
+         * to walk round: it turns a blocked doorway into a cast you decide whether to
+         * spend, and it gives gust — which until now only ever took things away — a
+         * use that leaves the room better than it found it. Only rubble; a gust does
+         * not blow a plate of iron off the floor.
+         */
+        let swept = 0;
+        for (const { i } of filled) {
+          if (g.surface[i] !== Surface.Rubble) continue;
+          g.surface[i] = Surface.Plain;
+          swept++;
+        }
+        if (swept) {
+          this.floor.resurface();
+          this.onEvent({ kind: 'status', text: 'THE RUBBLE SCATTERS!', colour: 0xa89880 });
+        }
       } else if (groundUsed === 'grow' && groundWas) {
         /**
          * THE CAST FED THE GROUND, so the patch GROWS.
@@ -745,6 +764,57 @@ export class Combat {
   }
 
   /**
+   * The charge jumps onward from a body it just shocked.
+   *
+   * Two reaches in one function, because they are one rule asked of different
+   * geometry and the alternative is the arc drifting apart from itself:
+   *
+   *  - ON A CONDUCTIVE SURFACE, the reach is THE PLATE. Everything standing on the
+   *    same continuous run of iron or standing water takes the share — every body, and
+   *    THE PLAYER, who is standing on the floor like anyone else. That is the whole
+   *    point of drawing the plating as a shape: the circuit is readable before you
+   *    cast, and stepping off it is a real decision you can make in advance.
+   *  - OFF IT, the old behaviour, unchanged: one nearby body, within
+   *    `CONDUCTION_ARC_RANGE`, found by a flood so a charge never jumps through a wall
+   *    into the next room.
+   */
+  private arc(from: Entity, damage: number): void {
+    const g = this.floor.grid;
+    const share = Math.round(damage * CONDUCTION_ARC_SHARE);
+    const plate = g.conductive(from.sprite.tx, from.sprite.ty);
+
+    if (plate.length > 1) {
+      const on = new Set(plate);
+      for (const o of this.floor.entities) {
+        if (o === from || !o.alive || !o.hostile) continue;
+        if (!on.has(g.idx(o.sprite.tx, o.sprite.ty))) continue;
+        this.damage(o, share, 0xffe14a);
+        this.addStatus(o, 'shocked', 1);
+      }
+      if (on.has(g.idx(this.playerTile.x, this.playerTile.y))) {
+        this.state.hp -= share;
+        this.onPlayerHurt(share, null);
+        this.onEvent({
+          kind: 'hit', text: `The plating carries the charge into you for ${share}.`,
+          colour: 0xffe14a,
+        });
+      }
+      return;
+    }
+
+    // The arc walks the grid like everything else. A charge does not jump through a
+    // wall to a body in the next room.
+    const reach = this.reachFrom(from.sprite.tx, from.sprite.ty, CONDUCTION_ARC_RANGE);
+    const other = this.floor.entities.find(
+      (o) => o !== from && o.alive && o.hostile && this.reached(reach, o.sprite.tx, o.sprite.ty),
+    );
+    if (other) {
+      this.damage(other, share, 0xffe14a);
+      this.addStatus(other, 'shocked', 1);
+    }
+  }
+
+  /**
    * The player's own volume, catching the player.
    *
    * Full damage and it can kill — the same rules as the enemy standing next to
@@ -778,17 +848,22 @@ export class Combat {
         damage = Math.round(damage * CONDUCTION_MULT);
         glow = 0xffe14a;
         this.onEvent({ kind: 'status', text: 'CONDUCTION!', colour: 0xffe14a });
-        // The arc walks the grid like everything else. A charge does not jump
-        // through a wall to a body in the next room.
-        const arc = this.reachFrom(t.sprite.tx, t.sprite.ty, CONDUCTION_ARC_RANGE);
-        const other = this.floor.entities.find(
-          (o) => o !== t && o.alive && o.hostile &&
-            this.reached(arc, o.sprite.tx, o.sprite.ty),
-        );
-        if (other) {
-          this.damage(other, Math.round(damage * CONDUCTION_ARC_SHARE), 0xffe14a);
-          this.addStatus(other, 'shocked', 1);
-        }
+        this.arc(t, damage);
+      }
+      /**
+       * THE PLATE CONDUCTS EVEN IF THE BODY IS DRY.
+       *
+       * Soaking something to make it arc is a two-cast setup the player builds; iron
+       * and standing water are the same play already lying on the floor, and the
+       * difference is that the floor is VISIBLE before you commit. You do not get the
+       * damage multiplier for it — the plate is reach, not power, and stacking it on
+       * top of soaked would make one tile worth more than a whole combo.
+       */
+      if (brings('shocked') && !this.has(t, 'soaked')
+          && conducts(this.floor.grid.surfaceAt(t.sprite.tx, t.sprite.ty))) {
+        glow = 0xffe14a;
+        this.onEvent({ kind: 'status', text: 'THE PLATE CARRIES IT!', colour: 0xffe14a });
+        this.arc(t, damage);
       }
       // STEAM: fire on a soaked body boils the water off instead of burning it.
       if (brings('burning') && this.has(t, 'soaked')) {
@@ -1499,9 +1574,14 @@ function label(e: Entity): string {
 function clearLine(grid: Grid, x0: number, y0: number, x1: number, y1: number): boolean {
   const dx = x1 - x0, dy = y1 - y0;
   const n = Math.max(Math.abs(dx), Math.abs(dy));
+  let murk = 0;
   for (let i = 1; i < n; i++) {
     const t = i / n;
     const px = x0 + dx * t, py = y0 + dy * t;
+    // Fog spends the same allowance the rays do, so what you can put a reticle on
+    // and what the minimap admits you have seen stay the same claim.
+    if (grid.surfaceAt(Math.round(px), Math.round(py)) === Surface.Fog) murk++;
+    if (murk > FOG_SIGHT) return false;
     if (grid.seeThrough(Math.round(px), Math.round(py))) continue;
     if (grid.seeThrough(Math.floor(px), Math.floor(py))) continue;
     if (grid.seeThrough(Math.ceil(px), Math.ceil(py))) continue;

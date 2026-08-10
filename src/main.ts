@@ -33,7 +33,7 @@ import {
 } from './spells/belt';
 import { BELT_ENABLED } from './flags';
 import { Rng } from './core/rng';
-import { DIR_VEC, type Dir } from './dungeon/grid';
+import { DIR_VEC, Surface, type Dir } from './dungeon/grid';
 import { THEMES } from './art/theme';
 import { hitFxFor } from './game/hitfx';
 import { affinityOf } from './game/affinity';
@@ -2004,6 +2004,35 @@ async function boot(): Promise<void> {
       other.sprite.setTileLight(floor.grid.lightAt(fx, fy));
       other.sprite.play('walk');
     };
+    /**
+     * RUBBLE IS CROSSED IN TWO HALVES, on ONE swipe.
+     *
+     * The cost is a turn — the only currency this game has — and it is charged by
+     * running the room's round twice for the one step: once here, with the player
+     * stopped half a tile in and still counting as standing on the near side, and
+     * once on arrival like any other step. So a body that was two tiles away gets to
+     * close and swing while you are climbing, which is exactly what a slow tile is
+     * supposed to mean.
+     *
+     * What it is NOT is a step that takes two swipes. The player never has to repeat
+     * an input, because an input that visibly did nothing is indistinguishable from
+     * one the touchscreen ate, and the lesson learnt from that is to distrust the
+     * control rather than to respect the terrain.
+     */
+    stepper.onHalfway = async (fromX, fromY) => {
+      busy = true;
+      hud.addLog('You clamber into the rubble.', 0xa89880);
+      try {
+        await combat.playerStepped(fromX, fromY);
+      } finally {
+        // In a `finally` and not after the await: a throw in the round would
+        // otherwise leave the player frozen mid-stride with no way to finish the step.
+        busy = false;
+        stepper.release();
+      }
+      refreshTargets();
+      checkDeath();
+    };
     stepper.onArrive = async (x, y) => {
       // The movement hint has done its job the instant the player moves once.
       hud.hasMoved = true;
@@ -2014,6 +2043,29 @@ async function boot(): Promise<void> {
       busy = false;
       refreshTargets();
       checkDeath();
+
+      /**
+       * A PORTAL MOVES YOU WHEN YOU STAND ON IT. That is the whole feature.
+       *
+       * After the round, like the stairs and for the same reason: the step that
+       * carried you onto the mouth is still a turn the room gets to answer. Arriving
+       * is a `place`, not a step, so the far mouth does not fire this again and bounce
+       * you back — stepping onto it a second time is a second, deliberate trip.
+       */
+      const here = floor.grid.idx(x, y);
+      if (state.hp > 0 && floor.grid.surfaceAt(x, y) === Surface.Portal) {
+        const to = floor.grid.portalPair(here);
+        if (to >= 0) {
+          const tx = to % floor.grid.w, ty = (to / floor.grid.w) | 0;
+          fx.burst(new THREE.Vector3(x, 0.5, y), 0xb98cff, 1.4);
+          stepper.place(tx, ty, stepper.dir);
+          fx.burst(new THREE.Vector3(tx, 0.5, ty), 0xb98cff, 1.4);
+          combat.playerTile = { x: tx, y: ty };
+          floor.cull(tx, ty);
+          refreshTargets();
+          hud.addLog('The pair takes you.', 0xb98cff);
+        }
+      }
       /**
        * WALKING IN IS DESCENDING. The stairs are the one thing in the dungeon you
        * can stand on — `SOLID` leaves them out on purpose — and standing on a

@@ -328,6 +328,32 @@ one generator:
   a spiral or a nest the far end is the nearest thing on the map. Anything that reasons
   about distance in this game reasons about path distance.
 
+## The floor is an argument too
+
+A layout decides how you MOVE. A surface decides **what a tile does to a spell** — and
+between them they are the only two things that can change what the player should cast
+without changing the creatures. Before surfaces, every tile was inert: it held you up
+or it did not, so the only question a room asked was "what is weak to what", and once
+the affinity table was learnt the room was answered.
+
+**Every surface has to be legible in the tile itself.** That is the entry requirement
+and it is what got things cut: a rule the player has to be TOLD is a theme, and a rule
+they can see in the floor is a mechanic. Regular beats irregular for this — a plate is
+the only thing on a dungeon floor with straight edges and repeating rivets, rubble is
+the only thing that casts a shadow, water is the only thing that reflects.
+
+Two design rules fell out of building them:
+
+- **A surface that changes a spell's reach must be visible BEFORE the cast.** Iron
+  plating is the whole argument: the arc goes everywhere the metal goes, including into
+  you, and the plate is drawn as a shape so the circuit can be read from the doorway.
+  Stepping off it is a decision you get to make in advance. A surface whose rule you
+  discover by triggering it is a trap, and traps are a different, worse game.
+- **What a tile costs should be charged in turns, never in inputs.** Rubble takes two
+  of the room's answers to cross and exactly one swipe. A press that visibly does
+  nothing is indistinguishable from an input the touchscreen ate, and what the player
+  learns from it is to distrust the control rather than to respect the terrain.
+
 ## Obstacles have two axes, not one
 
 **A wall stops sight and footing. A gap stops only footing.** Until the grid could

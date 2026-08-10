@@ -28,6 +28,7 @@ import { Pix, hex } from '../art/pixel';
 import { drawCentered, CELL_H } from '../art/bitfont';
 import * as THREE from 'three';
 import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
+import { PORTAL_HUES } from '../art/tiles';
 import { spriteTexture } from '../dungeon/sprites';
 import type { Floor } from '../game/floor';
 import { CARD_H, CARD_W, pageCard, scrollCard } from '../book/offerCard';
@@ -1262,6 +1263,28 @@ export class Hud {
           : g.visited[g.idx(tx, ty)] ? '#c9b590'
           : '#6a5c48';
         ctx.fillRect(cx + 1, cy + 1, CELL - 2, CELL - 2);
+
+        /**
+         * PORTAL MOUTHS, in the pair's own colour, and no other surface.
+         *
+         * The map answers one question — which way do I go — so the only surface that
+         * belongs on it is the one that is a ROUTE. Iron, water, rubble and fog all
+         * change what a tile is worth once you are standing near it, and you can see
+         * every one of them from the doorway; putting them up here would be four more
+         * colours competing with the thing the map is for. A portal is the exception
+         * because its whole value is knowing where the other end came out, which is a
+         * fact about the floor plan and nothing to do with what is under your feet.
+         *
+         * Drawn on `explored` rather than on sight, unlike the fire: a mouth does not
+         * go out.
+         */
+        if (!wall) {
+          const pair = g.portals.findIndex((p) => p.a === g.idx(tx, ty) || p.b === g.idx(tx, ty));
+          if (pair >= 0) {
+            ctx.fillStyle = `#${PORTAL_HUES[pair % PORTAL_HUES.length].toString(16).padStart(6, '0')}`;
+            ctx.fillRect(cx + 2, cy + 2, CELL - 4, CELL - 4);
+          }
+        }
 
         /**
          * Burning ground, over the floor colour and under everything that moves.

@@ -38,6 +38,42 @@ export const enum Tile {
   Gap = 3,
 }
 
+/**
+ * What a tile DOES, as opposed to whether you can stand on it.
+ *
+ * `Tile` is the floor's SHAPE and this is its SURFACE, and they are separate bytes
+ * because they answer separate questions: a tile that conducts is still a tile you
+ * walk on, and every layout should be able to have a wet quarter without being a
+ * different layout. A surface is part of the floor and never expires — which is what
+ * makes it the grid's and not `Ground`'s, since `Ground` holds what a cast left behind
+ * and ages it away.
+ *
+ * EVERY ONE OF THESE IS LEGIBLE IN THE TILE. That is the whole entry requirement: a
+ * rule the player has to be told is a theme, and a rule they can see in the floor is a
+ * mechanic. Anything that could not be drawn did not ship.
+ */
+export const enum Surface {
+  Plain = 0,
+  /** Iron plating. Spark chains along the whole plate — you included. */
+  Iron = 1,
+  /** Shallow water. Chains like iron, and fire will not take on it. */
+  Water = 2,
+  /** Broken stone. Two moves to cross, and gust clears it. */
+  Rubble = 3,
+  /** A fog bank. Sight dies two tiles in, whichever side of it you are on. */
+  Fog = 4,
+  /** One mouth of a pair. Step on it, arrive at the other. */
+  Portal = 5,
+}
+
+/** How many fogged tiles a line of sight survives. Two, and the second is the last. */
+export const FOG_SIGHT = 2;
+
+/** Do spark and shock run along this surface? */
+export function conducts(s: Surface): boolean {
+  return s === Surface.Iron || s === Surface.Water;
+}
+
 export type Dir = 0 | 1 | 2 | 3; // 0=north(-z) 1=east(+x) 2=south(+z) 3=west(-x)
 
 export const DIR_VEC: readonly [number, number][] = [[0, -1], [1, 0], [0, 1], [-1, 0]];
@@ -113,11 +149,19 @@ export class Grid {
    * way to say, and that alphabet is what this phase is.
    */
   readonly height: Int8Array;
+  /** What each tile DOES — see `Surface`. A second byte beside `variant`. */
+  readonly surface: Uint8Array;
 
   rooms: Room[] = [];
   lights: LightSource[] = [];
   start: { x: number; y: number; dir: Dir } = { x: 1, y: 1, dir: 2 };
   stairs: { x: number; y: number } | null = null;
+  /**
+   * The portal pairs, as tile indices. A mouth without its twin is a hole in the
+   * floor plan, so they are stored as pairs rather than inferred from the surface
+   * byte — which can only say "portal", not "which one".
+   */
+  portals: { a: number; b: number }[] = [];
 
   constructor(w: number, h: number) {
     this.w = w; this.h = h;
@@ -128,6 +172,7 @@ export class Grid {
     this.explored = new Uint8Array(w * h);
     this.visited = new Uint8Array(w * h);
     this.height = new Int8Array(w * h);
+    this.surface = new Uint8Array(w * h);
   }
 
   idx(x: number, y: number): number { return y * this.w + x; }
@@ -168,6 +213,54 @@ export class Grid {
   heightAt(x: number, y: number): number {
     if (!this.inside(x, y)) return 0;
     return this.height[this.idx(x, y)];
+  }
+
+  /** What this tile does. Plain outside the map and plain under a wall. */
+  surfaceAt(x: number, y: number): Surface {
+    if (!this.inside(x, y)) return Surface.Plain;
+    return this.surface[this.idx(x, y)] as Surface;
+  }
+
+  /**
+   * Every tile of the connected run of conductive surface this tile is part of.
+   *
+   * The plate IS the reach — that is the whole of iron, and of standing water, and
+   * the reason both are one rule. A charge does not care how far it has travelled,
+   * it cares whether the metal is continuous, so this is a flood over `conducts` and
+   * not a radius. Empty if the tile does not conduct, which is the common case and
+   * the caller's cue to fall back to the ordinary arc.
+   */
+  conductive(x: number, y: number): number[] {
+    const s = this.surfaceAt(x, y);
+    if (!conducts(s)) return [];
+    const out: number[] = [];
+    const seen = new Uint8Array(this.w * this.h);
+    const start = this.idx(x, y);
+    const q = [start];
+    seen[start] = 1;
+    for (let qi = 0; qi < q.length; qi++) {
+      const i = q[qi];
+      out.push(i);
+      const cx = i % this.w, cy = (i / this.w) | 0;
+      for (const [dx, dy] of DIR_VEC) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!this.inside(nx, ny) || this.surfaceAt(nx, ny) !== s) continue;
+        const ni = this.idx(nx, ny);
+        if (seen[ni]) continue;
+        seen[ni] = 1;
+        q.push(ni);
+      }
+    }
+    return out;
+  }
+
+  /** The other mouth of the pair this tile belongs to, or -1. */
+  portalPair(i: number): number {
+    for (const p of this.portals) {
+      if (p.a === i) return p.b;
+      if (p.b === i) return p.a;
+    }
+    return -1;
   }
 
   lightAt(x: number, y: number): number {
@@ -296,16 +389,26 @@ export class Grid {
     return dx * dx + dy * dy;
   }
 
-  /** Straight line of sight along a cardinal direction, blocked by walls. */
+  /** Straight line of sight along a cardinal direction, blocked by walls and by fog. */
   rayTiles(x: number, y: number, dir: Dir, max: number): [number, number][] {
     const [dx, dy] = DIR_VEC[dir];
     const out: [number, number][] = [];
+    let murk = 0;
     for (let i = 1; i <= max; i++) {
       const nx = x + dx * i, ny = y + dy * i;
       // Sight, so a gap is passed and RETURNED — a chasm you cannot cross is still
       // something you have laid eyes on, and the far side of it is too.
       if (!this.seeThrough(nx, ny)) break;
+      /**
+       * FOG IS COUNTED, not distanced. Two fogged tiles is as far as a look gets,
+       * whichever side of the bank you are standing on: from outside you see two
+       * tiles into it, and from inside you see two tiles of anything. The tile that
+       * spends the last of the allowance is still SEEN — you can make out the thing
+       * at the edge of the murk, you just cannot see past it.
+       */
+      if (this.surfaceAt(nx, ny) === Surface.Fog) murk++;
       out.push([nx, ny]);
+      if (murk >= FOG_SIGHT) break;
     }
     return out;
   }
@@ -356,15 +459,29 @@ export function bakeLight(g: Grid): void {
   }
 }
 
-/** Tiles the player can currently see (cardinal corridors + current room). */
+/**
+ * Tiles the player can currently see (cardinal corridors + current room).
+ *
+ * IN FOG, THE ROOM REVEAL IS OFF. Walking into a room hands you the whole of it,
+ * which is right — you looked around — and would quietly undo the one thing fog does
+ * if it kept happening inside a bank. Standing in the murk you get the rays and
+ * nothing else, so the map fills in two tiles at a time as you feel your way through,
+ * and the compass becomes the more useful of the two readouts. That last part is the
+ * point of the surface rather than a side effect of it.
+ */
 export function visibleTiles(g: Grid, px: number, py: number): Set<number> {
   const out = new Set<number>();
+  const blind = g.surfaceAt(px, py) === Surface.Fog;
   const room = g.roomAt(px, py);
-  if (room) for (const [x, y] of room.tiles) out.add(g.idx(x, y));
+  if (room && !blind) for (const [x, y] of room.tiles) out.add(g.idx(x, y));
   out.add(g.idx(px, py));
   for (let d = 0 as Dir; d < 4; d = (d + 1) as Dir) {
     for (const [x, y] of g.rayTiles(px, py, d, 12)) {
       out.add(g.idx(x, y));
+      // A room you can see INTO is a room you have seen, unless the look that got
+      // you there was spent on murk — a bank two tiles deep does not reveal what is
+      // standing on the other side of it.
+      if (blind || g.surfaceAt(x, y) === Surface.Fog) continue;
       const r = g.roomAt(x, y);
       if (r) for (const [rx, ry] of r.tiles) out.add(g.idx(rx, ry));
     }

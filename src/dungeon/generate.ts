@@ -12,7 +12,10 @@
  * space, assign the four room roles by path distance, then variants, torches, bake.
  */
 import { Rng } from '../core/rng';
-import { Grid, Tile, DIR_VEC, bakeLight, type Room, type Dir, type LightSource } from './grid';
+import {
+  Grid, Tile, Surface, DIR_VEC, bakeLight,
+  type Room, type Dir, type LightSource,
+} from './grid';
 import { WALL_H } from '../art/tiles';
 import { LAYOUTS, layoutFor, recentre, type LayoutId } from './layouts';
 
@@ -56,6 +59,7 @@ export function generate(opts: GenOpts): Grid {
     for (let x = 0; x < g.w; x++) g.variant[g.idx(x, y)] = rng.int(0, 255);
   }
 
+  dress(g, rng, opts.depth);
   placeLights(g, rng);
   bakeLight(g);
   return g;
@@ -246,6 +250,244 @@ function assignRoles(g: Grid, rng: Rng, nominated: Room | null): void {
   g.start = { x: entrance.cx, y: entrance.cy, dir: rng.int(0, 3) as Dir };
   // revealed in the boss room once the boss dies — see `Floor.revealStairs`
   g.stairs = { x: boss.cx, y: boss.cy };
+}
+
+/**
+ * WHICH SURFACES EACH FLOOR CARRIES.
+ *
+ * Not rolled, for the same reason the layout is not: a floor should be a place. And
+ * introduced one at a time, because every one of them is a rule the player has to
+ * learn by looking — dropping four new floor behaviours on somebody at once turns a
+ * vocabulary into noise, which is the exact failure the acceptance line about three
+ * surfaces is guarding against.
+ *
+ * FLOOR 1 STAYS BARE. It is the floor that teaches what a floor is, and the layout
+ * table leaves it plain for the same reason.
+ *
+ * The pairings are chosen against the SHAPE, which is what makes them worth having.
+ * Fog on the gauntlet means a chain of rooms you cannot see down, and the one layout
+ * with no way round is the one where that hurts. Portals on the islands and on the
+ * chasm are the two floors that took footing away, given one way across that is not a
+ * causeway. Iron in the foundry, water in the vault. The Hollow Crown carries three,
+ * because by then all three have been taught.
+ */
+const SURFACES_BY_DEPTH: Surface[][] = [
+  [],                                              //  1 rooms — the grammar, bare
+  [Surface.Rubble],                                //  2 warren — cramped and blocked
+  [Surface.Water],                                 //  3 cave — it seeps
+  [Surface.Iron, Surface.Rubble],                  //  4 grid city — plated and broken
+  [Surface.Water, Surface.Iron],                   //  5 cathedral — a flooded vault
+  [Surface.Portal, Surface.Iron],                  //  6 islands — a way across
+  [Surface.Fog, Surface.Rubble],                   //  7 ring — a loop you cannot see round
+  [Surface.Fog, Surface.Water],                    //  8 gauntlet — a chain you cannot see down
+  [Surface.Portal, Surface.Rubble],                //  9 chasm — a way over
+  [Surface.Iron, Surface.Water, Surface.Fog],      // 10 hub — all three, taught
+];
+
+/**
+ * Lay the floor's surfaces on it.
+ *
+ * Runs after the roles are assigned, so it knows which room is the entrance and where
+ * the descent is, and before the lights, so a plate of iron gets torches like any
+ * other floor. Every surface here is WALKABLE — none of them can cut the floor in two,
+ * which is why this can run after `stitch` without re-checking anything.
+ *
+ * Three tiles are sacred and nothing is ever laid on them: the player's start, the
+ * descent, and any room's centre. `populate` puts the altar, the boss and the stairs
+ * on a room's centre without asking, and an altar standing in a fog bank is a reward
+ * you cannot find.
+ */
+function dress(g: Grid, rng: Rng, depth: number): void {
+  const wanted = SURFACES_BY_DEPTH[Math.max(0, Math.min(SURFACES_BY_DEPTH.length - 1, depth - 1))];
+  if (!wanted.length) return;
+
+  const sacred = new Set<number>([g.idx(g.start.x, g.start.y)]);
+  if (g.stairs) sacred.add(g.idx(g.stairs.x, g.stairs.y));
+  for (const r of g.rooms) sacred.add(g.idx(r.cx, r.cy));
+
+  const lay = (i: number, s: Surface): void => {
+    if (sacred.has(i) || g.surface[i] !== Surface.Plain) return;
+    g.surface[i] = s;
+  };
+  const entrance = g.rooms.find((r) => r.kind === 'entrance');
+  const elsewhere = g.rooms.filter((r) => r !== entrance);
+
+  for (const s of wanted) {
+    if (s === Surface.Iron) {
+      /**
+       * A PLATE IS A RECTANGLE, AND IT HAS TO SURVIVE BEING CLIPPED.
+       *
+       * The rectangle is the intent; what actually gets laid is the rectangle minus
+       * whatever is not this room, minus the sacred tiles, minus anything an earlier
+       * surface already took — and on a floor that lays water first, that had been
+       * leaving single tiles of plating behind. A one-tile plate is the worst thing
+       * this phase could ship: it LOOKS like a circuit, which is the entire promise
+       * of drawing it as a shape, and it conducts to nothing. So the tiles are
+       * gathered, cut down to their largest connected piece, and laid only if there
+       * is enough of them left to be worth reading as a plate.
+       */
+      // Walk the rooms until two plates are down, rather than picking two rooms and
+      // hoping. A room an earlier surface already flooded yields nothing, and on the
+      // floor that lays water first that was leaving a third of the cathedrals with
+      // no plating at all — a floor silently short of one of the two things its own
+      // table promised it.
+      let laid = 0;
+      for (const room of rng.shuffle([...elsewhere])) {
+        if (laid >= 2) break;
+        const w = Math.min(room.w - 1, rng.int(3, 5));
+        const h = Math.min(room.h - 1, rng.int(3, 5));
+        if (w < 2 || h < 2) continue;
+        const x0 = room.x + rng.int(0, Math.max(0, room.w - w));
+        const y0 = room.y + rng.int(0, Math.max(0, room.h - h));
+        const free = (i: number) =>
+          g.roomOf[i] === room.id && !sacred.has(i) && g.surface[i] === Surface.Plain;
+        const want = new Set<number>();
+        for (let y = y0; y < y0 + h; y++) {
+          for (let x = x0; x < x0 + w; x++) {
+            const i = g.idx(x, y);
+            if (free(i)) want.add(i);
+          }
+        }
+        let plate = largestPiece(g, want);
+        if (plate.length < 4) {
+          // A room too small to hold a rectangle gets plated wall to wall instead of
+          // going without. The grid city's shops are three tiles across, and dropping
+          // the plating out of the FOUNDRY because its rooms are small would have
+          // quietly deleted that floor's whole second surface.
+          const whole = new Set<number>();
+          for (const [x, y] of room.tiles) if (free(g.idx(x, y))) whole.add(g.idx(x, y));
+          plate = largestPiece(g, whole);
+        }
+        if (plate.length < 4) continue;
+        for (const i of plate) g.surface[i] = Surface.Iron;
+        laid++;
+      }
+    } else if (s === Surface.Water) {
+      // Water pools in a QUARTER of a room, not all of it — the point of a flooded
+      // corner is that the dry part is a choice you can still make.
+      let pools = 0;
+      for (const room of rng.shuffle([...elsewhere])) {
+        if (pools >= 2) break;
+        const from = rng.pick(room.tiles);
+        const pool = g.flood(from[0], from[1], rng.int(2, 4),
+          (px, py) => g.roomOf[g.idx(px, py)] === room.id);
+        let wet = 0;
+        for (let i = 0; i < pool.length; i++) {
+          if (pool[i] < 0 || sacred.has(i) || g.surface[i] !== Surface.Plain) continue;
+          g.surface[i] = Surface.Water;
+          wet++;
+        }
+        if (wet >= 3) pools++;
+      }
+    } else if (s === Surface.Rubble) {
+      /**
+       * Rubble goes in the CORRIDORS and the doorways, where it costs the most and
+       * reads the clearest. A slow tile in the middle of a room is a tile you walk
+       * round without noticing; a slow tile in a one-wide passage is a decision about
+       * whether to spend a gust on it.
+       */
+      const narrow: number[] = [];
+      const wide: number[] = [];
+      for (let y = 1; y < g.h - 1; y++) {
+        for (let x = 1; x < g.w - 1; x++) {
+          if (!g.walkable(x, y) || g.roomOf[g.idx(x, y)] !== 255) continue;
+          let open = 0;
+          for (const [dx, dy] of DIR_VEC) if (g.walkable(x + dx, y + dy)) open++;
+          (open <= 2 ? narrow : wide).push(g.idx(x, y));
+        }
+      }
+      // Not every layout HAS one-wide passages — a ring's road is two tiles across
+      // and a warren is nearly all room — and a floor that was promised rubble and
+      // got four tiles of it was promised nothing.
+      const spots = narrow.length >= 6 ? narrow : [...narrow, ...wide];
+      for (const i of rng.sample(spots, Math.min(10, Math.max(3, Math.ceil(spots.length / 6))))) {
+        lay(i, Surface.Rubble);
+        // in short runs, so it reads as a collapse rather than as litter
+        const cx = i % g.w, cy = (i / g.w) | 0;
+        for (const [dx, dy] of DIR_VEC) {
+          if (!rng.chance(0.45) || !g.walkable(cx + dx, cy + dy)) continue;
+          if (g.roomOf[g.idx(cx + dx, cy + dy)] !== 255) continue;
+          lay(g.idx(cx + dx, cy + dy), Surface.Rubble);
+        }
+      }
+    } else if (s === Surface.Fog) {
+      /**
+       * A BANK IS A WHOLE ROOM, never the entrance's.
+       *
+       * A blob of fog with an arbitrary edge inside a room is a smear; a room that is
+       * full of it has a doorway you stand in and decide about. And a player who spawns
+       * inside one has been blinded before being taught what blinded them.
+       */
+      for (const bank of rng.shuffle(elsewhere.filter((r) => r.kind !== 'boss'))) {
+        let murky = 0;
+        for (const [x, y] of bank.tiles) {
+          const i = g.idx(x, y);
+          if (sacred.has(i) || g.surface[i] !== Surface.Plain) continue;
+          g.surface[i] = Surface.Fog;
+          murky++;
+        }
+        // A room the other surfaces already covered leaves a bank of three tiles,
+        // which is a puff rather than a place. Try the next room instead.
+        if (murky >= 6) break;
+      }
+    } else if (s === Surface.Portal) {
+      /**
+       * A PAIR, as far apart on foot as the floor allows.
+       *
+       * A portal between two rooms you could walk between in four steps is scenery. The
+       * mouths go in the two rooms furthest apart BY PATH — the same measurement the
+       * boss and the entrance are placed by — which on the two floors that carry them
+       * means the pair spans the void or the crack.
+       */
+      let best: [number, number] | null = null, bestD = -1;
+      for (const a of g.rooms) {
+        const d = g.flood(a.cx, a.cy, g.w * g.h);
+        for (const b of g.rooms) {
+          if (b === a) continue;
+          const v = d[g.idx(b.cx, b.cy)];
+          if (v > bestD) { bestD = v; best = [a.id, b.id]; }
+        }
+      }
+      if (!best) continue;
+      const mouth = (room: Room): number => {
+        const free = room.tiles.filter(([x, y]) => !sacred.has(g.idx(x, y))
+          && g.surface[g.idx(x, y)] === Surface.Plain);
+        if (!free.length) return -1;
+        const [x, y] = rng.pick(free);
+        return g.idx(x, y);
+      };
+      const a = mouth(g.rooms[best[0]]), b = mouth(g.rooms[best[1]]);
+      if (a < 0 || b < 0) continue;
+      g.surface[a] = Surface.Portal;
+      g.surface[b] = Surface.Portal;
+      g.portals.push({ a, b });
+    }
+  }
+}
+
+/** The biggest 4-connected piece of a set of tiles. A plate is one piece or it is nothing. */
+function largestPiece(g: Grid, tiles: Set<number>): number[] {
+  const seen = new Set<number>();
+  let best: number[] = [];
+  for (const start of tiles) {
+    if (seen.has(start)) continue;
+    const piece: number[] = [];
+    const q = [start];
+    seen.add(start);
+    for (let qi = 0; qi < q.length; qi++) {
+      const i = q[qi];
+      piece.push(i);
+      const cx = i % g.w, cy = (i / g.w) | 0;
+      for (const [dx, dy] of DIR_VEC) {
+        const ni = g.idx(cx + dx, cy + dy);
+        if (!g.inside(cx + dx, cy + dy) || seen.has(ni) || !tiles.has(ni)) continue;
+        seen.add(ni);
+        q.push(ni);
+      }
+    }
+    if (piece.length > best.length) best = piece;
+  }
+  return best;
 }
 
 /**

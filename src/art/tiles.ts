@@ -440,7 +440,24 @@ export interface TileSet {
   walls: Pix[];
   floors: Pix[];
   ceils: Pix[];
+  /** One set per surface that is not `Plain`, keyed by the `Surface` value. */
+  iron: Pix[];
+  water: Pix[];
+  rubble: Pix[];
+  fog: Pix[];
+  /** One per portal PAIR, so two mouths that match are drawn the same colour. */
+  portal: Pix[];
 }
+
+/**
+ * The colours a portal pair is lit in, in the order pairs are placed.
+ *
+ * Two mouths of a pair are the same colour and no two pairs share one — that IS the
+ * pairing, as far as the player is concerned, and it has to be readable across a room
+ * without a legend. Shared with the minimap, which draws the same mouths in the same
+ * colours; a map that recoloured them would be a second thing to learn.
+ */
+export const PORTAL_HUES = [0xb98cff, 0x59d9c0, 0xff8fb0] as const;
 
 function buildWall(theme: Theme, seed: string, variant: number): Pix {
   // Seeded PER VARIANT, which it did not used to be. Every variant drew from the
@@ -583,6 +600,168 @@ function buildFloor(theme: Theme, seed: string, variant: number): Pix {
   return p;
 }
 
+/*
+ * ---------------------------------------------------------------- surfaces
+ *
+ * Every surface is drawn ON the floor rather than instead of it — the theme's own
+ * flagstones are built first and then covered, flooded, littered or bleached. Two
+ * reasons, and the second is the one that matters: a surface laid over the floor still
+ * belongs to the room it is in, so a wet quarter of the Ossuary looks like the Ossuary
+ * with water in it rather than like a tile from another game; and the reading of a
+ * surface then comes entirely from the OVERLAY, which is the part that has to survive
+ * being seen at a grazing angle from eight tiles away in torchlight.
+ *
+ * The bar each of these has to clear is the phase's entry requirement: identifiable at
+ * a glance, with no legend. Regular beats irregular for that — a plate is the only
+ * thing on a floor with straight edges and repeating rivets, rubble is the only thing
+ * with cast shadows, water is the only thing that reflects.
+ */
+
+/** Iron plating: straight seams, rivets, a rolled sheen. The only regular thing here. */
+function buildIron(theme: Theme, seed: string, variant: number): Pix {
+  const rng = new Rng(`${seed}-i`);
+  const noise = new Noise2(`${seed}-in`);
+  const p = buildFloor(theme, `${seed}-base`, variant);
+  const P = ppu();
+  const plate = hex(0x4a4e57), dark = hex(0x23262c), lit = hex(0x7e8590);
+
+  for (let y = 0; y < P; y++) {
+    for (let x = 0; x < P; x++) {
+      // Rolled sheet: a broad diagonal sheen, so the plate catches the torch as a
+      // band rather than as an even grey slab.
+      const sheen = Math.max(0, 1 - Math.abs((x + y) / (P * 2) - 0.45) * 3.2);
+      const g = noise.fbm(x * 0.08, y * 0.08, 3);
+      let c = mix(plate, lit, sheen * 0.5 + g * 0.18);
+      // seam at the tile edge — plates butt against each other
+      const edge = Math.min(x, y, P - 1 - x, P - 1 - y);
+      if (edge < Math.max(1, P * 0.06)) c = mix(c, dark, 0.75);
+      p.set(x, y, mix(p.get(x, y), c, 0.92));
+    }
+  }
+  // Rivets, inset from each corner. A repeating fastener is the single cue that reads
+  // as "somebody bolted this down" at any distance the tile is visible from.
+  const inset = Math.max(2, Math.round(P * 0.16));
+  const r = Math.max(1, Math.round(P * 0.045));
+  for (const [rx, ry] of [[inset, inset], [P - 1 - inset, inset],
+    [inset, P - 1 - inset], [P - 1 - inset, P - 1 - inset]] as const) {
+    p.ellipse(rx, ry, r, r, shade(plate, 0.72));
+    p.ellipse(rx, ry - Math.max(1, r * 0.5), Math.max(1, r * 0.6), Math.max(1, r * 0.5), lit);
+  }
+  if (variant % 2 === 1) {
+    // a scored scratch, so two plates side by side are not identical
+    const x0 = span(rng, 3, P - 4), y0 = span(rng, 3, P - 4);
+    p.line(x0, y0, x0 + rng.int(-P / 3, P / 3), y0 + rng.int(-2, 2), shade(plate, 0.8));
+  }
+  return p;
+}
+
+/** Shallow water: the floor still shows through it, and it moves. */
+function buildWater(theme: Theme, seed: string, variant: number): Pix {
+  const rng = new Rng(`${seed}-w`);
+  const noise = new Noise2(`${seed}-wn`);
+  const p = buildFloor(theme, `${seed}-base`, variant);
+  const P = ppu();
+  const deep = hex(0x123a46), shallow = hex(0x2b6a76), glint = hex(0xa8dbe4);
+
+  for (let y = 0; y < P; y++) {
+    for (let x = 0; x < P; x++) {
+      // SHALLOW is the whole word: the mix tops out well short of opaque, so the
+      // flagstones stay visible under it and the tile reads as an inch of water
+      // rather than as a hole full of ink.
+      const d = noise.fbm(x * 0.09 + 3, y * 0.09, 3);
+      const col = mix(shallow, deep, d);
+      p.set(x, y, mix(p.get(x, y), col, 0.5 + d * 0.22));
+    }
+  }
+  // Ripple lines across the tile. Horizontal on purpose — a surface of water is the
+  // one flat plane in the room, and horizontal banding is what says flat.
+  for (let y = 0; y < P; y++) {
+    for (let x = 0; x < P; x++) {
+      const r = noise.ridge(x * 0.06, y * 0.17 + variant, 2);
+      if (r < 0.74) continue;
+      p.set(x, y, mix(p.get(x, y), glint, Math.min(0.5, (r - 0.74) * 2.6)));
+    }
+  }
+  for (let i = 0; i < Math.max(2, P / 12); i++) {
+    p.set(rng.int(0, P - 1), rng.int(0, P - 1), glint);
+  }
+  return p;
+}
+
+/** Rubble: lumps with shadows under them. The only thing on the floor that is ON it. */
+function buildRubble(theme: Theme, seed: string, variant: number): Pix {
+  const rng = new Rng(`${seed}-r${variant}`);
+  const p = buildFloor(theme, `${seed}-base`, variant);
+  const P = ppu();
+  const stone = theme.floor.cols[Math.min(theme.floor.cols.length - 1, 3)];
+  const bright = theme.floor.cols[theme.floor.cols.length - 1];
+  const shadow = hex(0x140f12);
+
+  // Chunks, biggest first, each with a cast shadow below it and a lit top face.
+  // The shadow is what makes it read as a pile you have to climb rather than as a
+  // pattern printed on the floor — nothing else in the game casts one.
+  const chunks = Math.max(5, Math.round(P / 3));
+  for (let i = 0; i < chunks; i++) {
+    const cx = span(rng, 2, P - 3), cy = span(rng, 2, P - 3);
+    const rx = Math.max(1, Math.round(P * rng.range(0.05, 0.12)));
+    const ry = Math.max(1, Math.round(rx * rng.range(0.6, 0.95)));
+    p.ellipse(cx, cy + Math.max(1, ry * 0.6), rx, Math.max(1, ry * 0.7), shadow);
+    p.ellipse(cx, cy, rx, ry, mix(stone, shadow, 0.25));
+    p.ellipse(cx, cy - Math.max(1, ry * 0.4), Math.max(1, rx * 0.7), Math.max(1, ry * 0.45),
+      mix(stone, bright, 0.55));
+  }
+  // grit between the chunks
+  for (let i = 0; i < P; i++) {
+    p.set(rng.int(0, P - 1), rng.int(0, P - 1), mix(stone, shadow, rng.range(0, 0.6)));
+  }
+  return p;
+}
+
+/**
+ * A fog bank, drawn as the floor going pale and losing its detail.
+ *
+ * The tile is only half of fog — the rest is the shader, which mixes the world toward
+ * the fog colour by how deep in the bank a surface is. This half is what makes a bank
+ * readable FROM OUTSIDE: bleached, low-contrast ground you can see the edge of from
+ * across the room, so "sight dies in there" is a thing you decide about before walking
+ * into it rather than a thing that happens to you.
+ */
+function buildFog(theme: Theme, seed: string, variant: number): Pix {
+  const noise = new Noise2(`${seed}-gn`);
+  const p = buildFloor(theme, `${seed}-base`, variant);
+  const P = ppu();
+  const pale = hex(0x9aa3ad);
+  for (let y = 0; y < P; y++) {
+    for (let x = 0; x < P; x++) {
+      const m = 0.55 + noise.fbm(x * 0.07 + variant * 4, y * 0.07, 3) * 0.3;
+      p.set(x, y, mix(p.get(x, y), pale, m));
+    }
+  }
+  return p;
+}
+
+/** One mouth of a portal pair: a ring lit in the pair's own colour. */
+function buildPortal(theme: Theme, seed: string, hue: number): Pix {
+  const p = buildFloor(theme, `${seed}-base`, 0);
+  const P = ppu();
+  const col = hex(hue);
+  const dark = hex(0x0d0a12);
+
+  // Darken the tile first so the ring has something to burn against — a glowing ring
+  // on a lit floor is a decal, and on a dark disc it is a hole with something in it.
+  for (let y = 0; y < P; y++) {
+    for (let x = 0; x < P; x++) {
+      const d = Math.hypot(x - P / 2, y - P / 2) / (P / 2);
+      p.set(x, y, mix(p.get(x, y), dark, Math.max(0, 0.85 - d * 0.7)));
+    }
+  }
+  const r = P * 0.3;
+  p.ellipseFrame(P / 2, P / 2, r, r, col);
+  if (r > 3) p.ellipseFrame(P / 2, P / 2, r * 0.62, r * 0.62, mix(col, dark, 0.35));
+  p.glow(P / 2, P / 2, r * 1.5, col, 0.55, 4);
+  return p;
+}
+
 function buildCeil(theme: Theme, seed: string, variant: number): Pix {
   const rng = new Rng(seed);
   const noise = new Noise2(seed + '-n');
@@ -632,15 +811,38 @@ function buildCeil(theme: Theme, seed: string, variant: number): Pix {
   return p;
 }
 
-/** Build every tile texture for a floor. Called once per floor entry. */
-export function buildTileSet(theme: Theme, seed: string): TileSet {
+/**
+ * Build every tile texture for a floor. Called once per floor entry.
+ *
+ * `pairs` is how many portal pairs the floor has, because each one needs its own
+ * texture: two mouths of a pair share a colour and no two pairs do, and a colour on a
+ * batched mesh is a texture. Two variants of every other surface, which is enough to
+ * stop a plate of iron reading as one repeated stamp and cheap enough that a floor
+ * carrying three surfaces has not doubled its build.
+ */
+export function buildTileSet(theme: Theme, seed: string, pairs = 0): TileSet {
   const walls: Pix[] = [];
   const floors: Pix[] = [];
   const ceils: Pix[] = [];
   for (let i = 0; i < 6; i++) walls.push(buildWall(theme, `${seed}-w${i}`, i));
   for (let i = 0; i < 4; i++) floors.push(buildFloor(theme, `${seed}-f${i}`, i));
   for (let i = 0; i < 3; i++) ceils.push(buildCeil(theme, `${seed}-c${i}`, i));
-  return { walls, floors, ceils };
+
+  const iron: Pix[] = [];
+  const water: Pix[] = [];
+  const rubble: Pix[] = [];
+  const fog: Pix[] = [];
+  for (let i = 0; i < 2; i++) {
+    iron.push(buildIron(theme, `${seed}-s${i}`, i));
+    water.push(buildWater(theme, `${seed}-s${i}`, i));
+    rubble.push(buildRubble(theme, `${seed}-s${i}`, i));
+    fog.push(buildFog(theme, `${seed}-s${i}`, i));
+  }
+  const portal: Pix[] = [];
+  for (let i = 0; i < pairs; i++) {
+    portal.push(buildPortal(theme, `${seed}-p${i}`, PORTAL_HUES[i % PORTAL_HUES.length]));
+  }
+  return { walls, floors, ceils, iron, water, rubble, fog, portal };
 }
 
 /**

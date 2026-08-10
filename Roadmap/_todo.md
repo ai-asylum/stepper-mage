@@ -297,13 +297,15 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 23 — Tile_Vocabulary
 
-- [ ] Add a surface byte to the grid, beside `variant` and `roomOf`.
-- [ ] Iron plating: extend `CONDUCTION_ARC` rather than copying it.
-- [ ] Shallow water: spark chains, fire refuses to light.
-- [ ] Rubble: two moves to cross, gust clears it.
-- [ ] Portals: a lit pair, step on one and arrive at the other.
-- [ ] Fog: decide tile or floor-wide, then cut sight to two tiles.
-- [ ] Commit changes.
+- [x] Add a surface byte to the grid, beside `variant` and `roomOf`. Plus `portals`, which a byte cannot say.
+- [x] Iron plating: extend `CONDUCTION_ARC` rather than copying it. `Combat.arc` — the plate IS the reach.
+- [x] Shallow water: spark chains, fire refuses to light. One `Ground.refuses` hook, not four filters.
+- [x] Rubble: two moves to cross, gust clears it.
+      ONE SWIPE, two rounds: the stride holds half a tile in and the room answers twice.
+      A press that refuses is indistinguishable from a dropped swipe — see the phase doc.
+- [x] Portals: a lit pair, step on one and arrive at the other. Bodies only; a volume does not cross.
+- [x] Fog: decide tile or floor-wide, then cut sight to two tiles. A TILE, and the bank is a whole room.
+- [x] Commit changes.
 
 ## Phase 24 — Verticality
 

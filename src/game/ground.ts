@@ -107,6 +107,21 @@ export class Ground {
   /** Tile index -> what is on it and how long it lasts. */
   private patch = new Map<number, Patch>();
 
+  /**
+   * Which tiles refuse which substance, because of what the FLOOR is.
+   *
+   * One hook rather than a filter at each of the four call sites, so a rule about the
+   * floor cannot be true of a cast and false of a broken barrel. Set by `Floor`, which
+   * is the only thing that holds both a `Ground` and a `Grid` — this module deliberately
+   * knows nothing about tiles beyond their index.
+   *
+   * There is exactly one rule in it today and it is shallow water refusing fire, which
+   * is the whole of that surface: a wet quarter of a room is a quarter you cannot use
+   * the game's best-loved verb in, visible from the doorway, and no new mechanic had to
+   * be invented to say so.
+   */
+  refuses: (i: number, what: Substance) => boolean = () => false;
+
   /** What is on this tile, if anything. */
   at(i: number): Substance | null {
     return this.patch.get(i)?.what ?? null;
@@ -151,6 +166,7 @@ export class Ground {
    */
   pour(tiles: readonly FillTile[], what: Substance, turns: number): void {
     for (const { i, d } of tiles) {
+      if (this.refuses(i, what)) continue;
       const life = Math.max(MIN_TURNS, turns - d * FALLOFF);
       const had = this.patch.get(i);
       if (!had || had.what === what) {
@@ -218,6 +234,7 @@ export class Ground {
     let grown = 0;
     const full = what === 'fire' ? FIRE_TURNS : SPILL_TURNS;
     for (const { i } of tiles) {
+      if (this.refuses(i, what)) continue;
       const had = this.patch.get(i);
       if (had && had.what !== what) continue;
       if (!had) grown++;
