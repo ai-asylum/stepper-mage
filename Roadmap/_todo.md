@@ -225,11 +225,20 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Stop target markers drawing through walls. (Closed early by Casting_And_Movement.)
 - [x] Re-cull after every enemy round; a body that moves into view is currently never drawn.
 - [ ] Fix golems stalling instead of following.
-- [ ] Break the monochrome orange cast; make each floor read as its own palette.
+      NOT REPRODUCED. Registration is correct — `Combat.register` is called from the
+      animate branch — and reading the heel path found no certain fault. Two attempts
+      to reproduce it live were invalid (one never registered the combatant, the other
+      timed out mid-await). Needs a real animate cast, which needs the belt.
+- [x] Break the monochrome orange cast; make each floor read as its own palette.
+      It was the TONEMAP, as the doc guessed. Per-channel ACES bleached hue as soon as
+      the torch lit a surface. Luminance-mapped with chroma preserved now.
 - [ ] Add a chest golem sprite and let Animate target chests.
       BLOCKED on the sprite — `tools/genart.py` needs the Scenario CLI. The TARGETING
       half is already done: `isCastableObject` accepts a spent chest (phase 10).
-- [ ] Untangle the HUD text layer: log lines, captions, name plates and cards overdraw each other.
+- [~] Untangle the HUD text layer: log lines, captions, name plates and cards overdraw each other.
+      The LOG now yields — it is the only element in that band that is a record rather
+      than a control, so it stacks up from whatever the cast UI is not using and caps
+      itself to what fits under the shout. Nameplates and fan cards are untouched.
 - [x] Re-check free-turn attrition; the turn rule change may already have dissolved it.
       DISSOLVED, as the doc predicted. `enemyRound` is reached only from a cast or a
       step; taking and returning components never touches it, so there is no loop to
@@ -242,9 +251,9 @@ every phase. Never list tasks for editing this file or a phase doc.
       pouch on top of a true claim. The fourth loadout slot is FINE and was a false
       entry: five page elements exist, so four is fillable. The second real offender
       is `altarPages`, which is already correctly `live: false` behind Deeper_Dungeon.
-- [ ] Step the torch sconce's resolution; it is the last thing in the world drawn at 144.
-      `buildSconce` uses absolute 144-space texel offsets, so it needs rewriting per step.
-- [ ] Commit changes.
+- [x] Step the torch sconce's resolution; it is the last thing in the world drawn at 144.
+      `buildSconce` is proportional now and the four steps carry sizes to match.
+- [x] Commit changes.
 
 ## Phase 20 — Ingredient_Belt
 

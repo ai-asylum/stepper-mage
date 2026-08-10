@@ -2265,12 +2265,33 @@ export class Hud {
    * line that matters in the one place nothing else claims, and older lines drift into
    * a region they are already fading out of.
    */
+  /**
+   * The log, stacked UP from whatever the band below it is not using.
+   *
+   * Three separate reviews flagged this band overdrawing itself, and the log is the
+   * part that has to yield: it is the only element in there that is a record rather
+   * than a control. The cast bar and the large CAST are things the player is about
+   * to press, so they own their rows and the log starts above whichever of them is
+   * on screen.
+   *
+   * The line CAP moves with it. Stacking a fixed six lines up from a raised floor
+   * just moves the collision to the top of the band, where the shout is — so when
+   * the cast UI is up, the log keeps only what fits.
+   */
   private drawLog(ctx: CanvasRenderingContext2D, W: number): void {
     ctx.font = '9px ui-monospace, monospace';
     ctx.textAlign = 'center';
-    const bottom = this.bookTop - BELT_BAND - 74;
-    const n = this.log.length;
-    this.log.forEach((l, i) => {
+
+    // The large CAST is the tallest thing that shares this band; the cast bar is
+    // shorter. Measured off the same constants they lay themselves out with, so the
+    // three cannot disagree about where the boundary is.
+    const casting = !!this.currentCast();
+    const reserved = casting ? (this.handFull() ? 104 : 42) : 0;
+    const bottom = this.bookTop - BELT_BAND - 74 - reserved;
+    const room = Math.max(1, Math.floor((bottom - this.shoutFloor()) / 12));
+    const lines = this.log.slice(Math.max(0, this.log.length - room));
+    const n = lines.length;
+    lines.forEach((l, i) => {
       const age = Math.max(0, 1 - Math.max(0, l.t - 3.4) / 1.6);
       ctx.globalAlpha = 0.85 * age;
       ctx.fillStyle = hexCss(l.colour);
@@ -2278,6 +2299,17 @@ export class Hud {
     });
     ctx.globalAlpha = 1;
     ctx.textAlign = 'left';
+  }
+
+  /**
+   * The lowest line the log may occupy without running into the shout.
+   *
+   * The shout is a full-width announcement — a discovery, a fusion name — and it is
+   * the one thing in this band the player is meant to read at a glance rather than
+   * scan. So it wins, and the log stops under it.
+   */
+  private shoutFloor(): number {
+    return this.shout || this.discover ? this.bookTop * 0.42 : 0;
   }
 
   /**

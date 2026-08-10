@@ -1,8 +1,8 @@
 # Polish Pass
 
 **Player-facing:** yes
-**Started:** —
-**Status:** planned
+**Started:** 2026-08-10
+**Status:** in progress
 
 The collected defects — the things that read as bugs rather than as difficulty, plus
 the deferred findings from earlier phases' reviews.
