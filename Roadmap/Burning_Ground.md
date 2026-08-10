@@ -59,6 +59,34 @@ Every number the "Open" list left undecided, and what decided it.
 
 Both asked for during the build, both load-bearing enough to write down.
 
+- **GROUND IS A COMPONENT, unless the cast FEEDS it.** The general rule, replacing
+  the fire-only version:
+
+  | ground | cast carries | result |
+  |---|---|---|
+  | fire | fire, oil | **grows** — tops back to full, spreads one ring |
+  | fire | anything else | **consumed** — folds in as `flame`, one slot per level |
+  | oil | oil | **grows** |
+  | oil | anything else | **consumed** — folds in as `oil` |
+  | water | water, frost | **grows** |
+  | water | anything else | **consumed** — folds in as `water` |
+  | any | gust | **cleared**, taking nothing |
+
+  Same element buys TERRAIN, a different element buys POWER, and the player chooses
+  which the tile is worth to them this turn. Growing takes no component, which is not
+  a balance nicety but the thing that stops the loop having gain above one — a cast
+  that both grew the patch and got bigger from it is the exact shape that took the
+  acceptance line from clearing five seeds in five to one.
+
+  Oil feeds FIRE as well as oil, because oil is what fire eats; frost feeds water,
+  being water in another state. Both were already claims `react` made about a broken
+  barrel, so the cast rule and the spill rule agree.
+
+  Scavenged fire enters as `flame`, the FIXTURE id, never the `fire` page. `byRank`
+  multiplies a page by the rank you own and forces a fixture element to exactly one
+  copy — so a player with a rank-3 Fireball picking up a level-3 fire would otherwise
+  have folded in nine components off a single tile.
+
 - **Ground fire is a COMPONENT.** Cast into a burning tile and the fire joins the
   spell as fire slots, one per flame height, consumed on use. This is the harvest
   rule extended to the floor, and it can change what a cast IS — Frostbolt into a

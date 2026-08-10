@@ -27,10 +27,11 @@
 import { Rng } from '../core/rng';
 import { DIR_VEC, type Grid } from '../dungeon/grid';
 import { faceToward, type Entity, type Floor } from './floor';
+import { groundUse, type GroundUse, type Substance } from './ground';
 import { affinityMult, affinityOf, type Affinities } from './affinity';
 import {
   STATUS_META, displayName, harvestOf, isFixtureElement, resolveCast,
-  GROUND_ELEMENTS,
+  GROUND_ELEMENTS, SPELL_BY_ID,
   type CastTarget, type Element, type ResolvedCast, type StatusId,
 } from '../spells/spells';
 import { BOSS_INGREDIENTS, rollDropCount, rollIngredient, type BeltState } from '../spells/belt';
@@ -425,19 +426,59 @@ export class Combat {
 
   withGroundFuel(
     pages: string[], targetEntity: Entity | null, tile?: { x: number; y: number } | null,
-  ): { pages: string[]; fuel: number; at: number } {
+  ): { pages: string[]; fuel: number; at: number; use: GroundUse | null; what: Substance | null } {
     const g = this.floor.grid;
     const at = tile
       ? g.idx(tile.x, tile.y)
       : targetEntity
         ? g.idx(targetEntity.sprite.tx, targetEntity.sprite.ty)
         : g.idx(this.playerTile.x, this.playerTile.y);
-    const fuel = this.floor.ground.burning(at) ? this.floor.ground.level(at) : 0;
+
+    const what = this.floor.ground.at(at);
+    if (!what) return { pages, fuel: 0, at, use: null, what: null };
+
+    /**
+     * GROUND IS A COMPONENT — but only when the cast does not FEED it.
+     *
+     * The rule, in one place. A cast carrying what the ground already holds grows the
+     * patch and takes nothing: growth is the payoff, and the cast resolves on the
+     * pages the player held. Anything else consumes the ground and folds it in as its
+     * own element, one slot per level, which is what lets a Frostbolt thrown into a
+     * fire come out as Steam Burst without the player ever holding fire.
+     *
+     * Growing must NOT also fuel. That is the loop with gain above one — a bigger
+     * cast lights more ground, more ground makes a bigger cast — and it is the same
+     * shape that took the acceptance line from clearing five seeds in five to one.
+     */
+    const elements = this.elementsOf(this.byRank(pages));
+    const use = groundUse(what, elements);
+    if (use !== 'consume') return { pages, fuel: 0, at, use, what };
+
+    const level = this.floor.ground.level(at);
+    /**
+     * Scavenged fire goes in as `flame`, the FIXTURE id, not as the `fire` page.
+     *
+     * `byRank` multiplies a page by the rank the player owns and forces a fixture
+     * element to exactly one copy — which is the correct reading of ground fire in
+     * both directions. It is harvested, not torn, so it must not inherit a Fireball
+     * rank; and a player with rank-3 Fireball picking up a level-3 fire would
+     * otherwise have folded in NINE components off one tile.
+     */
+    const id = what === 'fire' ? 'flame' : what;
     return {
-      pages: fuel ? [...pages, ...Array<string>(fuel).fill('fire')] : pages,
-      fuel,
-      at,
+      pages: [...pages, ...Array<string>(level).fill(id)],
+      fuel: level, at, use, what,
     };
+  }
+
+  /** The distinct elements a set of component ids carries. */
+  private elementsOf(ids: string[]): Element[] {
+    const out: Element[] = [];
+    for (const id of ids) {
+      const el = SPELL_BY_ID[id]?.element;
+      if (el && el !== 'none' && !out.includes(el)) out.push(el);
+    }
+    return out;
   }
 
   /**
@@ -485,7 +526,7 @@ export class Combat {
         }
       : { kind: 'none' };
 
-    const { fuel, at: fuelAt } = this.withGroundFuel(pages, targetEntity, tile);
+    const { fuel, at: fuelAt, use: groundUsed, what: groundWas } = this.withGroundFuel(pages, targetEntity, tile);
 
     const cast = this.previewAimed(pages, target, tile, targetEntity);
 
@@ -495,17 +536,19 @@ export class Combat {
     }
 
     /**
-     * The fire is CONSUMED. A tile that could be re-harvested every round would make
-     * standing beside a fire strictly better than anything else in the game, and
-     * spending it is what makes "when do I cash this in" a decision.
+     * The ground is CONSUMED when it fed the cast. A tile that could be re-harvested
+     * every round would make standing beside a fire strictly better than anything
+     * else in the game, and spending it is what makes "when do I cash this in" a
+     * decision the player gets to make.
      */
     if (fuel) {
       this.floor.ground.extinguish([fuelAt]);
       this.syncGround();
+      const noun = groundWas === 'fire' ? 'FIRE' : groundWas === 'oil' ? 'OIL' : 'WATER';
       this.onEvent({
         kind: 'status',
-        text: fuel > 1 ? `THE FIRE FEEDS IT \u00d7${fuel}!` : 'THE FIRE FEEDS IT!',
-        colour: 0xff7a2b,
+        text: fuel > 1 ? `THE ${noun} FEEDS IT \u00d7${fuel}!` : `THE ${noun} FEEDS IT!`,
+        colour: cast.colour,
       });
     }
 
@@ -607,9 +650,33 @@ export class Combat {
        * gust is a volume at all. Everything else pours itself onto the floor, where
        * `Ground.pour` decides what a tile already holding something is left with.
        */
-      if (leaves === 'gust') this.floor.ground.extinguish(filled.map((t) => t.i));
-      else if (leaves === 'fire') this.floor.ground.ignite(filled);
-      else this.floor.ground.spill(filled, leaves as 'oil' | 'water');
+      if (leaves === 'gust') {
+        this.floor.ground.extinguish(filled.map((t) => t.i));
+      } else if (groundUsed === 'grow' && groundWas) {
+        /**
+         * THE CAST FED THE GROUND, so the patch GROWS.
+         *
+         * Same element into the same substance: it tops back up to full and spreads
+         * one ring, rather than being spent as a component. One ring and not the
+         * cast's whole volume, because growth should be something you do repeatedly
+         * and deliberately — a single cast that doubled a fire would make the first
+         * one the only one worth making.
+         *
+         * It takes no component in exchange, which is the trade: same element buys
+         * TERRAIN, a different element buys POWER, and the player picks which of the
+         * two the tile is worth to them this turn.
+         */
+        this.floor.ground.feed(filled, groundWas);
+        this.onEvent({
+          kind: 'status',
+          text: groundWas === 'fire' ? 'THE FIRE SPREADS!' : 'THE POOL SPREADS!',
+          colour: cast.colour,
+        });
+      } else if (leaves === 'fire') {
+        this.floor.ground.ignite(filled);
+      } else {
+        this.floor.ground.spill(filled, leaves as 'oil' | 'water');
+      }
       this.syncGround();
     }
 

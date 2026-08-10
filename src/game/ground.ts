@@ -19,6 +19,7 @@
  * a volume's tiles become covered tiles without a translation step in between.
  */
 import type { FillTile } from '../dungeon/grid';
+import type { Element } from '../spells/spells';
 import { FIRE_TURNS, SPILL_TURNS } from './tuning';
 
 /**
@@ -57,6 +58,47 @@ function react(had: Substance, got: Substance): { left: Substance | null; full: 
   if (had === 'water' && got === 'fire') return { left: null, full: false };
   if (had === 'fire' && got === 'water') return { left: null, full: false };
   return { left: got, full: false };
+}
+
+/**
+ * What a cast DOES to the ground it is aimed at.
+ *
+ *  - `grow`   the cast carried the same thing that is already there, so the patch
+ *             tops up and spreads instead of being spent. Growth IS the payoff: the
+ *             cast resolves on the pages the player held and takes no component.
+ *  - `consume` the cast carried something that reacts with it, or simply something
+ *             else. The ground joins the cast as its own element and the tile clears.
+ *  - `clear`   gust, which puts things out and takes nothing.
+ */
+export type GroundUse = 'grow' | 'consume' | 'clear';
+
+/**
+ * Which elements FEED which substance.
+ *
+ * Same-element is the obvious half; the interesting half is that OIL feeds fire,
+ * because oil is what fire eats — pouring oil onto a burning tile makes a bigger fire
+ * rather than a fuelled cast, which is the same claim `react` already makes about a
+ * broken barrel. Frost feeds water for the same reason: it is water in another state.
+ */
+const FEEDS: Record<Substance, readonly Element[]> = {
+  fire: ['fire', 'oil'],
+  oil: ['oil'],
+  water: ['water', 'frost'],
+};
+
+/**
+ * What a cast carrying these elements does to a tile holding this substance.
+ *
+ * The whole rule in one function, because the alternative is the same decision made
+ * three times — at the fuel lookup, at the pour, and in whatever draws the promise —
+ * and those three drifting apart is how a mechanic stops being predictable.
+ */
+export function groundUse(what: Substance, elements: readonly Element[]): GroundUse {
+  // Gust is the extinguisher and outranks everything: a cast that both clears and
+  // feeds is a cast that clears.
+  if (elements.includes('gust')) return 'clear';
+  if (elements.some((e) => FEEDS[what].includes(e))) return 'grow';
+  return 'consume';
 }
 
 interface Patch { what: Substance; turns: number }
@@ -162,6 +204,26 @@ export class Ground {
     if (p.turns > full * 0.6) return 3;
     if (p.turns > full * 0.25) return 2;
     return 1;
+  }
+
+  /**
+   * Feed a patch: top it back up to full and let it spread to its neighbours.
+   *
+   * The reward for casting the same element into ground that already holds it. It
+   * spreads by ONE ring rather than by the cast's volume, because growth should be
+   * something you do repeatedly and deliberately — a single cast that doubled a fire
+   * would make the first one the only one worth making.
+   */
+  feed(tiles: readonly FillTile[], what: Substance): number {
+    let grown = 0;
+    const full = what === 'fire' ? FIRE_TURNS : SPILL_TURNS;
+    for (const { i } of tiles) {
+      const had = this.patch.get(i);
+      if (had && had.what !== what) continue;
+      if (!had) grown++;
+      this.patch.set(i, { what, turns: full });
+    }
+    return grown;
   }
 
   /** One round older. Tiles that run out are bare again. */
