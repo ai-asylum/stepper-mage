@@ -78,6 +78,16 @@ interface Meta {
    */
   giftedPage: string | null;
   /**
+   * Fusions this player has ever cast, by name.
+   *
+   * On `meta` and never on the run, because it is the one record that survives a
+   * death — and `docs/DESIGN.md` is explicit that knowledge the player earned is
+   * NEVER sold back to them. There is deliberately no price, no node and no unlock
+   * anywhere near this list; a paywall on your own memory is listed under
+   * `## Rejected — do not re-add`.
+   */
+  bestiary: string[];
+  /**
    * How many pages the starting book can hold. DERIVED from `nodes` — see
    * `applyTree`, which is the only thing allowed to write it.
    */
@@ -207,13 +217,14 @@ function loadMeta(): Meta {
         // because "no page waiting" is the normal state.
         giftedPage: typeof m.giftedPage === 'string' && isPageElement(m.giftedPage)
           ? m.giftedPage : null,
+        bestiary: Array.isArray(m.bestiary) ? m.bestiary.filter((x: unknown) => typeof x === 'string') : [],
         pinned: isNodeId(m.pinned) ? m.pinned : null,
       });
     }
   } catch { /* corrupt or unavailable storage: fall through to defaults */ }
   return applyTree({
     stars: 0, loadout: [...DEFAULT_LOADOUT], slots: 0, handSize: 0, best: 0, nodes: [],
-    giftedPage: null, pinned: null,
+    giftedPage: null, pinned: null, bestiary: [],
   });
 }
 
@@ -1779,6 +1790,8 @@ async function boot(): Promise<void> {
     // faded — so a player who looked away for two seconds could not find out where
     // they were at all.
     hud.floorName = theme.name;
+    // The bestiary is meta's, so it is handed over on every floor rather than once.
+    hud.bestiary = meta.bestiary;
     hud.bankedStars = meta.stars;
     hud.pinGoal = pinReadout();
     hud.bindMap(() => ({ floor, x: stepper.x, y: stepper.y, dir: stepper.dir }));
@@ -1793,6 +1806,17 @@ async function boot(): Promise<void> {
      * earned, it is lost. Discovery is still earned — nothing is shown that has not
      * been hit — but recall is free.
      */
+    /**
+     * The bestiary fills itself. No node, no price, no unlock — it is free the first
+     * time and free forever, which is the whole position the design takes on it.
+     */
+    combat.onFusion = (name) => {
+      if (meta.bestiary.includes(name)) return;
+      meta.bestiary.push(name);
+      saveMeta(meta);
+      hud.bestiary = meta.bestiary;
+    };
+
     combat.onDiscover = (spriteId, element, kind) => {
       if (kind === 'plain') return;             // "nothing special" is not news
       const who = displayName(spriteId).toUpperCase();
@@ -2338,6 +2362,7 @@ async function boot(): Promise<void> {
         hud.target = a.entity;
         break;
       case 'cycle': cycleTarget(); break;
+      case 'bestiary': hud.bestiaryOpen = !hud.bestiaryOpen; break;
       case 'altar': takeFromAltar(a.entity); break;
       case 'harvest': harvestFrom(a.entity); break;
       case 'belt': takeIngredient(a.id); break;
@@ -2447,7 +2472,7 @@ async function boot(): Promise<void> {
    */
   const UI_CONTROLS: ReadonlySet<string> = new Set([
     'cast', 'clear', 'descend', 'cycle', 'altar', 'chest', 'harvest',
-    'belt', 'card', 'tree',
+    'belt', 'card', 'tree', 'bestiary',
   ]);
 
   /**

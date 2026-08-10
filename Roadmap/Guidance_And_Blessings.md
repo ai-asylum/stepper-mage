@@ -2,7 +2,7 @@
 
 **Player-facing:** yes
 **Started:** 2026-08-10
-**Status:** in progress
+**Status:** shipped
 
 A compass that points at the next thing worth walking to, a blessing chosen at the
 dungeon mouth, and the bestiary — the one record the player is never sold back.
@@ -107,7 +107,10 @@ for its main job. That tension is the whole design problem of this phase.
 - Without the `blessing` node, no choice is offered and nothing hints that one was
   missed. — **met.** `offerBlessings` returns early and draws nothing.
 - The bestiary records a fusion the moment it is first cast, and costs nothing ever. —
-  **NOT DONE.** `Combat.discovered` already records the fusion; what is missing is a
-  screen to read it and persistence across runs.
-- No screen anywhere offers to sell bestiary knowledge. — **met vacuously**, there
-  being no bestiary screen yet.
+  **met.** `Combat.onFusion` fires on the first cast of a named fusion; `meta.bestiary`
+  keeps it. Verified: casting fire+frost recorded Steam Burst, and it survived a
+  reload.
+- No screen anywhere offers to sell bestiary knowledge. — **met, and structurally.**
+  There is no node, no price and no unlock anywhere near the list. The screen says so
+  out loud — "kept across every run · never spent" — because it is a promise rather
+  than a description.

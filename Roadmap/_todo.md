@@ -201,9 +201,9 @@ every phase. Never list tasks for editing this file or a phase doc.
       Bearing only — no distance, which would triangulate the tile. See the phase doc.
 - [x] Add a run-start blessing: choose one of three at the dungeon mouth.
       Reuses the altar's chooser; the `blessing` tree node is now live.
-- [ ] Fill the bestiary as props are animated and fusions discovered, free and never sold.
-      Fusion half only — decided, see the doc. `Combat.discovered` already records;
-      what is missing is persistence across runs and a screen to read it.
+- [x] Fill the bestiary as props are animated and fusions discovered, free and never sold.
+      FUSION half only, by decision — the animation half needs the belt. The sections
+      are independent, so the other appears by itself when `BELT_ENABLED` returns.
 - [x] Commit changes.
 
 ## Phase 17 — Deeper_Dungeon

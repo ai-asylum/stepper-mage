@@ -157,6 +157,8 @@ export type UiAction =
   | { kind: 'clear' }
   | { kind: 'target'; entity: AimTarget }
   | { kind: 'cycle' }
+  /** Open or close the bestiary. Free, always — see `Hud.drawBestiary`. */
+  | { kind: 'bestiary' }
   | { kind: 'offer'; offer: AltarOffer }
   /** Spend a banked charge to re-roll the open altar's three offers. */
   | { kind: 'reroll' }
@@ -409,6 +411,16 @@ export class Hud {
    * hint that failed (`Roadmap/First_Minutes.md`).
    */
   hasMoved = false;
+
+  /**
+   * Every fusion this player has ever cast, newest last. Owned by `meta`.
+   *
+   * The one record that is never sold back. There is no node, no price and no unlock
+   * anywhere near it, and there must not be: a paywall on the player's own memory is
+   * explicitly rejected in `docs/DESIGN.md`.
+   */
+  bestiary: readonly string[] = [];
+  bestiaryOpen = false;
 
   /**
    * Where the compass points, or null when nothing does.
@@ -712,6 +724,7 @@ export class Hud {
     // Before the CAST bar, so that where a card's box and the bar's touch, CAST wins:
     // `hit` scans backwards, so whatever is pushed last is on top.
     this.drawCompass(ctx, W);
+    this.drawBestiaryPill(ctx, W);
     this.drawMoveHint(ctx, W, H);
     this.drawEmptySlots(ctx, W);
     this.drawFanCards(ctx, W);
@@ -731,6 +744,7 @@ export class Hud {
     if (this.candidates.length > 1) this.drawCycle(ctx, W);
     if (this.descendReady) this.drawDescend(ctx, W);
     if (this.offers) this.drawOffers(ctx, W, H);
+    if (this.bestiaryOpen) this.drawBestiary(ctx, W, H);
   }
 
   /**
@@ -1575,6 +1589,85 @@ export class Hud {
    *
    * Rotated into the player's frame, like the minimap, so up is always forward.
    */
+  /**
+   * The bestiary's handle, in the slot under the minimap that the texel-density chip
+   * vacated when `First_Minutes` deleted it. That strip is the only piece of this
+   * screen nothing else claims, and a record of what you have learned belongs beside
+   * the other readout that is neither the world nor the book.
+   *
+   * Absent until there is something in it. A control that opens an empty list is a
+   * control that teaches the player it is not worth pressing.
+   */
+  private drawBestiaryPill(ctx: CanvasRenderingContext2D, W: number): void {
+    if (!this.bestiary.length || this.offers) return;
+    const label = `\u2726 ${this.bestiary.length}`;
+    ctx.font = '8px ui-monospace, monospace';
+    const w = ctx.measureText(label).width + 14;
+    const y = this.map ? 140 : 40;
+    const x = W - w - 10;
+    this.pill(ctx, x, y, label, 'rgba(255,207,92,0.9)', 'rgba(255,207,92,0.4)');
+    this.hits.push({ rect: [x - 6, y - 6, w + 12, 26], action: { kind: 'bestiary' } });
+  }
+
+  /**
+   * THE BESTIARY: every fusion this player has ever found.
+   *
+   * Free, and the only screen in the game with no price on it anywhere. It records
+   * the FUSION half only — the animation half fills as props are animated, and
+   * animating needs an ingredient off a belt that is currently switched off behind
+   * `BELT_ENABLED`. Rather than ship a permanently empty column, the sections are
+   * independent and only the ones that can fill are drawn; the other appears by
+   * itself the day the flag flips back.
+   */
+  private drawBestiary(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    ctx.fillStyle = 'rgba(8,5,12,0.92)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 13px ui-monospace, monospace';
+    ctx.fillStyle = GOLD;
+    ctx.fillText('WHAT YOU HAVE LEARNED', W / 2, H * 0.13);
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.5)';
+    // Said out loud, because it is a promise and not a description.
+    ctx.fillText('kept across every run \u00b7 never spent', W / 2, H * 0.13 + 16);
+
+    ctx.font = 'bold 10px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.75)';
+    ctx.textAlign = 'left';
+    ctx.fillText(`FUSIONS  ${this.bestiary.length}`, 22, H * 0.13 + 44);
+    ctx.strokeStyle = 'rgba(255,207,92,0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(22, H * 0.13 + 52.5); ctx.lineTo(W - 22, H * 0.13 + 52.5);
+    ctx.stroke();
+
+    ctx.font = '12px ui-serif, Georgia, serif';
+    let y = H * 0.13 + 74;
+    for (const name of this.bestiary) {
+      if (y > H - 90) break;
+      ctx.fillStyle = '#fff4dc';
+      ctx.fillText(name, 30, y);
+      y += 18;
+    }
+
+    const label = 'CLOSE';
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    const tw = ctx.measureText(label).width + 40;
+    const bx = (W - tw) / 2, by = H - 76;
+    rr(ctx, bx, by, tw, 30, 15);
+    ctx.fillStyle = 'rgba(26,18,32,0.96)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,207,92,0.7)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff4dc';
+    ctx.fillText(label, W / 2, by + 15);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    this.hits.push({ rect: [bx, by, tw, 30], action: { kind: 'bestiary' } });
+  }
+
   private drawCompass(ctx: CanvasRenderingContext2D, W: number): void {
     const goal = this.compassGoal;
     if (!goal) return;

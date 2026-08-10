@@ -291,6 +291,16 @@ export class Combat {
    * that pair. The HUD turns it into the discovery banner.
    */
   onDiscover: (spriteId: string, element: Element, kind: Affinities) => void = () => {};
+
+  /**
+   * A named fusion, the first time it is cast.
+   *
+   * Separate from `onEvent`'s `discover` banner, which is a moment; this is the
+   * RECORD. `Roadmap/Guidance_And_Blessings.md` takes a position on it: knowledge the
+   * player earned is never sold back to them, so this goes straight into `meta` and
+   * nothing anywhere prices it.
+   */
+  onFusion: (name: string, colour: number) => void = () => {};
   /**
    * A boss's ingredient drop, one call per vial.
    *
@@ -561,6 +571,8 @@ export class Combat {
     if (cast.authored && distinctPages >= 2 && !this.discovered.has(cast.name)) {
       this.discovered.add(cast.name);
       this.onEvent({ kind: 'discover', text: `✦ ${cast.name} discovered ✦`, colour: cast.colour });
+      // The banner is this run's; the bestiary is every run's.
+      this.onFusion(cast.name, cast.colour);
     }
 
     if (cast.output === 'golem') {
