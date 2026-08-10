@@ -94,7 +94,14 @@ export type AltarOfferKind =
    * that draws it is already exactly right. A second chooser would be a second thing
    * to keep in step with this one.
    */
-  | 'blessing';
+  | 'blessing'
+  /**
+   * WHERE THE RUN BEGINS, offered at the mouth once a deed has unlocked a deeper
+   * start. Its own kind and not a blessing, because both would otherwise be an
+   * id-less offer carrying a number in `amount` and the two would resolve as each
+   * other — a start-depth pick banking a reroll charge.
+   */
+  | 'startDepth';
 
 /**
  * One of the three things an altar is offering.
@@ -111,7 +118,7 @@ export type AltarOfferKind =
  */
 const OFFER_GLYPH: Record<string, string> = {
   heal: '+', stars: '*', reroll: '~', rank: '^', sacrifice: 'X',
-  upgrade: '^', star: '*', ingredient: 'o', blessing: '!',
+  upgrade: '^', star: '*', ingredient: 'o', blessing: '!', startDepth: 'v',
 };
 
 export interface AltarOffer {
@@ -1005,14 +1012,25 @@ export class Hud {
         ctx.font = 'bold 9px ui-monospace, monospace';
         ctx.textAlign = 'center';
         const w = ctx.measureText(label).width + 14;
+        /**
+         * The plate is world-projected, so a body standing close puts it low on the
+         * frame — straight through the log, the cast bar and the fan's cards, all of
+         * which own that band. Clamped to stay above it.
+         *
+         * Clamped rather than moved to a fixed row: the plate has to stay attached to
+         * the thing it names, and a caption that jumped to a bar at the top of the
+         * screen would be labelling nothing. Held just clear of the band instead, so
+         * it is still over its creature and no longer inside someone else's rows.
+         */
+        const plateY = Math.min(ty - 30, this.bookTop - BELT_BAND - 96);
         ctx.fillStyle = 'rgba(14,9,16,0.86)';
-        rr(ctx, mx - w / 2, ty - 30, w, 15, 7);
+        rr(ctx, mx - w / 2, plateY, w, 15, 7);
         ctx.fill();
         ctx.strokeStyle = plate;
         ctx.lineWidth = 1;
         ctx.stroke();
         ctx.fillStyle = plate;
-        ctx.fillText(label, mx, ty - 23);
+        ctx.fillText(label, mx, plateY + 7);
 
         /**
          * What you have found out about this creature, on the creature.
@@ -1028,7 +1046,7 @@ export class Hud {
           const marks = `${lore.weak ? '▲' : ''}${lore.resist ? '▼' : ''}`;
           ctx.font = 'bold 9px ui-monospace, monospace';
           ctx.fillStyle = lore.weak ? '#ffd166' : '#8aa0b8';
-          ctx.fillText(marks, mx + w / 2 + 7, ty - 23);
+          ctx.fillText(marks, mx + w / 2 + 7, plateY + 7);
         }
         ctx.textAlign = 'left';
 

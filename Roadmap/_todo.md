@@ -216,10 +216,14 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 ## Phase 18 — Descent_Unlocks
 
-- [ ] Record boss kills in `meta` and unlock the floor above each as a start point.
-- [ ] Offer a start-depth choice at run start, every fifth floor.
-- [ ] Grant three catch-up altar draws when starting deep.
-- [ ] Commit changes.
+- [x] Record boss kills in `meta` and unlock the floor above each as a start point.
+      A SET of depths, not a high-water mark — the only shape that survives a deep start.
+- [x] Offer a start-depth choice at run start, every fifth floor. Reuses the altar's
+      chooser; runs after `engine.start()` or boot deadlocks on its own modal.
+- [x] Grant three catch-up altar draws when starting deep. Rolled at the mouth with a
+      null altar, through the same chooser.
+- [x] Fix the income slope: a body pays by depth now, not a flat +1 at every floor.
+- [x] Commit changes.
 
 ## Phase 19 — Polish_Pass
 

@@ -40,7 +40,7 @@ import {
   ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CONDUCTION_ARC_RANGE,
   CONDUCTION_ARC_SHARE, CONDUCTION_MULT, DAMAGE_JITTER, DECAY_DOT, DEEP_FREEZE_MULT,
   DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS,
-  FIRE_DETOUR, GROUND_FIRE_DOT, GROW_RING, REACTION_REACH, SPILL_VOLUME, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
+  FIRE_DETOUR, GROUND_FIRE_DOT, GROW_RING, bodyStars, REACTION_REACH, SPILL_VOLUME, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
   bossDamage, enemyDamage,
 } from './tuning';
 
@@ -301,6 +301,9 @@ export class Combat {
    * nothing anywhere prices it.
    */
   onFusion: (name: string, colour: number) => void = () => {};
+
+  /** A floor's boss has fallen. The deed that unlocks starting below it. */
+  onBossKilled: (depth: number) => void = () => {};
   /**
    * A boss's ingredient drop, one call per vial.
    *
@@ -1072,6 +1075,10 @@ export class Combat {
 
     if (t.kind === 'boss') {
       this.bossDead = true;
+      // A DEED, recorded the moment it happens. `Roadmap/Descent_Unlocks.md`: money
+      // buys options and deeds buy permission, and killing this floor's boss is the
+      // only proof that the floor below it can be reached.
+      this.onBossKilled(this.state.depth);
       // Where it FELL, so the door opens under the player rather than sending them
       // off to look for one after the only fight on the floor is over.
       this.floor.revealStairs({ x: t.sprite.tx, y: t.sprite.ty });
@@ -1081,7 +1088,7 @@ export class Combat {
       });
       this.dropIngredients();
     } else if (t.kind === 'enemy') {
-      this.state.stars += 1;
+      this.state.stars += bodyStars(this.state.depth);
     }
   }
 

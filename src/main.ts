@@ -40,7 +40,7 @@ import { affinityOf } from './game/affinity';
 import type { Element as SpellElement } from './spells/spells';
 import { DEFAULT_STEP, setPixelStep } from './art/steps';
 import {
-  CHEST_HEAL_SPREAD, PLAYER_MAX_HP, THREAT_REACH, chestHealBase, descendHeal, healable,
+  CATCH_UP_DRAWS, CHEST_HEAL_SPREAD, PLAYER_MAX_HP, THREAT_REACH, chestHealBase, descendHeal, healable,
 } from './game/tuning';
 import { setGilded } from './book/pageTexture';
 import {
@@ -87,6 +87,16 @@ interface Meta {
    * `## Rejected — do not re-add`.
    */
   bestiary: string[];
+  /**
+   * The DEPTHS whose boss you have killed. A set, not a high-water mark.
+   *
+   * `meta.best` is a single number and cannot answer this: a player who reaches floor
+   * 7 and dies has killed six bosses, but a player who STARTS at floor 6 and kills
+   * that boss has killed one boss, at depth 6, and none above it. Recording the deed
+   * per depth is the only shape that survives a deep start — which is exactly what
+   * this unlocks, so it would break itself within one run otherwise.
+   */
+  bossKills: number[];
   /**
    * How many pages the starting book can hold. DERIVED from `nodes` — see
    * `applyTree`, which is the only thing allowed to write it.
@@ -218,13 +228,15 @@ function loadMeta(): Meta {
         giftedPage: typeof m.giftedPage === 'string' && isPageElement(m.giftedPage)
           ? m.giftedPage : null,
         bestiary: Array.isArray(m.bestiary) ? m.bestiary.filter((x: unknown) => typeof x === 'string') : [],
+        bossKills: Array.isArray(m.bossKills)
+          ? m.bossKills.filter((x: unknown) => typeof x === 'number') : [],
         pinned: isNodeId(m.pinned) ? m.pinned : null,
       });
     }
   } catch { /* corrupt or unavailable storage: fall through to defaults */ }
   return applyTree({
     stars: 0, loadout: [...DEFAULT_LOADOUT], slots: 0, handSize: 0, best: 0, nodes: [],
-    giftedPage: null, pinned: null, bestiary: [],
+    giftedPage: null, pinned: null, bestiary: [], bossKills: [],
   });
 }
 
@@ -1243,8 +1255,14 @@ async function boot(): Promise<void> {
    * roll only makes "every offer is stars" arrive sooner, so widening it is a
    * currency generator in a costume (`docs/DESIGN.md`, Rejected).
    */
-  const rollAltarOffers = (e: Entity, nonce = 0): AltarOffer[] => {
-    const rng = new Rng(`${runSeed}-altar-${state.depth}-${e.sprite.tx}-${e.sprite.ty}-${nonce}`);
+  const rollAltarOffers = (e: Entity | null, nonce = 0): AltarOffer[] => {
+    /**
+     * `e` is null for a CATCH-UP rite at the dungeon mouth, which is a real draw off
+     * the same table with no stone in front of the player. The seed falls back to the
+     * depth alone, so the three owed rolls differ by nonce and nothing else.
+     */
+    const where = e ? `${e.sprite.tx}-${e.sprite.ty}` : 'mouth';
+    const rng = new Rng(`${runSeed}-altar-${state.depth}-${where}-${nonce}`);
     // Elements only: an altar grants PAGES, and ingredients have none. Deduped
     // because a book may legitimately hold a page twice.
     const owned = [...new Set(state.pages.filter(isPageElement))];
@@ -1464,6 +1482,101 @@ async function boot(): Promise<void> {
    * was missed — a locked door the player can see is a worse experience than a door
    * they do not know about, and the tree is where the door is bought.
    */
+  /**
+   * The start depths this player has EARNED, offered every fifth floor.
+   *
+   * Floor 1 always. Beyond that, floor 6 needs the depth-5 boss dead and floor 11 the
+   * depth-10 boss — so the offer is 1 / 6 / 11 and nothing between, because a choice
+   * of ten floors is a menu rather than a decision.
+   *
+   * Read off `bossKills` and not off a high-water mark: a player who starts at 6 and
+   * kills that boss has proved they can reach 7, not that they ever walked floors 2
+   * to 5 — and `THEMES.length` bounds it, so an unreachable eleventh floor is never
+   * offered however many bosses fall.
+   */
+  const startDepths = (): number[] => {
+    const out = [1];
+    for (const d of [6, 11]) {
+      if (d <= THEMES.length && meta.bossKills.includes(d - 1)) out.push(d);
+    }
+    return out;
+  };
+
+  /**
+   * Choose where to begin, when there is a choice.
+   *
+   * Reuses the altar's chooser for the third time, which is the point of it having
+   * been built as three objects and a caption: the gesture is the same question every
+   * time. A player with nothing unlocked is never asked — one option is not a choice
+   * and a modal that can only be dismissed is a toll.
+   */
+  const offerStartDepth = (): boolean => {
+    const depths = startDepths();
+    if (depths.length < 2) return false;
+    hud.offerTitle = 'HOW DEEP DO YOU BEGIN';
+    hud.offerSubtitle = 'the deep road pays less \u00b7 you skip its floors';
+    hud.offers = depths.map((d) => ({
+      kind: 'startDepth', id: '', name: THEMES[d - 1].name,
+      tag: d === 1 ? 'the long road' : `depth ${d}`,
+      colour: d === 1 ? 0xffcf5c : 0xb98cff,
+      detail: d === 1
+        ? 'Begin at the mouth, as always. Every floor, every altar, every star.'
+        : `Skip ${d - 1} floors. Three catch-up draws, and the stars of those floors are lost with them.`,
+      cost: null, amount: d, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
+    }));
+    return true;
+  };
+
+  /**
+   * Where this run begins. 1 until the mouth's chooser says otherwise.
+   */
+  let startDepth = 1;
+
+  /** Wait for the open chooser to be answered. The mouth is the only place that
+   *  blocks on one — everywhere else the modal simply owns the taps until it closes. */
+  const waitForChoice = (): Promise<void> => new Promise((resolve) => {
+    const tick = (): void => {
+      if (!hud.offers) { resolve(); return; }
+      setTimeout(tick, 60);
+    };
+    tick();
+  });
+
+  /**
+   * THE CATCH-UP: three altar draws for the floors you skipped.
+   *
+   * Fewer than you skipped, deliberately — five floors' worth of altars is five
+   * rank-ups, and three is what makes the deep road the WEAKER path rather than a
+   * shortcut. `Roadmap/Descent_Unlocks.md` is explicit about that, and the lost star
+   * income of the skipped floors is the other half of the same trade.
+   *
+   * Delivered as three consecutive rolls of the altar's own chooser, which is the
+   * surface the doc asked for: no new screen, and the player already knows the
+   * gesture.
+   */
+  const grantCatchUp = (): void => {
+    catchUpDraws = CATCH_UP_DRAWS;
+    hud.addLog(
+      `You begin deep. ${CATCH_UP_DRAWS} rites owed for the floors you skipped.`,
+      0xb98cff,
+    );
+  };
+
+  let catchUpDraws = 0;
+
+  /** Roll the owed rites, one chooser at a time, before the run begins. */
+  const payCatchUp = async (): Promise<void> => {
+    while (catchUpDraws > 0) {
+      catchUpDraws--;
+      hud.offerTitle = `A RITE OWED \u00b7 ${catchUpDraws + 1} LEFT`;
+      hud.offerSubtitle = 'for the floors you did not walk';
+      hud.offers = rollAltarOffers(null, catchUpDraws);
+      await waitForChoice();
+    }
+    hud.offerTitle = 'THE ALTAR OFFERS';
+    hud.offerSubtitle = 'choose one';
+  };
+
   const offerBlessings = (): void => {
     if (!owns(meta.nodes, 'blessing')) return;
     hud.offerTitle = 'A BLESSING AT THE MOUTH';
@@ -1477,6 +1590,17 @@ async function boot(): Promise<void> {
      * and restores the chooser's captions on the way out, because the next thing to
      * open it is an altar and it must not inherit this one's title.
      */
+    /**
+     * WHERE TO BEGIN. Resolved before the altar guard for the same reason a blessing
+     * is: there is no altar at the dungeon mouth.
+     */
+    if (o.kind === 'startDepth') {
+      hud.offers = null;
+      hud.offerTitle = 'THE ALTAR OFFERS';
+      hud.offerSubtitle = 'choose one';
+      startDepth = o.amount;
+      return;
+    }
     if (o.kind === 'blessing') {
       hud.offers = null;
       hud.offerTitle = 'THE ALTAR OFFERS';
@@ -1499,9 +1623,16 @@ async function boot(): Promise<void> {
     const e = hud.offerAltar;
     hud.offers = null;
     hud.offerAltar = null;
-    if (!e) return;
-    claimedAltars.add(e);
-    void floor.spendAltar(e);
+    /**
+     * An altar-less draw is a real draw. The catch-up rites at the dungeon mouth roll
+     * the same table through the same chooser with no stone in front of the player, so
+     * the reward below has to land whether or not there is an altar to spend — this
+     * used to `return` and silently swallow the offer the player had just picked.
+     */
+    if (e) {
+      claimedAltars.add(e);
+      void floor.spendAltar(e);
+    }
     const pageName = SPELL_BY_ID[o.id]?.name ?? o.id;
 
     switch (o.kind) {
@@ -1597,8 +1728,11 @@ async function boot(): Promise<void> {
         break;
     }
 
-    entityPos(e, tmp);
-    fx.rise(tmp, o.colour);
+    // A catch-up rite has no stone to rise from; the shimmer still plays.
+    if (e) {
+      entityPos(e, tmp);
+      fx.rise(tmp, o.colour);
+    }
     sfx.shimmer(o.golden ? 990 : o.kind === 'star' || o.kind === 'stars' ? 720 : 880);
     refreshTargets();
   };
@@ -1803,6 +1937,19 @@ async function boot(): Promise<void> {
      * The bestiary fills itself. No node, no price, no unlock — it is free the first
      * time and free forever, which is the whole position the design takes on it.
      */
+    /**
+     * A boss kill is a DEED and goes straight to disc.
+     *
+     * Not banked until the run ends: dying on the floor below is not a reason to lose
+     * proof of the fight you won, and a permission you can be robbed of by bad luck is
+     * not permission.
+     */
+    combat.onBossKilled = (depth) => {
+      if (meta.bossKills.includes(depth)) return;
+      meta.bossKills.push(depth);
+      saveMeta(meta);
+    };
+
     combat.onFusion = (name) => {
       if (meta.bestiary.includes(name)) return;
       meta.bestiary.push(name);
@@ -2166,8 +2313,30 @@ async function boot(): Promise<void> {
   };
 
   await enterFloor(1);
-  // Before the first tile, and after the floor exists so the modal draws over it.
-  offerBlessings();
+
+  /**
+   * THE MOUTH, in order: where to begin, then what to begin with.
+   *
+   * Depth first, because a blessing chosen before knowing which floor you land on is
+   * a choice made without the information that decides it.
+   *
+   * Runs AFTER `engine.start()` and is deliberately not awaited here. It blocks on
+   * the player answering a modal, and the modal is drawn by the render loop — so
+   * awaiting it during boot deadlocks: the chooser cannot be seen, so it cannot be
+   * answered, so the loop it is waiting for never starts. That is exactly what it did
+   * the first time, and it bricked every save with a deep start unlocked.
+   */
+  const openTheMouth = async (): Promise<void> => {
+    if (offerStartDepth()) {
+      await waitForChoice();
+      if (startDepth > 1) {
+        await enterFloor(startDepth);
+        grantCatchUp();
+        await payCatchUp();
+      }
+    }
+    offerBlessings();
+  };
 
   // ------------------------------------------------------------------- the loop
 
@@ -2260,7 +2429,10 @@ async function boot(): Promise<void> {
     const t = hud.target;
     // A tile is never furniture, so an animate cast aimed at burning ground is
     // refused here with the same sentence a creature gets.
-    if (t && !isTileTarget(t) && t.alive && t.kind === 'prop' && !t.animated && t.golemId) {
+    // The same test `Floor.animateProp` applies, because these two disagreeing is
+    // precisely what the reticle's promise must never do — a spent chest is furniture.
+    if (t && !isTileTarget(t) && t.alive && !t.animated && t.golemId
+      && (t.kind === 'prop' || (t.kind === 'chest' && t.spent))) {
       return null;
     }
     return 'Nothing there will wake. Aim it at furniture.';
@@ -2634,6 +2806,8 @@ async function boot(): Promise<void> {
   });
 
   engine.start();
+  // The mouth's choosers need the loop running to be drawn at all — see `openTheMouth`.
+  void openTheMouth();
   document.getElementById('boot')?.classList.add('gone');
   // The book rises into frame and leafs itself onto the first page.
   book.playIntro();

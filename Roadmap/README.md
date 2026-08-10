@@ -31,6 +31,6 @@ played — check it before trusting it.
 | 15 | [Corpse_Raising_And_Golem_Persistence](Corpse_Raising_And_Golem_Persistence.md) | yes | paused |
 | 16 | [Guidance_And_Blessings](Guidance_And_Blessings.md) | yes | shipped |
 | 17 | [Deeper_Dungeon](Deeper_Dungeon.md) | yes | shipped |
-| 18 | [Descent_Unlocks](Descent_Unlocks.md) | yes | planned |
+| 18 | [Descent_Unlocks](Descent_Unlocks.md) | yes | shipped |
 | 19 | [Polish_Pass](Polish_Pass.md) | yes | planned |
 | 20 | [Ingredient_Belt](Ingredient_Belt.md) | yes | shipped, flagged off |

@@ -119,6 +119,10 @@ export function populate(grid: Grid, theme: Theme, seed: string, depth: number):
       const spot = rng.pick(wallTiles(room).length ? wallTiles(room) : room.tiles);
       out.push({
         kind: 'chest', sprite: 'chest', x: spot[0], y: spot[1],
+        // A SPENT chest is furniture, and every prop in this game is a spell
+        // component — so it carries a risen form like the rest of them. Targeting
+        // has accepted an open chest since phase 10; this is the body it wakes as.
+        golem: 'g_chest',
         ox: 0, oz: 0, hover: 0, roomId: room.id,
       });
       claim(spot[0], spot[1]);

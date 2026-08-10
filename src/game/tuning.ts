@@ -420,3 +420,27 @@ export const FIRE_DETOUR = 3;
  * the patch would make the first feed the only one worth making.
  */
 export const GROW_RING = 8;
+
+/**
+ * Stars a body pays, by depth.
+ *
+ * Flat +1 before, which made the pull toward depth a CLIFF rather than a slope — a
+ * deferred finding from the turn economy review, and the thing `Descent_Unlocks` says
+ * to fix rather than balance against. Depth barely paid until the very end and then
+ * paid enormously, so a run's income was almost entirely the completion bonus.
+ *
+ * A step every three floors: 1 through depth 3, 2 to depth 6, 3 to depth 9, 4 at ten.
+ * Stepped rather than linear so the number stays something a player can hold in their
+ * head, and so the deep floors are worth walking into on their own account before the
+ * bonus at the bottom is reached.
+ */
+export const bodyStars = (depth: number): number => 1 + Math.floor((depth - 1) / 3);
+
+/**
+ * Altar draws granted for starting deep.
+ *
+ * THREE, against the five floors a deep start skips — fewer than you gave up, which is
+ * what makes the deep road the weaker path rather than a shortcut. The other half of
+ * that trade is the star income of the skipped floors, which is simply gone.
+ */
+export const CATCH_UP_DRAWS = 3;

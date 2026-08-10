@@ -226,7 +226,17 @@ export class Floor {
    * back to life as a bug the moment the belt made it reachable again.
    */
   async animateProp(e: Entity, castHp = 26): Promise<boolean> {
-    if (e.kind !== 'prop' || e.animated || !e.golemId) return false;
+    /**
+     * A chest wakes too, once it has been opened.
+     *
+     * `kind` is 'chest' rather than 'prop', so the prop test alone refused it —
+     * `isCastableObject` has accepted a spent chest since phase 10 and the cast then
+     * died here, which is a reticle promising something the floor would not do. An
+     * UNSPENT chest is still refused: tapping it opens it, and that gesture has a
+     * meaning already.
+     */
+    const openable = e.kind === 'prop' || (e.kind === 'chest' && !!e.spent);
+    if (!openable || e.animated || !e.golemId) return false;
     const tex = await loadSprite(e.golemId);
     const old = e.sprite;
     const risen = new Sprite(e.golemId, tex, this.view.uniforms, {
