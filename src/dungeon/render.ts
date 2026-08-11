@@ -10,8 +10,55 @@
 import * as THREE from 'three';
 import { Grid, Tile, Surface, DIR_VEC } from './grid';
 import { WALL_H, STEP_H, buildTileSet, buildSconce, colToHex } from '../art/tiles';
+import { ppu } from '../art/steps';
 import type { Theme } from '../art/theme';
-import type { Pix } from '../art/pixel';
+import { Pix, rgba } from '../art/pixel';
+
+/**
+ * How far down a bottomless pit is actually built.
+ *
+ * Deep enough that the torch never reaches the end of it, which is what "bottomless"
+ * has to mean in a renderer — there is no such thing as an infinite quad, only one
+ * that goes further than the light does.
+ */
+/**
+ * The inside of a bottomless pit: torn rock, not masonry.
+ *
+ * The shaft was drawn with the room's own wall texture, and a coursed stone wall is
+ * the single most legible signal in the dungeon that a surface is ARCHITECTURE — that
+ * somebody built it, that it holds a room up, that there is a floor at the bottom of
+ * it. A lit passage heading downward is somewhere to go. So the pit gets its own
+ * surface and it is the opposite of a wall in every way the eye checks: no courses,
+ * no seams, no repeating bond, no highlights, and a value so low it is nearly the
+ * background already. Vertical scoring only, which is the one direction that says
+ * fallen rather than built.
+ */
+function pitFace(n: number, seed: string): Pix {
+  const p = new Pix(n, n);
+  let r = 2166136261 >>> 0;
+  for (let i = 0; i < seed.length; i++) r = Math.imul(r ^ seed.charCodeAt(i), 16777619) >>> 0;
+  const rnd = (): number => ((r = (r * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const base = rgba(26, 24, 26);
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) p.set(x, y, base);
+  }
+  // vertical scoring: long thin gouges, a shade either side of the base
+  for (let k = 0; k < Math.max(6, n >> 2); k++) {
+    const gx = Math.floor(rnd() * n);
+    const gw = 1 + Math.floor(rnd() * Math.max(1, n * 0.04));
+    const dark = rnd() < 0.6;
+    const c = dark ? rgba(14, 13, 15) : rgba(40, 37, 38);
+    let gy = Math.floor(rnd() * n * 0.4);
+    const gh = Math.floor(n * (0.3 + rnd() * 0.7));
+    for (let y = gy; y < Math.min(n, gy + gh); y++) {
+      const wob = Math.round(Math.sin(y * 0.4 + gx) * 1.2);
+      p.rect(gx + wob, y, gw, 1, c);
+    }
+  }
+  return p;
+}
+
+const PIT_DEPTH = 6;
 
 const WORLD_VERT = /* glsl */ `
   attribute float alight;
@@ -82,10 +129,7 @@ const WORLD_FRAG = /* glsl */ `
      * goes pale and flat and you can see the edge of the thing from across the room.
      * That is what makes walking into it a decision.
      *
-     * FROM INSIDE: uMurkHere is how fogged the tile the CAMERA is on is, and it
-     * drives a second distance falloff so standing in the bank dissolves the room at
-     * a few tiles whichever way you turn. Distance rather than depth, because from in
-     * here the murk is between you and everything, including the clear floor beyond.
+     * There is no FROM INSIDE term any more — see the note further down.
      *
      * AND IT IS LIT. uMurkCol is an albedo, not a colour — it goes through the same
      * illuminance the surface does, because fog is a thing in the room and not a
@@ -103,15 +147,27 @@ const WORLD_FRAG = /* glsl */ `
     vec3 murk = uMurkCol * mix(vec3(lum), L, 0.33);
 
     /*
-     * The two terms would otherwise COMPOUND. Standing in the bank, a wall one tile
-     * away was taking the full pallor of being in the murk AND the distance falloff
-     * on top of it, which is how the inside of a bank ended up a flat sheet with no
-     * near wall in it. The tint is what makes the bank visible from outside, so it
-     * fades out exactly as far as you are inside.
+     * MOSTLY GONE, and deliberately. Tinting the surfaces of a room is not fog — it
+     * has no parallax, it occludes nothing, and it never moves, so what it produced
+     * was a desaturated rectangle with a hard shoreline. The bank is a VOLUME now
+     * (see murkView.ts): billboards hanging in the air between you and the wall.
+     *
+     * What is left here is only what a volume cannot do for itself — a slight haze on
+     * the ground the cards are floating over, so the shoreline is not a clean line
+     * where the floor texture changes, and a gentle distance falloff while you are
+     * inside so the far end of a bank goes rather than merely being behind fog.
      */
-    float bank = exp(-uMurkHere * 0.18 * d * d);
-    c = mix(c, murk, vMurk * 0.42 * (1.0 - uMurkHere * 0.75));
-    c = mix(murk, c, clamp(bank, 0.0, 1.0));
+    /*
+     * NO DISTANCE TERM AT ALL. Standing in one tile of fog used to grey out the whole
+     * room, because being in the murk drove a falloff over everything the camera could
+     * see — so a wisp at your feet put haze on a clear corridor forty tiles long. Fog
+     * obscures where the fog IS, and the volume does that by standing between you and
+     * the thing; there is nothing left for a global falloff to do that is not a lie.
+     *
+     * What is left is a faint haze on the ground the cards float over, so the bank's
+     * shoreline is not a hard line where one floor texture stops and another starts.
+     */
+    c = mix(c, murk, vMurk * 0.14);
 
     gl_FragColor = vec4(c, 1.0);
   }
@@ -302,32 +358,56 @@ export class DungeonView {
     const waterB = tiles.water.map(() => new MeshBuild());
     const rubbleB = tiles.rubble.map(() => new MeshBuild());
     const fogB = tiles.fog.map(() => new MeshBuild());
-    const ladderB = tiles.ladder.map(() => new MeshBuild());
     const portalB = tiles.portal.map(() => new MeshBuild());
+    // the inside of a shaft, which is deliberately not masonry — see `pitFace`
+    const pitPix = [pitFace(Math.round(ppu()), seed)];
+    const pitB = pitPix.map(() => new MeshBuild());
     const surfaceB: Record<number, MeshBuild[]> = {
       [Surface.Iron]: ironB,
       [Surface.Water]: waterB,
       [Surface.Rubble]: rubbleB,
       [Surface.Fog]: fogB,
-      [Surface.Ladder]: ladderB,
+      /**
+       * NOT the ladder. It used to be a floor texture, which drew a ladder lying flat
+       * on the ground like a picture of one — a ladder is a thing you climb, so it
+       * hangs on the face of the ledge it serves. `ClockView` puts it there; the tile
+       * under it is ordinary floor.
+       */
     };
 
-    // ONE. Not `WALL_H`, which is what it used to be and what put a strip of the
-    // top of every wall along the bottom of every wall.
-    //
-    // The repeat existed to keep texels square on a face taller than it is wide,
-    // which would be right if the texture were square. It is not: `buildWall` makes
-    // it `ppu()` by `ppu() * WALL_H`, so it already HAS the quad's aspect and the
-    // mapping is 1:1 as it stands. Repeating V by 1.05 on top of that walked the
-    // sample 5% past the bottom of the texture, and the wrap mode is `Repeat`, so
-    // that last 5% came back around as the texture's first rows — the
-    // ceiling-shaded, sooted, strand-hung top edge, drawn at the floor.
-    //
-    // Which is why it read as upside-down, and why it read that way on some floors
-    // more than others: what lands in that strip is whatever the theme puts along
-    // its top edge, so the Ossuary showed soot at the skirting and the moss floor
-    // grew hanging strands out of the ground.
-    const wallVh = 1;
+
+    /**
+     * THE CEILING IS LOCAL, and that is the third answer to this question.
+     *
+     * A ceiling that FOLLOWS the floor gives a pit the same crawl height as the room
+     * around it, so a drop reads as the whole room stepping down rather than as a
+     * hole in it. A ceiling PINNED at wall height leaves a terrace with no headroom
+     * and no walls — you stand on the shelf with your eyes above the top of the world.
+     * Clearing the tallest floor ON THE WHOLE MAP fixes both and breaks something
+     * else: one terrace in one corner lifts the roof off every corridor in the
+     * dungeon, and a floor of tall rooms is a different game.
+     *
+     * So each tile's ceiling clears the highest floor NEAR IT — a couple of tiles
+     * either way. The roof stays where it has always been over ordinary ground, lifts
+     * only where the ground does, and the lift starts far enough out that you can see
+     * it coming rather than walking into a step in the sky.
+     */
+    const CEIL_REACH = 2;
+    const ceilOf = new Float32Array(g.w * g.h);
+    for (let y = 0; y < g.h; y++) {
+      for (let x = 0; x < g.w; x++) {
+        let hi = 0;
+        for (let j = -CEIL_REACH; j <= CEIL_REACH; j++) {
+          for (let i = -CEIL_REACH; i <= CEIL_REACH; i++) {
+            const nx = x + i, ny = y + j;
+            if (!g.inside(nx, ny)) continue;
+            const h = g.height[g.idx(nx, ny)];
+            if (h > hi) hi = h;
+          }
+        }
+        ceilOf[g.idx(x, y)] = hi * STEP_H + WALL_H;
+      }
+    }
 
     for (let y = 0; y < g.h; y++) {
       for (let x = 0; x < g.w; x++) {
@@ -354,6 +434,7 @@ export class DungeonView {
          * through a vault that stayed where it was.
          */
         const e = g.heightAt(x, y) * STEP_H;
+        const ceil = ceilOf[g.idx(x, y)];
 
         // corner lights, shared by floor and ceiling
         const l00 = this.cornerLight(x, y);
@@ -367,9 +448,45 @@ export class DungeonView {
         const m11 = this.cornerMurk(x + 1, y + 1);
         const m01 = this.cornerMurk(x, y + 1);
 
+        /**
+         * A TRAPDOOR TILE IS BUILT WITH THE HOLE ALREADY IN IT.
+         *
+         * The leaves are a `ClockView` decal that comes and goes with the beat, and
+         * the shaft under them is four quads going down — but a shaft under an intact
+         * floor quad is a shaft nobody can see, which is why an open trapdoor came out
+         * as a flat outline scratched into the flagstones. The floor cannot be rebuilt
+         * every beat: it is one static mesh and the whole point of it is that it is.
+         *
+         * So the APERTURE is permanent and the LID is what moves. The floor is laid as
+         * a frame of four strips round an empty middle, the shut and half-shut leaves
+         * cover that middle, and the live state simply stops covering it. Which is
+         * also how a trapdoor is actually built.
+         */
+        const trap = g.hazards.some((h) => h.kind === 'trapdoor' && h.x === x && h.y === y);
+        // matched to the inset `trapTile` draws its leaves at, so the lid overlaps the lip
+        const AP = 0.4;
+
         // Floor, normal +y. Winding runs from the far edge to the near edge —
         // the opposite order reads as facing down and gets backface-culled.
-        if (!gap) {
+        if (!gap && trap) {
+          const surf = g.surfaceAt(x, y);
+          const set = surfaceB[surf];
+          const fb = set ? set[v % set.length] : floorB[v % floorB.length];
+          fb.fog = [m01, m11, m10, m00];
+          const lm = (l00 + l10 + l11 + l01) / 4;
+          /** One strip of the frame, from the tile edge in to the aperture. */
+          const strip = (x0: number, z0: number, x1: number, z1: number): void => {
+            fb.quad(
+              [x + x0, e, y + z1], [x + x1, e, y + z1],
+              [x + x1, e, y + z0], [x + x0, e, y + z0],
+              lm, lm, lm, lm,
+            );
+          };
+          strip(-0.5, -0.5, 0.5, -AP);   // north
+          strip(-0.5, AP, 0.5, 0.5);     // south
+          strip(-0.5, -AP, -AP, AP);     // west
+          strip(AP, -AP, 0.5, AP);       // east
+        } else if (!gap) {
           const surf = g.surfaceAt(x, y);
           let fb: MeshBuild;
           if (surf === Surface.Portal) {
@@ -393,20 +510,114 @@ export class DungeonView {
         const cb = ceilB[v % ceilB.length];
         cb.fog = [m00, m10, m11, m01];
         cb.quad(
-          [x - 0.5, e + WALL_H, y - 0.5], [x + 0.5, e + WALL_H, y - 0.5],
-          [x + 0.5, e + WALL_H, y + 0.5], [x - 0.5, e + WALL_H, y + 0.5],
+          [x - 0.5, ceil, y - 0.5], [x + 0.5, ceil, y - 0.5],
+          [x + 0.5, ceil, y + 0.5], [x - 0.5, ceil, y + 0.5],
           l00 * 0.55, l10 * 0.55, l11 * 0.55, l01 * 0.55,
         );
+
+        /**
+         * THE INSIDE OF A BOTTOMLESS PIT.
+         *
+         * A gap used to be pure absence — no floor, no faces — and pure absence reads
+         * as a rendering fault. You get a black polygon with hard edges sitting in the
+         * floor, which is exactly what a hole in the geometry looks like, so the eye
+         * files it as a bug rather than as a drop.
+         *
+         * Giving it SIDES is the whole fix: walls running down from the lip into the
+         * dark, so there is something in there receding. It still has no bottom — the
+         * shaft simply outruns the light — but now it is a shaft rather than a gap in
+         * the drawing. Built from the gap tile outward, one face per walkable
+         * neighbour, wound to be seen from inside the hole.
+         */
+        if (gap) {
+          for (let f = 0; f < 4; f++) {
+            const [dx, dy] = DIR_VEC[f];
+            const nx = x + dx, ny = y + dy;
+            if (!g.walkable(nx, ny)) continue;
+            const ne = g.heightAt(nx, ny) * STEP_H;
+            const wb = pitB[0];
+            wb.fog = [0, 0, 0, 0];
+            /**
+             * A QUARTER OF THE LIGHT AT THE LIP, AND NOTHING BELOW IT.
+             *
+             * The shaft used to take the wall texture at the wall's own brightness,
+             * and the result was a lit stone passage heading down — which is a place
+             * you go, not a place you die. Both halves of that had to go: the surface
+             * is now torn rock rather than coursed masonry, and even that is only
+             * barely lit at the rim. What the eye gets is one dim edge and then the
+             * light simply stops, which is the only honest thing to draw, because
+             * there is nothing down there to light.
+             */
+            const lb = g.lightAt(nx, ny) * 0.28;
+            const hx = dx * 0.5, hz = dy * 0.5;
+            const ex = dy * 0.5, ez = -dx * 0.5;
+            const ax = x + hx + ex, az = y + hz + ez;
+            const bx = x + hx - ex, bz = y + hz - ez;
+            wb.quad(
+              [ax, ne - PIT_DEPTH, az], [bx, ne - PIT_DEPTH, bz],
+              [bx, ne, bz], [ax, ne, az],
+              0, 0, lb, lb,
+              1, PIT_DEPTH / WALL_H, true,
+            );
+          }
+        }
+
+        /**
+         * SOFFITS: the step in the CEILING, wherever the local reach lifts it.
+         *
+         * Back again, and now driven by the ceiling field rather than the floor. A
+         * local ceiling steps, and a step with nothing bridging it is a slot of open
+         * sky in the roof — which is what you see through, straight out of the world.
+         * Drawn from the tile with the HIGHER ceiling, once per edge, facing the side
+         * with the lower one.
+         */
+        for (let f = 0; f < 4; f++) {
+          const [dx, dy] = DIR_VEC[f];
+          const nx = x + dx, ny = y + dy;
+          if (!g.inside(nx, ny)) continue;
+          const nc = ceilOf[g.idx(nx, ny)];
+          if (nc >= ceil - 0.0001) continue;
+          const wb = wallB[(v + f * 5) % wallB.length];
+          const wm = g.surfaceAt(x, y) === Surface.Fog ? 1 : 0;
+          wb.fog = [wm, wm, wm, wm];
+          const lb = g.lightAt(x, y) * 0.5;
+          const hx = dx * 0.5, hz = dy * 0.5;
+          const ex = dy * 0.5, ez = -dx * 0.5;
+          const ax = x + hx + ex, az = y + hz + ez;
+          const bx = x + hx - ex, bz = y + hz - ez;
+          /**
+           * BOTH WINDINGS, because a soffit is genuinely looked at from both sides.
+           *
+           * A wall face is only ever seen from the tile that owns it and a riser is
+           * only ever seen from the low side, so each of those is one quad with one
+           * normal. A step in the ceiling is not like either: you walk UNDER it in
+           * both directions, so from the low room it is the face above the doorway
+           * and from the high room it is the face above the drop-off. One quad meant
+           * one of those two views was backface-culled, and the view that lost was
+           * the black slot in the roof that started this.
+           */
+          wb.quad(
+            [bx, nc, bz], [ax, nc, az],
+            [ax, ceil, az], [bx, ceil, bz],
+            lb, lb, lb * 0.7, lb * 0.7,
+            1, (ceil - nc) / WALL_H, true,
+          );
+          wb.quad(
+            [ax, nc, az], [bx, nc, bz],
+            [bx, ceil, bz], [ax, ceil, az],
+            lb, lb, lb * 0.7, lb * 0.7,
+            1, (ceil - nc) / WALL_H, true,
+          );
+        }
 
         /**
          * RISERS: the step face between this tile and a lower neighbour.
          *
          * Drawn from the HIGH tile and only downward, so exactly one of any pair of
-         * neighbours draws the face between them and it is never drawn twice. Two of
-         * them per edge, because the ceiling steps with the floor: the ledge itself,
-         * from the low floor up to this one, and the soffit above it, from the low
-         * ceiling up to this one. Without the second, a terrace has daylight over the
-         * step — a strip of nothing where the two ceilings fail to meet.
+         * neighbours draws the face between them and it is never drawn twice. ONE per
+         * edge now that the ceiling is flat: the ledge, from the low floor up to this
+         * one. There used to be a second quad bridging the two ceilings, and a flat
+         * ceiling has nothing for it to bridge.
          *
          * Wall texture on both, because that is what the side of a stone step is, and
          * it means the risers cost no new art and land in the same batches.
@@ -429,18 +640,21 @@ export class DungeonView {
           const ax = x + hx + ex, az = y + hz + ez;
           const bx = x + hx - ex, bz = y + hz - ez;
 
-          // the ledge, facing the low side
+          /**
+           * WOUND THE OTHER WAY ROUND from a wall face, and this is the whole reason
+           * the ledge came out BLACK.
+           *
+           * A wall quad is always looked at from the tile that owns it, because the
+           * neighbour is solid. A riser is the opposite case: the neighbour is open,
+           * so the face is looked at from the LOW side — the side you are standing on
+           * when you look up at a ledge. Copying the wall's winding pointed the
+           * normal into the ledge, backface culling threw it away, and the drop had a
+           * hole in it that showed the void behind the room.
+           */
           wb.quad(
-            [ax, ne, az], [bx, ne, bz],
-            [bx, e, bz], [ax, e, az],
+            [bx, ne, bz], [ax, ne, az],
+            [ax, e, az], [bx, e, bz],
             lb * 0.7, lb * 0.7, lb, lb,
-            1, (e - ne) / WALL_H, true,
-          );
-          // the soffit over it, same edge, between the two ceilings
-          wb.quad(
-            [ax, ne + WALL_H, az], [bx, ne + WALL_H, bz],
-            [bx, e + WALL_H, bz], [ax, e + WALL_H, az],
-            lb * 0.45, lb * 0.45, lb * 0.3, lb * 0.3,
             1, (e - ne) / WALL_H, true,
           );
         }
@@ -477,9 +691,9 @@ export class DungeonView {
            */
           wb.quad(
             [ax, e, az], [bx, e, bz],
-            [bx, e + WALL_H, bz], [ax, e + WALL_H, az],
+            [bx, ceil, bz], [ax, ceil, az],
             lb, lb, lt, lt,
-            1, wallVh, true,
+            1, Math.max(0.2, (ceil - e) / WALL_H), true,
           );
         }
       }
@@ -503,8 +717,8 @@ export class DungeonView {
     addAll(waterB, tiles.water);
     addAll(rubbleB, tiles.rubble);
     addAll(fogB, tiles.fog);
-    addAll(ladderB, tiles.ladder);
     addAll(portalB, tiles.portal);
+    addAll(pitB, pitPix);
 
     this.buildSconces(seed);
   }

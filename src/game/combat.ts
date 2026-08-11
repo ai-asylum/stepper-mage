@@ -1516,6 +1516,34 @@ export class Combat {
     e.sprite.tx = best[0]; e.sprite.ty = best[1];
     e.sprite.setTileLight(g.lightAt(best[0], best[1]));
     e.sprite.play('walk');
+    this.takePortal(e);
+  }
+
+  /**
+   * A PAIR OF MOUTHS TAKES WHATEVER STANDS ON ONE. Including the thing chasing you.
+   *
+   * It shipped as a player-only verb, which quietly made it the best escape in the
+   * game: step through and the room simply loses you, because the pursuit walks to
+   * the mouth, stands on it, and stays there. That is not a portal, it is a door only
+   * one side of the fight is allowed to use — and the whole claim of the surface is
+   * that it is a fact about the FLOOR rather than a power the player has.
+   *
+   * Same rule as the player's, for the same reason: arriving is a placement and not a
+   * step, so the far mouth cannot fire again and bounce the thing back and forth. And
+   * an occupied far mouth refuses the trip rather than stacking two bodies on a tile.
+   */
+  private takePortal(e: Entity): void {
+    const g = this.floor.grid;
+    const x = e.sprite.tx, y = e.sprite.ty;
+    if (g.surfaceAt(x, y) !== Surface.Portal) return;
+    const to = g.portalPair(g.idx(x, y));
+    if (to < 0) return;
+    const tx = to % g.w, ty = (to / g.w) | 0;
+    if (this.floor.entityAt(tx, ty)) return;
+    if (this.playerTile.x === tx && this.playerTile.y === ty) return;
+    this.onEvent({ kind: 'info', text: 'The pair takes it.', colour: 0xb98cff, at: { x, y } });
+    e.sprite.tx = tx; e.sprite.ty = ty;
+    e.sprite.setTileLight(g.lightAt(tx, ty));
   }
 
   /**
@@ -1669,14 +1697,32 @@ export class Combat {
    * entire point of the mechanism. What it buys is ACCESS, and access is the one
    * reward that can make exploring worth doing without inflating anything.
    */
-  pullLever(x: number, y: number): 'pulled' | 'opened' | null {
+  pullLever(x: number, y: number): 'pulled' | 'opened' | 'released' | null {
     const g = this.floor.grid;
     const bd = g.bossDoor;
     const i = g.idx(x, y);
-    if (!bd || !bd.levers.includes(i) || bd.pulled.has(i)) return null;
+    if (!bd || !bd.levers.includes(i)) return null;
+
+    /**
+     * A LEVER THROWS BOTH WAYS.
+     *
+     * It shipped one-way — pull it and it is pulled forever — on the theory that a
+     * lever is a fact about the map. That is true of what it UNLOCKS and not of the
+     * lever: a switch you cannot switch back is a button, and the player reaches for
+     * it expecting a switch. Putting it back shuts the door again, which costs
+     * nothing to allow and makes the mechanism legible in one gesture instead of one
+     * gesture and a paragraph.
+     */
+    if (bd.pulled.has(i)) {
+      bd.pulled.delete(i);
+      this.floor.markLever(i, false);
+      if (g.doorOpen[bd.i]) g.doorOpen[bd.i] = 0;
+      this.floor.syncClock();
+      return 'released';
+    }
 
     bd.pulled.add(i);
-    this.floor.markLever(i);
+    this.floor.markLever(i, true);
     if (bd.pulled.size < bd.levers.length) {
       const left = bd.levers.length - bd.pulled.size;
       this.onEvent({
@@ -1687,8 +1733,11 @@ export class Combat {
       this.floor.syncClock();
       return 'pulled';
     }
-    g.doorOpen[bd.i] = 1;
-    this.onEvent({ kind: 'status', text: 'THE WAY IN OPENS.', colour: 0xffc23e });
+    /**
+     * NO ANNOUNCEMENT. The cut flies to the gate and you watch it go up — saying
+     * "the way in opens" over the top of that is the caption on a photograph of the
+     * thing you are already looking at.
+     */
     this.floor.syncClock();
     return 'opened';
   }

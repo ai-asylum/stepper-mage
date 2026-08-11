@@ -25,16 +25,26 @@ import type { FloorDetail, Theme } from './theme';
 export const WALL_H = 1.05;
 
 /**
- * One step of elevation, in world units. The other geometric constant.
+ * One step of elevation, in world units: EXACTLY ONE WALL.
  *
- * A bit over a quarter of the wall — so a single level is a ledge you sit on rather
- * than a kerb you would not notice, and the deepest drop the grid can say (four
- * levels, `HEIGHT_MIN` to `HEIGHT_MAX`) is taller than the room is high. That is the
- * scale the fall damage is written against: one step is a jolt and four is most of a
- * healthbar, and both of those have to be READABLE from the top of the drop, which a
- * smaller step is not.
+ * It shipped at 0.28 — a kerb — then at 0.6 of a wall, which was better and still
+ * wrong in a way that only showed up once there was a room to stand in and look at.
+ * At six tenths a storey does not line up with anything: the ceiling over the upper
+ * level lands most of the way up the wall of the lower one, so the two levels share a
+ * band of wall that belongs to neither, and every soffit and riser in the dungeon is
+ * a fraction nobody can read.
+ *
+ * At exactly one wall it is a BUILDING. The floor of the terrace is the ceiling of
+ * the room under it, a riser is a wall, a soffit is a wall, and every quad in the
+ * elevation code is the same height as the tile art it is textured with — which is
+ * why the seams stop showing. Levels stack, which was always the claim, and now they
+ * stack the way masonry does.
+ *
+ * The eye sits at 0.525, so a single level is exactly two eye-heights of drop, and
+ * four levels is 4.2 units against a fall curve written when four was 2.5. That curve
+ * is a function of LEVELS, not of metres, so it is unaffected.
  */
-export const STEP_H = WALL_H * 0.28;
+export const STEP_H = WALL_H;
 
 /**
  * An inclusive random range that survives a coarse step.
@@ -701,31 +711,59 @@ function buildWater(theme: Theme, seed: string, variant: number): Pix {
   return p;
 }
 
-/** Rubble: lumps with shadows under them. The only thing on the floor that is ON it. */
+/**
+ * Rubble: angular broken stone, close to the ground.
+ *
+ * The first version drew round lumps with a big soft cast shadow under each, and from
+ * a standing camera that reads as BUMPS — a floor of grey blisters, which is what it
+ * was fairly described as. Three things were wrong with it and all three are the same
+ * mistake, which is drawing a rock as an object rather than as debris:
+ *
+ *  - **Round.** Broken stone is angular. Chips have corners and straight edges, and
+ *    the corners are most of what says "this was hit with something".
+ *  - **Too big and too few.** A dozen large lumps is a pattern; rubble is a lot of
+ *    small pieces at a lot of sizes, mostly grit with a few real chunks in it.
+ *  - **The shadow was a crescent.** A cast shadow that size on a floor seen at a
+ *    grazing angle is a black smile under every rock, and the eye reads the SMILE. It
+ *    is now one texel of contact darkness on the lower edge, which is all that is
+ *    needed to plant a chip on the floor.
+ */
 function buildRubble(theme: Theme, seed: string, variant: number): Pix {
   const rng = new Rng(`${seed}-r${variant}`);
   const p = buildFloor(theme, `${seed}-base`, variant);
   const P = ppu();
   const stone = theme.floor.cols[Math.min(theme.floor.cols.length - 1, 3)];
   const bright = theme.floor.cols[theme.floor.cols.length - 1];
-  const shadow = hex(0x140f12);
+  const dark = mix(stone, hex(0x140f12), 0.55);
 
-  // Chunks, biggest first, each with a cast shadow below it and a lit top face.
-  // The shadow is what makes it read as a pile you have to climb rather than as a
-  // pattern printed on the floor — nothing else in the game casts one.
-  const chunks = Math.max(5, Math.round(P / 3));
-  for (let i = 0; i < chunks; i++) {
-    const cx = span(rng, 2, P - 3), cy = span(rng, 2, P - 3);
-    const rx = Math.max(1, Math.round(P * rng.range(0.05, 0.12)));
-    const ry = Math.max(1, Math.round(rx * rng.range(0.6, 0.95)));
-    p.ellipse(cx, cy + Math.max(1, ry * 0.6), rx, Math.max(1, ry * 0.7), shadow);
-    p.ellipse(cx, cy, rx, ry, mix(stone, shadow, 0.25));
-    p.ellipse(cx, cy - Math.max(1, ry * 0.4), Math.max(1, rx * 0.7), Math.max(1, ry * 0.45),
-      mix(stone, bright, 0.55));
+  /** One angular chip: a lit top face, a darker side, one texel of contact shadow. */
+  const chip = (cx: number, cy: number, w: number, h: number) => {
+    const x0 = Math.round(cx - w / 2), y0 = Math.round(cy - h / 2);
+    // the body, with a bitten corner so no two chips are the same rectangle
+    p.rect(x0, y0, w, h, mix(stone, dark, 0.35));
+    if (w > 2 && h > 2 && rng.chance(0.7)) {
+      p.rect(x0 + w - 1, y0, 1, Math.max(1, h >> 1), mix(stone, dark, 0.8));
+    }
+    // lit top edge — the face pointing at the ceiling
+    p.rect(x0, y0, w, Math.max(1, h >> 1), mix(stone, bright, 0.5));
+    // and one texel of contact darkness where it meets the floor
+    p.rect(x0, y0 + h, w, 1, dark);
+  };
+
+  // A LOT of small pieces and a handful of larger ones, which is what a pile is.
+  const big = Math.max(3, Math.round(P / 14));
+  for (let i = 0; i < big; i++) {
+    const w = Math.max(2, Math.round(P * rng.range(0.09, 0.15)));
+    chip(span(rng, 3, P - 4), span(rng, 3, P - 5), w, Math.max(1, Math.round(w * rng.range(0.5, 0.8))));
   }
-  // grit between the chunks
-  for (let i = 0; i < P; i++) {
-    p.set(rng.int(0, P - 1), rng.int(0, P - 1), mix(stone, shadow, rng.range(0, 0.6)));
+  const small = Math.max(10, Math.round(P / 3));
+  for (let i = 0; i < small; i++) {
+    const w = Math.max(1, Math.round(P * rng.range(0.03, 0.07)));
+    chip(span(rng, 2, P - 3), span(rng, 2, P - 3), w, Math.max(1, Math.round(w * 0.7)));
+  }
+  // grit, so the gaps between chips are not clean floor
+  for (let i = 0; i < P * 1.5; i++) {
+    p.set(rng.int(0, P - 1), rng.int(0, P - 1), mix(stone, dark, rng.range(0.2, 0.9)));
   }
   return p;
 }

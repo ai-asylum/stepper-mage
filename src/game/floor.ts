@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { Grid, Surface, visibleTiles, type Dir } from '../dungeon/grid';
 import { generate } from '../dungeon/generate';
+import type { LayoutId } from '../dungeon/layouts';
 import { DungeonView } from '../dungeon/render';
 import { STEP_H } from '../art/tiles';
 import { Sprite, preloadSprites, loadSprite } from '../dungeon/sprites';
@@ -18,6 +19,7 @@ import { bossHp, enemyHp } from './tuning';
 import { Ground } from './ground';
 import { FireView } from '../dungeon/fireView';
 import { ClockView } from '../dungeon/clockView';
+import { MurkView } from '../dungeon/murkView';
 
 export interface Entity {
   sprite: Sprite;
@@ -50,7 +52,7 @@ export interface Entity {
 }
 
 /** Kinds that physically occupy their tile. Stairs are walk-on by design. */
-const SOLID: ReadonlySet<string> = new Set(['altar', 'chest', 'prop', 'enemy', 'boss']);
+const SOLID: ReadonlySet<string> = new Set(['altar', 'chest', 'prop', 'enemy', 'boss', 'lever']);
 
 /**
  * Turn a body to look at a tile. A no-op when it is already standing there.
@@ -163,10 +165,12 @@ export class Floor {
   readonly fireView = new FireView();
   /** Blades, spikes, trapdoors and the countdown on a gate. */
   readonly clockView = new ClockView();
+  /** The fog banks, as billboards hanging in the air rather than a tint. */
+  readonly murkView = new MurkView();
 
-  private constructor(readonly depth: number, readonly seed: string) {
+  private constructor(readonly depth: number, readonly seed: string, layout?: LayoutId) {
     this.theme = themeForDepth(depth);
-    this.grid = generate({ depth, seed });
+    this.grid = generate({ depth, seed, layout });
     // Shallow water will not take a flame. `Ground` deliberately knows nothing about
     // tiles, so the one place holding both it and the grid is where the rule goes.
     this.ground.refuses = (i, what) =>
@@ -175,12 +179,14 @@ export class Floor {
     this.group.add(this.view.group);
     this.group.add(this.fireView.group);
     this.group.add(this.clockView.group);
+    this.group.add(this.murkView.group);
     this.clockView.sync(this.grid);
+    this.murkView.sync(this.grid);
   }
 
   /** Build a floor, preloading every sprite it needs before returning. */
-  static async create(depth: number, seed: string): Promise<Floor> {
-    const f = new Floor(depth, seed);
+  static async create(depth: number, seed: string, layout?: LayoutId): Promise<Floor> {
+    const f = new Floor(depth, seed, layout);
     await preloadSprites([...spriteIdsFor(f.theme), 'altar_empty', 'chest_open']);
     const placed = populate(f.grid, f.theme, seed, depth);
     for (const p of placed) await f.spawn(p);
@@ -193,8 +199,13 @@ export class Floor {
     const sprite = new Sprite(p.sprite, tex, this.view.uniforms, {
       hover: p.hover,
       seed: (p.x * 31 + p.y * 17 + p.sprite.length) * 0.61,
-      // Scenery breathes less than something alive.
-      bob: p.kind === 'prop' || p.kind === 'chest' || p.kind === 'stairs' ? 0.25 : 1,
+      /**
+       * MASONRY DOES NOT BREATHE. It shipped at a quarter strength for scenery, which
+       * was the right instinct and the wrong answer: a quarter of a sway is still a
+       * sway, and a stone plinth that drifts up and down half a texel reads as the
+       * whole room being slightly unmoored. Only things with muscles get any.
+       */
+      bob: p.kind === 'enemy' || p.kind === 'boss' ? 1 : 0,
       emissive: p.kind === 'altar' ? 1.5 : p.kind === 'boss' ? 0.95 : 0.85,
     });
     sprite.tx = p.x; sprite.ty = p.y; sprite.ox = p.ox; sprite.oz = p.oz;
@@ -303,15 +314,18 @@ export class Floor {
    * wait, because a lever that pauses the game while a PNG loads would be worse than
    * one that changes a moment late.
    */
-  markLever(i: number): void {
+  markLever(i: number, pulled: boolean): void {
     const x = i % this.grid.w, y = (i / this.grid.w) | 0;
     const e = this.entities.find((z) => z.kind === 'lever' && z.sprite.tx === x && z.sprite.ty === y);
-    if (!e || e.spriteId === 'lever_pulled') return;
-    e.spriteId = 'lever_pulled';
-    void loadViews('lever_pulled').then((m) => {
-      e.sprite.setViews(m);
-      e.sprite.play('rise');
-    });
+    const want = pulled ? 'lever_pulled' : 'lever';
+    if (!e || e.spriteId === want) return;
+    e.spriteId = want;
+    /**
+     * INSTANT. No `rise` — that animation lifts a thing up out of the floor, which is
+     * what a golem does when it wakes and is nonsense for a switch bolted to a plinth.
+     * A lever THROWS: the handle is one place, then it is the other.
+     */
+    void loadViews(want).then((m) => e.sprite.setViews(m));
   }
 
   /**
@@ -329,6 +343,8 @@ export class Floor {
     this.fireView.restep();
     this.clockView.restep();
     this.clockView.sync(this.grid);
+    this.murkView.restep();
+    this.murkView.sync(this.grid);
     // Fetch the whole roster at the new step before touching a single sprite, so
     // the floor changes density all at once instead of creature by creature as
     // each PNG lands. `Sprite.id` is authoritative here rather than `spriteId` —
@@ -465,6 +481,12 @@ export class Floor {
   update(dt: number, time: number, cam: THREE.Vector3): void {
     this.view.update(time, cam);
     this.fireView.update(time, cam);
+    this.clockView.update(cam);
+    this.murkView.update(
+      time, cam, this.grid,
+      this.view.uniforms.uTorch.value as THREE.Color,
+      this.view.uniforms.uAmbient.value as number,
+    );
     for (const e of this.entities) {
       const [v, flip] = viewFrom(e, cam);
       e.sprite.setView(v, flip);
@@ -486,6 +508,7 @@ export class Floor {
     this.view.dispose();
     this.fireView.dispose();
     this.clockView.dispose();
+    this.murkView.dispose();
     this.group.clear();
   }
 }

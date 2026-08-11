@@ -34,6 +34,8 @@ import {
 import { BELT_ENABLED } from './flags';
 import { Rng } from './core/rng';
 import { DIR_VEC, Surface, type Dir } from './dungeon/grid';
+import type { LayoutId } from './dungeon/layouts';
+import { STEP_H, WALL_H } from './art/tiles';
 import { THEMES } from './art/theme';
 import { hitFxFor } from './game/hitfx';
 import { affinityOf } from './game/affinity';
@@ -821,12 +823,64 @@ async function boot(): Promise<void> {
   sinks.hitstop = (d) => { fx.hitstop = Math.max(fx.hitstop, d); };
 
   const eye = new THREE.Vector3();
-  /** How long the door cut lasts. Under a second: it is a glance, not a cutscene. */
-  const CUT_TIME = 0.85;
-  let cutT = 0;
-  let cutYaw = 0;
-  const cutAt = new THREE.Vector3();
-  const cutLook = new THREE.Vector3();
+  /**
+   * THE CUTSCENE. A real one: the camera leaves the player and goes to look.
+   *
+   * The first version only turned the player's own head and snapped it back, which is
+   * why nobody ever saw the door open — the eye stayed in a corridor with a wall in
+   * the way and the whole thing was over before it registered. A cut has to be able to
+   * show you something you are not standing near, which means the camera has to LEAVE,
+   * and if it leaves then the player must not be able to walk about underneath it.
+   *
+   * Three phases and they are the three a cut needs: fly out, HOLD on the subject, fly
+   * home. The hold is the part that was missing and it is the part that does the work.
+   * Input is refused for the whole of it — `cineLock` is read by `canAct` and by the
+   * tap handler — so it cannot be interrupted and nothing can move while it plays.
+   */
+  const CINE_OUT = 1.15;
+  const CINE_BACK = 0.55;
+  /**
+   * THE BEAT. The camera arrives and then NOTHING HAPPENS for most of a second.
+   *
+   * This is the whole difference between a cut that shows you a door and a cut that
+   * shows you a door opening. The first version fired the door on the same frame the
+   * camera stopped, so the eye was still travelling when the gate moved: you never saw
+   * the shut door, so you never saw it open — you saw one arrival, and afterwards
+   * there was a hole. A held frame with nothing in it is not dead time, it is the
+   * establishing shot, and it is the only reason the next three seconds mean anything.
+   */
+  const CINE_BEAT = 0.8;
+  /**
+   * How long the gate takes to grind out of the way. Slow on purpose: a portcullis is
+   * a ton of iron on a winch, and the one thing it must never look like is a toggle.
+   */
+  const CINE_OPEN = 2.6;
+  /** The pause after it lands, before the player is offered the way out of the cut. */
+  const CINE_SETTLE = 0.45;
+  /**
+   * The cut, as an explicit state machine rather than one countdown.
+   *
+   * The countdown version was unwatchable and, worse, untestable: it was over in about
+   * a second whatever happened, so there was no moment you could stop and check that
+   * the camera had gone anywhere at all. It now HOLDS on the subject until the player
+   * taps, which is both the better cut — you look at the thing for as long as you want
+   * to — and the thing that makes it possible to confirm it works.
+   */
+  type CinePhase = 'out' | 'beat' | 'open' | 'hold' | 'back';
+  /**
+   * `onArrive` fires the instant the camera stops, not when the cut is triggered.
+   *
+   * Which is the difference between showing a door open and showing an open door. The
+   * gate used to swing the moment the lever was thrown — twenty tiles away, off
+   * screen — so by the time the camera got there the only thing to see was a hole
+   * somebody had already made.
+   */
+  let cine:
+    | { phase: CinePhase; t: number; onArrive?: () => void; onOpen?: (k: number) => void }
+    | null = null;
+  const cineAt = new THREE.Vector3();
+  const cineEye = new THREE.Vector3();
+  const cineFrom = new THREE.Vector3();
   /**
    * Look at what you just opened.
    *
@@ -835,10 +889,76 @@ async function boot(): Promise<void> {
    * behind a wall the player still gets the turn and the sound of it — knowing WHICH
    * WAY the thing that opened is is most of what the cut is for.
    */
-  const cutToward = (tx: number, ty: number): void => {
-    cutAt.set(tx, 0, ty);
-    cutT = CUT_TIME;
+  const cutToward = (
+    tx: number,
+    ty: number,
+    onArrive?: () => void,
+    onOpen?: (k: number) => void,
+  ): void => {
+    cineAt.set(tx, 0.5, ty);
+    /**
+     * The vantage is computed ONCE, here, not per frame.
+     *
+     * Recomputing it every frame off a `from` that was itself being re-copied was the
+     * bug that made the whole thing look like nothing happened: the target kept
+     * sliding as the camera approached it, so the interpolation chased its own tail
+     * and the eye barely left the player.
+     */
+    cineFrom.copy(engine.camera.position);
+    const dx = cineFrom.x - cineAt.x, dz = cineFrom.z - cineAt.z;
+    const len = Math.max(0.001, Math.hypot(dx, dz));
+    cineEye.set(
+      cineAt.x + (dx / len) * 2.8,
+      cineAt.y + 1.3,
+      cineAt.z + (dz / len) * 2.8,
+    );
+    /**
+     * UNDER THE CEILING, always. The vantage lifts to look down at the subject and
+     * the lift was unbounded, so in any room with a normal roof the camera rose
+     * straight through it and filmed the scene from inside the masonry.
+     */
+    const g0 = floor.grid;
+    let hi = 0;
+    for (let j = -3; j <= 3; j++) {
+      for (let i = -3; i <= 3; i++) {
+        const nx = Math.round(cineAt.x) + i, ny = Math.round(cineAt.z) + j;
+        if (g0.inside(nx, ny)) hi = Math.max(hi, g0.height[g0.idx(nx, ny)]);
+      }
+    }
+    cineEye.y = Math.min(cineEye.y, hi * STEP_H + WALL_H - 0.18);
+
+    cine = { phase: 'out', t: 0, onArrive, onOpen };
+    hud.cinema = true;
+    hud.cinePrompt = null;
   };
+  /** End the hold. Any tap does this while the cut is parked on its subject. */
+  const cineRelease = (): boolean => {
+    if (!cine || cine.phase !== 'hold') return false;
+    cine = { phase: 'back', t: 0 };
+    return true;
+  };
+  /**
+   * THE FALL. Not an event — a second and a half of it.
+   *
+   * It was a `setTimeout`: drop the eye to -2.6 in one frame, wait 700ms, put it back
+   * and show the death card. Three things wrong with that, and the third is the one
+   * that matters. The drop was instant, so there was no fall, only a cut to a lower
+   * camera. It faded to nothing, so the moment you died was the moment a card
+   * appeared. And it PUT THE CAMERA BACK, which meant the death screen opened with
+   * the eye rising out of the hole it had just fallen into — the game undoing the
+   * thing it had just done, in front of the player, on the screen that says it is
+   * over.
+   *
+   * So: a real drop, accelerating, with the light going out of the room on the way
+   * down. Where the camera stops is where it stays.
+   */
+  const PLUNGE_T = 1.5;
+  let plunge: { t: number; from: number } | null = null;
+
+  /** Set by the boot sequence once `enterFloor` exists. See the showroom binding. */
+  let showroom: () => Promise<void> = async () => {};
+  /** Set by the boot sequence once the floor and combat exist. */
+  let throwLever: (e: Entity) => void = () => {};
   const tmp = new THREE.Vector3();
 
   let floor!: Floor;
@@ -1492,7 +1612,22 @@ async function boot(): Promise<void> {
     const rng = new Rng(`${meta.best}:${state.depth}:blessing`);
     const unowned = ELEMENT_SPELLS.filter((sp) => !state.pages.includes(sp.id));
     const extra = rng.pick(unowned.length ? unowned : ELEMENT_SPELLS);
-    const deepen = rng.pick(state.pages.map((id) => SPELL_BY_ID[id]).filter(Boolean));
+    /**
+     * A DEEPER PAGE, and the run may not have one yet.
+     *
+     * The blessings are offered at the mouth, and the mouth now asks which single page
+     * you carry BEFORE it asks anything else — so at the moment this rolls, `pages` is
+     * empty. `rng.pick` of an empty array is `undefined`, and reading `.id` off it
+     * threw before the first floor ever built: the whole run died on the boot screen.
+     *
+     * The fallback keeps the card's meaning rather than dropping it. Deepening
+     * something you do not own is exactly what "begin with Spark at rank 2" says, and
+     * it is offered on a page the wider-book card is not already offering, so the
+     * three choices stay three choices.
+     */
+    const owned = state.pages.map((id) => SPELL_BY_ID[id]).filter(Boolean);
+    const spare = ELEMENT_SPELLS.filter((sp) => sp.id !== extra.id);
+    const deepen = rng.pick(owned.length ? owned : (spare.length ? spare : ELEMENT_SPELLS));
 
     const blank = {
       cost: null, amount: 0, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
@@ -1903,7 +2038,15 @@ async function boot(): Promise<void> {
   const altarInReach = (): Entity | null => {
     for (const e of floor.entities) {
       if (!e.alive || e.spent) continue;
-      if (e.kind !== 'altar' && e.kind !== 'chest') continue;
+      /**
+       * A LEVER PROMPTS LIKE AN ALTAR DOES.
+       *
+       * It is worked by the same gesture, from the same one tile, under the same
+       * reach rule — so it gets the same affordance rather than a second one. Without
+       * it a lever is a piece of scenery you have to guess is tappable, which is the
+       * exact problem the altar prompt was added to solve.
+       */
+      if (e.kind !== 'altar' && e.kind !== 'chest' && e.kind !== 'lever') continue;
       if (inReach(e)) return e;
     }
     return null;
@@ -2026,7 +2169,7 @@ async function boot(): Promise<void> {
 
   // ------------------------------------------------------------- floor loading
 
-  const enterFloor = async (depth: number): Promise<void> => {
+  const enterFloor = async (depth: number, layout?: LayoutId): Promise<void> => {
     // `loading` and not only `busy`: a component may now be taken while a round is
     // in flight, and the one state in which it may not is this one, where the floor
     // a tear would refresh its targets against is being replaced.
@@ -2037,7 +2180,7 @@ async function boot(): Promise<void> {
 
     state.depth = depth;
     const theme = THEMES[Math.min(THEMES.length - 1, depth - 1)];
-    floor = await Floor.create(depth, `${runSeed}-floor-${depth}`);
+    floor = await Floor.create(depth, `${runSeed}-floor-${depth}`, layout);
     engine.scene.add(floor.group);
 
     stepper = new Stepper(floor.grid, floor.grid.start.x, floor.grid.start.y, floor.grid.start.dir);
@@ -2100,7 +2243,9 @@ async function boot(): Promise<void> {
     };
     wireCombat();
 
-    stepper.canAct = () => !busy && !dead && !hud.offers;
+    // `cineLock` is the cutscene: it cannot be interrupted, so nothing may act.
+    // The cut cannot be interrupted, so nothing may act while one is playing.
+    stepper.canAct = () => !busy && !dead && !hud.offers && !cine && !plunge;
     /**
      * Furniture, altars and hostiles are solid. Your OWN golems are not — walking
      * into one swaps places with it, so a summon that follows you can never trap
@@ -2203,14 +2348,20 @@ async function boot(): Promise<void> {
        * correct: standing on the plate is itself a turn.
        */
       if (floor.grid.surfaceAt(x, y) === Surface.Plate) combat.pressPlate(x, y);
-      if (floor.grid.surfaceAt(x, y) === Surface.Lever) {
-        const bd = floor.grid.bossDoor;
-        if (combat.pullLever(x, y) === 'opened' && bd) {
-          cutToward(bd.i % floor.grid.w, (bd.i / floor.grid.w) | 0);
-        }
-      }
 
-      const fell = floor.grid.dropFrom(cameFrom.x, cameFrom.y, x, y);
+      /**
+       * A LADDER IS A CLIMB IN BOTH DIRECTIONS.
+       *
+       * `canClimb` already reads the ladder to allow going UP from it; going DOWN
+       * onto one is the same act and must cost the same nothing. Charging fall damage
+       * for it made the one safe route down the one route nobody would use, and made
+       * a ladder look like decoration next to a ledge you would jump off anyway.
+       *
+       * The shove is deliberately not included. Being pushed off a ledge is not
+       * climbing down it, whatever happens to be bolted to the wall.
+       */
+      const fell = floor.grid.surfaceAt(x, y) === Surface.Ladder
+        ? 0 : floor.grid.dropFrom(cameFrom.x, cameFrom.y, x, y);
       if (fell > 0) {
         const dmg = fallDamage(fell);
         state.hp -= dmg;
@@ -2266,6 +2417,102 @@ async function boot(): Promise<void> {
           await descend();
         }
       }
+    };
+    /**
+     * Walk into the gallery. Depth 6 for its palette and nothing else — the layout is
+     * hand-built and takes none of the depth's dressing (see `Layout.dressed`).
+     *
+     * The player is put at the top of the spine looking down it, because the whole
+     * point is a walk past the bays rather than a spawn in the middle of one.
+     */
+    showroom = async () => {
+      await enterFloor(6, 'showroom');
+      const g = floor.grid;
+      const spine = (g.w >> 1) + 1;
+      let y = 2;
+      while (y < g.h - 2 && !g.walkable(spine, y)) y++;
+      /**
+       * QUIET IT DOWN. Twelve bays is twelve rooms, and `populate` gives every room
+       * its bodies — twenty-five of them, which is a fight, not a gallery. Two are
+       * kept so a creature can be seen standing on a plate or shoved off a ledge;
+       * the rest are removed here rather than in `populate`, which has no business
+       * knowing that one of its floors is a debug room.
+       */
+      let kept = 0;
+      for (let i = floor.entities.length - 1; i >= 0; i--) {
+        const e = floor.entities[i];
+        if (e.kind !== 'enemy') continue;
+        if (kept < 2) { kept++; continue; }
+        e.alive = false;
+        e.sprite.group.visible = false;
+        floor.entities.splice(i, 1);
+      }
+
+      stepper.place(spine, y, 2);
+      combat.playerTile = { x: spine, y };
+      floor.cull(spine, y);
+      refreshTargets();
+      hud.addLog('THE SHOWROOM — one bay per feature. ` or F1 to rebuild it.', 0xffc23e);
+    };
+
+    /**
+     * Throw the lever you tapped, if you are standing next to it.
+     *
+     * The same REACH rule every fixture obeys (`docs/DESIGN.md`): adjacent, and only
+     * adjacent. A lever worked from across the room would be the one interaction in
+     * the game that reaches, and reaching is what spells are for.
+     */
+    throwLever = (e: Entity): void => {
+      const d = Math.abs(e.sprite.tx - stepper.x) + Math.abs(e.sprite.ty - stepper.y);
+      if (d > 1) {
+        hud.addLog('Too far. Stand next to it.', 0x9aa3ad);
+        return;
+      }
+      const bd = floor.grid.bossDoor;
+      const r = combat.pullLever(e.sprite.tx, e.sprite.ty);
+      if (r === 'opened' && bd) {
+        const g = floor.grid;
+        // Shut it straight back and let the CUT open it, once the camera is there.
+        g.doorOpen[bd.i] = 0;
+        floor.syncClock();
+        cutToward(
+          bd.i % g.w,
+          (bd.i / g.w) | 0,
+          () => {
+            /**
+             * The RULE opens here — the tile is walkable from this instant, before
+             * the bars have finished travelling. Nobody can act during a cut, so the
+             * gap costs nothing, and the alternative is a door that is visibly open
+             * and mechanically shut for two and a half seconds.
+             */
+            g.doorOpen[bd.i] = 1;
+            floor.clockView.doorLift = 0;
+            floor.syncClock();
+            fx.burst(new THREE.Vector3(bd.i % g.w, 0.6, (bd.i / g.w) | 0), 0xffc23e, 1.2);
+          },
+          // and the PICTURE follows, on the winch's own clock
+          (u) => { floor.clockView.doorLift = u; },
+        );
+      }
+    };
+
+    /**
+     * You stepped off the edge. That is the end of the run.
+     *
+     * Not fall damage — a bottomless pit has no bottom to be hurt by, and scaling it
+     * would be pricing a distance that does not exist. `Verticality` deliberately kept
+     * a LEDGE survivable so that dropping off one stays a tactic; this is the other
+     * thing, and it has to be absolute or the chasm floors stop meaning anything.
+     *
+     * The camera goes down with you before the screen does, because a death you do not
+     * see the cause of reads as the game taking your run away rather than as you
+     * having walked into a hole you could see.
+     */
+    stepper.onPlunge = () => {
+      if (plunge) return;
+      hud.addLog('You step out over nothing.', 0x9aa3ad);
+      fx.shake = Math.min(0.7, fx.shake + 0.4);
+      plunge = { t: 0, from: stepper.eyeHeight };
     };
     stepper.onTurnDone = () => refreshTargets();
     stepper.onBump = () => { fx.shake = Math.min(1, fx.shake + 0.22); };
@@ -2629,19 +2876,102 @@ async function boot(): Promise<void> {
      * LOOK turns, which keeps the cut cheap, keeps the player oriented, and means
      * there is nothing to restore when it ends — the position was never taken away.
      */
-    if (cutT > 0) {
-      cutT = Math.max(0, cutT - dt);
-      const k = 1 - cutT / CUT_TIME;
-      // ease in and out, so the turn starts and stops rather than snapping
-      const ease = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
-      // out and back: all the way over at the middle of the cut, home by the end
-      const swing = Math.sin(ease * Math.PI);
-      cutLook.set(cutAt.x - eye.x, 0, cutAt.z - eye.z);
-      const want = Math.atan2(cutLook.x, cutLook.z);
-      const home = stepper.yaw();
-      let d = ((want - home + Math.PI) % (Math.PI * 2)) - Math.PI;
-      if (d < -Math.PI) d += Math.PI * 2;
-      cutYaw = home + d * swing;
+    /**
+     * FALLING. Runs before the cut and before the stepper's own eye, because while it
+     * lasts it OWNS the camera and nothing else may have an opinion about it.
+     *
+     * The drop accelerates — t squared, which is what falling is — and the light goes
+     * with it: exposure down to nothing over the same second and a half, so the room
+     * does not just recede, it stops being lit. The last thing visible is the lip of
+     * the pit going up past you.
+     *
+     * When it lands there is no landing. The eye is left where the fall left it and
+     * the exposure is left at zero, and THAT is the state the death card opens over.
+     * Putting either of them back is the game telling the player it did not mean it.
+     */
+    if (plunge) {
+      plunge.t += dt;
+      const u = Math.min(1, plunge.t / PLUNGE_T);
+      stepper.eyeHeight = plunge.from - 26 * u * u;
+      // the shaft closes over you before the screen does
+      engine.setExposure(Math.max(0, 1 - u * u * 1.35));
+      if (u >= 1) {
+        plunge = null;
+        state.hp = 0;
+        checkDeath();
+      }
+    }
+
+    if (cine) {
+      cine.t += dt;
+      const ease = (k: number): number =>
+        (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
+
+      let k = 1;
+      /** How hard the camera is trembling right now. Only the grind produces any. */
+      let rumble = 0;
+      if (cine.phase === 'out') {
+        k = ease(Math.min(1, cine.t / CINE_OUT));
+        if (cine.t >= CINE_OUT) {
+          cine = { phase: 'beat', t: 0, onArrive: cine.onArrive, onOpen: cine.onOpen };
+        }
+      } else if (cine.phase === 'beat') {
+        /**
+         * PARKED, AND NOTHING IS HAPPENING. Read the shut door.
+         *
+         * There is deliberately no motion in this phase at all — not a slow push in,
+         * not a settle. The player has just been flown somewhere they were not, and
+         * the first thing they have to do is work out what they are looking at. Any
+         * movement here would be answered before the question landed.
+         */
+        if (cine.t >= CINE_BEAT) {
+          const arrived = cine.onArrive;
+          cine = { phase: 'open', t: 0, onOpen: cine.onOpen };
+          // The rule flips now; the PICTURE takes the next two and a half seconds.
+          arrived?.();
+        }
+      } else if (cine.phase === 'open') {
+        /**
+         * THE GRIND. A ton of iron on a winch, and the camera feels it.
+         *
+         * The lift is linear rather than eased, because a portcullis on a chain does
+         * not accelerate — the winch turns at the speed the winch turns. The tremble
+         * runs the whole way and dies at the top, so the shot ends on stillness
+         * instead of ending on a cut.
+         */
+        const u = Math.min(1, cine.t / CINE_OPEN);
+        cine.onOpen?.(u);
+        rumble = u < 1 ? 0.5 + 0.5 * Math.sin(u * Math.PI) : 0;
+        if (cine.t >= CINE_OPEN + CINE_SETTLE) {
+          cine = { phase: 'hold', t: 0 };
+          // Only NOW is there anything to skip — and only now is it offered.
+          hud.cinePrompt = 'TAP TO CONTINUE';
+        }
+      } else if (cine.phase === 'back') {
+        k = 1 - ease(Math.min(1, cine.t / CINE_BACK));
+        if (cine.t >= CINE_BACK) { cine = null; hud.cinema = false; hud.cinePrompt = null; }
+      }
+
+      if (cine) {
+        engine.camera.position.lerpVectors(cineFrom, cineEye, k);
+        /**
+         * The tremble is added AFTER the vantage and is deliberately tiny — a couple
+         * of centimetres and a hair of roll. Screen shake at the scale the game uses
+         * for a fireball would read as an earthquake; what this has to read as is a
+         * heavy thing moving somewhere near you.
+         */
+        if (rumble > 0) {
+          engine.camera.position.x += Math.sin(engine.time * 43) * 0.018 * rumble;
+          engine.camera.position.y += Math.sin(engine.time * 57 + 1.1) * 0.022 * rumble;
+        }
+        engine.camera.lookAt(cineAt);
+        if (rumble > 0) engine.camera.rotation.z += Math.sin(engine.time * 31) * 0.007 * rumble;
+        // The world still has to tick — a frozen room behind a moving camera reads as
+        // a screenshot, and the door the cut exists to show is opening right now.
+        floor.update(wdt, engine.time, engine.camera.position);
+        fx.update(dt, engine.camera.quaternion);
+        return;
+      }
     }
 
     // screen shake, applied as a positional jitter + roll
@@ -2649,8 +2979,7 @@ async function boot(): Promise<void> {
     const jx = Math.sin(engine.time * 61) * 0.05 * s;
     const jy = Math.sin(engine.time * 47 + 1.7) * 0.05 * s;
     engine.camera.position.set(eye.x + jx, eye.y + jy, eye.z);
-    engine.camera.rotation.set(
-      PITCH, cutT > 0 ? cutYaw : stepper.yaw(), stepper.roll() + jx * 0.6, 'YXZ');
+    engine.camera.rotation.set(PITCH, stepper.yaw(), stepper.roll() + jx * 0.6, 'YXZ');
 
     floor.update(wdt, engine.time, eye);
     fx.update(dt, engine.camera.quaternion);
@@ -2778,6 +3107,16 @@ async function boot(): Promise<void> {
   };
 
   const act = (a: ReturnType<Hud['hit']>): void => {
+    /**
+     * A CUT SWALLOWS THE TAP THAT ENDS IT, and every other tap while it plays.
+     *
+     * First, so nothing underneath can act on a gesture the player meant for the
+     * cutscene — this is the whole of "cannot be interrupted": the camera finishes
+     * its move, the tap that releases the hold does nothing else, and the world does
+     * not receive input it would have to undo.
+     */
+    if (cine) { cineRelease(); return; }
+
     // Before the finished-run branch: the pixel chip is the one control on this screen
     // that is not about the run, so a run that has ended must not swallow it on its way
     // to the tree.
@@ -2804,6 +3143,16 @@ async function boot(): Promise<void> {
         // tapping an altar or a chest — the thing under your finger is the thing you
         // meant, and selecting a staircase to cast at it was never useful.
         if (a.entity.kind === 'stairs') { void descend(); break; }
+        /**
+         * A LEVER IS THROWN BY TAPPING IT, like every other fixture in the room.
+         *
+         * It shipped as a tile you stood on, which was wrong twice over: you cannot
+         * point at a thing you are standing on, and standing on something is not how
+         * anything else in this game is operated. An altar, a chest and a staircase
+         * are all "the thing under your finger is the thing you meant", and a lever
+         * is a thing you pull.
+         */
+        if (a.entity.kind === 'lever') { throwLever(a.entity); break; }
         hud.target = a.entity;
         break;
       case 'cycle': cycleTarget(); break;
@@ -3065,6 +3414,31 @@ async function boot(): Promise<void> {
     Escape: () => hud.clearSelection(),
     Tab: () => cycleTarget(),
     KeyF: () => void descend(),
+    /**
+     * THE SHOWROOM. One bay per feature, so they can be LOOKED at.
+     *
+     * Four phases of dungeon vocabulary shipped proven by assertion and unseen by
+     * anybody: gaps, five surfaces, elevation, three hazards, a timed gate and a
+     * lever lock. Assertions cannot tell you whether a blade reads as a blade from
+     * three tiles back, and finding a generated floor that happened to contain the
+     * thing you wanted to look at, then walking to it, was costing more than the
+     * looking was worth.
+     *
+     * TWO KEYS, and the backquote is the one that will actually work.
+     *
+     * A function key is the right IDEA — no letter is safe, because every letter in
+     * this game is a move or a cast and a debug room must never be one fumbled
+     * keypress from something the player meant to do. But F1 is the worst of them in
+     * practice: macOS binds it to screen brightness unless the "standard function
+     * keys" setting is on, so on a laptop it never reaches the page at all, and a
+     * Chrome that does receive it opens Help. It is bound anyway for the machines
+     * where it works.
+     *
+     * Backquote is the one to reach for. It is the console key every game has used
+     * for thirty years, no browser claims it, and no operating system intercepts it.
+     */
+    F1: () => void showroom(),
+    Backquote: () => void showroom(),
   };
   // Keyboard mirrors the gestures: brackets leaf through, digits tear a page out.
   keys.BracketLeft = () => book.swipe(-1);
@@ -3336,6 +3710,21 @@ async function boot(): Promise<void> {
      */
     hudAt: (x: number, y: number) => hud.hit(x, y).kind,
     /** Resolve a tap against the HUD, so a drawn control can be proven tappable. */
+    /** Fire the door cut at a tile, so it can be watched without finding two levers. */
+    cine: (x: number, y: number) => {
+      const g = floor.grid, bd = g.bossDoor;
+      if (bd) { g.doorOpen[bd.i] = 0; floor.clockView.doorLift = 0; floor.syncClock(); }
+      cutToward(
+        x, y,
+        () => {
+          if (!bd) return;
+          g.doorOpen[bd.i] = 1;
+          floor.clockView.doorLift = 0;
+          floor.syncClock();
+        },
+        (u) => { floor.clockView.doorLift = u; },
+      );
+    },
     tapHud: (x: number, y: number) => {
       const a = hud.hit(x, y);
       act(a);

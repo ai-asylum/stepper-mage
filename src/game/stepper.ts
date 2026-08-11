@@ -7,7 +7,7 @@
  * this game is in the constants at the top of this file.
  */
 import * as THREE from 'three';
-import { Grid, DIR_VEC, Surface, type Dir } from '../dungeon/grid';
+import { Grid, DIR_VEC, Surface, Tile, type Dir } from '../dungeon/grid';
 import { STEP_H } from '../art/tiles';
 
 /** Seconds per one-tile step. */
@@ -107,6 +107,8 @@ export class Stepper {
   private holding = false;
   /** Stretches this step's duration. Only a slide sets it — see `startMove`. */
   private moveScale = 1;
+  /** This step ends in a bottomless gap. See `onPlunge`. */
+  private plunging = false;
 
   private fromYaw: number;
   private toYaw: number;
@@ -172,6 +174,20 @@ export class Stepper {
    * left behind, and the stepper deliberately knows nothing about `Ground`.
    */
   slippery: (x: number, y: number) => boolean = () => false;
+  /**
+   * Fired when the step just taken was into a bottomless gap.
+   *
+   * The one move the grid says no to that the PLAYER is allowed to make anyway. A
+   * chasm you can only ever bump into is a wall you can see across; a chasm you can
+   * step off is a decision, and the whole of `Grid_Vocabulary` rests on a gap being a
+   * thing you can see across and choose not to cross. Choosing to cross is fatal, and
+   * that is the point.
+   *
+   * Only ever the player. `walkable` still says no to every flood, every volume and
+   * every body's pathing, so nothing else in the game can walk into one — which is
+   * what keeps the rest of the codebase's assumptions about gaps true.
+   */
+  onPlunge: ((x: number, y: number) => void) | null = null;
 
   constructor(private grid: Grid, x: number, y: number, dir: Dir) {
     this.x = x; this.y = y; this.dir = dir;
@@ -218,7 +234,22 @@ export class Stepper {
      */
     const eg = this.groundAt(this.fromX, this.fromY);
     const dg = this.groundAt(this.x, this.y);
-    const ground = eg + (dg - eg) * p;
+    /**
+     * AN L, NOT A DIAGONAL. Forward, then down; or up, then forward.
+     *
+     * Interpolating the height across the whole step sends the eye along the
+     * hypotenuse, which is a thing no body does — you do not sink through the ledge
+     * on your way off it, you walk to the edge and then you drop. Holding the old
+     * level for the first third and the new one for the last third puts the whole
+     * change in the middle, so the move reads as two straight lines with a corner in
+     * it. Going up it reads as the step onto the ledge; going down, as the drop off it.
+     *
+     * `easeStep` is deliberately not reused for the vertical part: the horizontal
+     * curve is a footfall, settling at the end, and a fall that settled would float.
+     */
+    const HOLD = 0.34;
+    const v = p <= HOLD ? 0 : p >= 1 - HOLD ? 1 : (p - HOLD) / (1 - HOLD * 2);
+    const ground = eg + (dg - eg) * v;
 
     const yaw = this.yaw();
     const back = Math.min(0.45, this.pullback);
@@ -290,7 +321,11 @@ export class Stepper {
     // A ledge you cannot climb refuses exactly like a wall does — same bump, same
     // recoil. The player learns "that is too high" from the same feedback that
     // teaches them "that is solid", which is one lesson instead of two.
-    const open = this.grid.walkable(nx, ny) && this.grid.canClimb(this.x, this.y, nx, ny);
+    // A gap is steppable ONLY by the player, and only if somebody is listening for
+    // what happens next. See `onPlunge`.
+    const intoGap = !!this.onPlunge && this.grid.at(nx, ny) === Tile.Gap;
+    const open = intoGap
+      || (this.grid.walkable(nx, ny) && this.grid.canClimb(this.x, this.y, nx, ny));
     // A compound move trades tiles with a body, so `blocked` must not veto it.
     // The wall grid is never loosened: nothing swaps you through a wall or off
     // the map, only past something standing on a tile you could have walked to.
@@ -317,8 +352,9 @@ export class Stepper {
      * Refused by exactly the things that refuse a step: a wall, a shut gate, a ledge
      * you cannot climb, a body. A slide is not a licence to pass through anything.
      */
+    this.plunging = intoGap;
     let slid = 0;
-    while (this.slippery(this.x, this.y) && slid < 8) {
+    while (!intoGap && this.slippery(this.x, this.y) && slid < 8) {
       const sx = this.x + dx, sy = this.y + dy;
       if (!this.grid.walkable(sx, sy) || !this.grid.canClimb(this.x, this.y, sx, sy)) break;
       if (this.blocked(sx, sy)) break;
@@ -333,7 +369,17 @@ export class Stepper {
      * motion rather than as four steps played fast, and a slide that took four times
      * as long as a step would hand the room four turns' worth of waiting for one.
      */
-    this.moveScale = slid ? 1 + slid * 0.35 : 1;
+    /**
+     * A CLIMB TAKES LONGER THAN A WALK.
+     *
+     * Stepping up a level covered the same distance in the same time as crossing flat
+     * ground, which reads as hopping onto a ledge rather than climbing it — and the
+     * ledge is now most of a storey. Scaled by the RISE only: dropping stays quick,
+     * because falling is quick, and slowing a fall would take the weight out of the
+     * one movement this phase wanted to feel heavy.
+     */
+    const rise = Math.max(0, this.grid.heightAt(this.x, this.y) - this.grid.heightAt(this.fromX, this.fromY));
+    this.moveScale = slid ? 1 + slid * 0.35 : 1 + rise * 0.85;
     // A tile of rubble is crossed in two halves, with a round of the room in between.
     this.holdAt = this.onHalfway && !slid && this.grid.surfaceAt(nx, ny) === Surface.Rubble
       ? 0.5 : 1;
@@ -356,7 +402,12 @@ export class Stepper {
         this.onHalfway?.(this.fromX, this.fromY);
       } else if (this.moveT >= 1) {
         this.bobPhase = Math.round(this.bobPhase);
-        this.onArrive?.(this.x, this.y);
+        if (this.plunging) {
+          this.plunging = false;
+          this.onPlunge?.(this.x, this.y);
+        } else {
+          this.onArrive?.(this.x, this.y);
+        }
       }
     } else if (this.moveT >= 1) {
       this.bobPhase += dt * 0.22; // idle breathing

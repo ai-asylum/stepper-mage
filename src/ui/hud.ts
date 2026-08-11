@@ -507,6 +507,20 @@ export class Hud {
   /** Name of the open page when it is a spell not yet learned, else null. */
   sealedPage: string | null = null;
 
+  /** True while a cutscene owns the screen. See `draw`. */
+  cinema = false;
+
+  /**
+   * The ONE thing a cut is allowed to draw, and only once it has finished saying
+   * what it flew out to say.
+   *
+   * Offering the skip at the top of the cut is offering the player a way out of a
+   * shot before they know what the shot is of, which is how you teach somebody that
+   * your cutscenes are not worth watching. The game sets this when the gate has
+   * landed; until then there is nothing on the screen at all.
+   */
+  cinePrompt: string | null = null;
+
   /** An unused altar or chest within reach, set by the game each turn. */
   altarInReach: Entity | null = null;
 
@@ -718,7 +732,51 @@ export class Hud {
     const W = this.engine.sw, H = this.engine.sh;
     this.hits = [];
 
+    /**
+     * CINEMA MODE DRAWS NOTHING.
+     *
+     * Not "most of the HUD" — nothing. A cut is the one moment the game is not asking
+     * the player for anything, and a health bar and a minimap over the top of it turn
+     * a shot of the room into a screenshot of a game. `hits` is left empty on purpose
+     * too, so there is no control to press by accident; the tap that ends the hold is
+     * caught upstream of any of this.
+     */
+    if (this.cinema) { this.drawCinePrompt(ctx, W, H); return; }
+
+    /**
+     * The book's top edge is measured BEFORE the world overlay, not after it.
+     *
+     * It used to be computed further down, with the rest of the band, and the world
+     * overlay had no idea where the book was — so a ground target on the tile you are
+     * standing next to projects to a quad most of the screen tall, and its outline
+     * was stroked straight across the grimoire. The book is a 3D object rendered in
+     * the overlay pass and the HUD canvas composites on top of it, so canvas always
+     * wins that fight: the reticle drew over the cards.
+     *
+     * Everything the player must SEE lives above this line, which is exactly the
+     * contract `bookTop` already had; the world overlay simply was not being held to
+     * it. It is clipped to that band now, and so are its hit regions.
+     *
+     * The line itself is the grimoire's own measured edge, and when the book is away,
+     * whatever replaced it — the large CAST (see `drawBigCast`) becomes the anchor the
+     * rest of the band lays out above, exactly as the cover was. Without that the band
+     * dropped to 0.90H the instant the book left and the cycle-target button landed on
+     * top of the button that had taken the book's place.
+     */
+    this.bookTop = !this.bookClosed && this.measuredBookTop !== null
+      ? Math.round(this.measuredBookTop)
+      : this.handFull() ? Math.round(H * 0.80)
+      : Math.round(H * 0.90);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, this.bookTop);
+    ctx.clip();
     this.drawWorldOverlay(ctx);
+    ctx.restore();
+    // A target you cannot see is a target you cannot mean to tap. Clipping the ink
+    // without clipping the hit region would leave an invisible control over the book.
+    this.hits = this.hits.filter((h) => h.rect[1] < this.bookTop);
     this.drawTopBar(ctx, W);
     this.drawMiniMap(ctx, W);
     // Above the run-end return below, so the one control that is not about the run
@@ -735,19 +793,6 @@ export class Hud {
     if (this.runEnd) { this.drawRunEnd(ctx, W, H); return; }
     this.drawShout(ctx, W, H);
 
-    /**
-     * The top of whatever is covering the bottom of the screen — the grimoire's own
-     * measured edge, and when the book is away the thing that replaced it.
-     *
-     * The large CAST is that thing (see `drawBigCast`), so it becomes the anchor the
-     * rest of the band lays out above, exactly as the cover was. Without that the band
-     * dropped to 0.90H the instant the book left and the cycle-target button landed on
-     * top of the button that had taken the book's place.
-     */
-    this.bookTop = !this.bookClosed && this.measuredBookTop !== null
-      ? Math.round(this.measuredBookTop)
-      : this.handFull() ? Math.round(H * 0.80)
-      : Math.round(H * 0.90);
     this.drawBelt(ctx, W);
     // Before the CAST bar, so that where a card's box and the bar's touch, CAST wins:
     // `hit` scans backwards, so whatever is pushed last is on top.
@@ -786,6 +831,31 @@ export class Hud {
    *  - the selected thing gets a one-texel keyline in the shader — white for an
    *    object, red for a creature — so selection is on the thing itself.
    */
+  /**
+   * The skip line, low and small and quiet.
+   *
+   * Bottom of the frame rather than the middle, thin rather than bold: it is an
+   * offer, not an instruction, and it has to lose every fight it picks with what is
+   * happening behind it. It breathes so that it reads as live rather than as a
+   * caption burnt into the shot.
+   */
+  private drawCinePrompt(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    if (!this.cinePrompt) return;
+    const pulse = 0.62 + 0.28 * Math.sin(this.engine.time * 3.1);
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.font = 'bold 10px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const y = H - 34;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    const w = ctx.measureText(this.cinePrompt).width + 22;
+    ctx.fillRect((W - w) / 2, y - 10, w, 20);
+    ctx.fillStyle = '#e8dcc0';
+    ctx.fillText(this.cinePrompt, W / 2, y + 1);
+    ctx.restore();
+  }
+
   private drawWorldOverlay(ctx: CanvasRenderingContext2D): void {
     const v = new THREE.Vector3();
     const p = { x: 0, y: 0, behind: false };
@@ -2967,26 +3037,31 @@ export class Hud {
     if (!e || !e.alive || e.spent) return;
     const t = this.engine.time;
     const chest = e.kind === 'chest';
-    const label = chest ? 'TAP TO OPEN' : 'TAP THE ALTAR';
+    const lever = e.kind === 'lever';
+    // A lever says what it will DO, because unlike an altar it can be undone and the
+    // player has to know which way they are about to throw it.
+    const label = lever ? (e.spriteId === 'lever_pulled' ? 'TAP TO RELEASE' : 'TAP TO THROW')
+      : chest ? 'TAP TO OPEN' : 'TAP THE ALTAR';
     ctx.font = 'bold 11px ui-monospace, monospace';
     const tw = ctx.measureText(label).width + 40;
     const bx = (W - tw) / 2, by = this.bookTop - 300;
     const pulse = 0.72 + Math.sin(t * 3.4) * 0.22;
     rr(ctx, bx, by, tw, 28, 14);
-    ctx.fillStyle = chest ? 'rgba(56,40,14,0.9)' : 'rgba(40,24,60,0.9)';
+    ctx.fillStyle = lever ? 'rgba(52,38,10,0.9)' : chest ? 'rgba(56,40,14,0.9)' : 'rgba(40,24,60,0.9)';
     ctx.fill();
     ctx.globalAlpha = pulse;
-    ctx.strokeStyle = chest ? '#ffcf5c' : '#b98cff';
+    ctx.strokeStyle = lever || chest ? '#ffcf5c' : '#b98cff';
     ctx.lineWidth = 1.7;
     ctx.stroke();
     ctx.globalAlpha = 1;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = chest ? '#fff0c8' : '#e8d8ff';
+    ctx.fillStyle = lever || chest ? '#fff0c8' : '#e8d8ff';
     ctx.fillText(label, W / 2, by + 14.5);
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     this.hits.push({
       rect: [bx, by, tw, 28],
-      action: chest ? { kind: 'chest', entity: e } : { kind: 'altar', entity: e },
+      action: lever ? { kind: 'target', entity: e }
+        : chest ? { kind: 'chest', entity: e } : { kind: 'altar', entity: e },
     });
   }
 

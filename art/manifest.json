@@ -971,8 +971,8 @@
       "id": "lever",
       "kind": "prop",
       "height": 126,
-      "seed": 1301,
-      "prompt": "A FLOOR-MOUNTED IRON LEVER on a stone plinth: a heavy iron lever with a long angled handle raised UP and back, brass collar at the pivot, bolted to a small carved stone base. Cold unlit iron, an arcane rune etched into the plinth and DARK. Untouched, waiting to be thrown."
+      "seed": 1315,
+      "prompt": "AN UNTHROWN IRON LEVER on a stone plinth: a heavy iron lever with a clearly VISIBLE straight handle angled sharply UPWARD at forty-five degrees toward the viewer's right, its tip well above the plinth — cocked, ready to be thrown. Brass collar at the pivot, bolted to a small carved stone base. The rune etched into the plinth is DARK and unlit, cold. The handle must be present and obvious; overall shape roughly as tall as it is wide."
     },
     {
       "id": "lever_pulled",

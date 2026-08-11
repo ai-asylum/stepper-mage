@@ -309,15 +309,32 @@ export function installShell(): void {
     }
     if (shown) return;
 
-    // Shutting the spellbook frees the bottom of the screen — take it.
+    /**
+     * IS THE NAG DUE? One answer, asked by both triggers.
+     *
+     * This used to be two rules and only one of them had a cadence. Shutting the
+     * grimoire fired the offer unconditionally, on the theory that a closed book
+     * frees the bottom of the screen — which is true, and would be fine in a game
+     * where the book stays open. In THIS game the book is shut for most of every
+     * turn: it only rises while a target is selected, so it closes again on
+     * essentially every action, and the offer re-armed every time. Dismissing it put
+     * it back within a second or two, which is why it read as permanently on screen.
+     *
+     * So the book closing is now an OPPORTUNITY to interrupt rather than a reason to.
+     * It takes the space when the space comes free AND the nag is actually owed.
+     */
+    const due = Date.now() - cadenceFrom >= NAG_SECONDS * 1000
+      || actions() - actionBase >= NAG_ACTIONS;
+
+    // Nothing at all before the player has touched it once. `started` also gates the
+    // very first tick, where a book that boots shut would otherwise fire the offer
+    // over the top of the opening frame.
     const closed = !!g.hud?.bookClosed;
-    if (closed && !wasBookClosed) showOffer();
+    if (started && due && closed && !wasBookClosed) showOffer();
     wasBookClosed = closed;
 
     if (offering) { layout(); return; }
     if (!started) return;
-
-    const elapsed = Date.now() - cadenceFrom;
-    if (elapsed >= NAG_SECONDS * 1000 || actions() - actionBase >= NAG_ACTIONS) showOffer();
+    if (due) showOffer();
   }, 120);
 }

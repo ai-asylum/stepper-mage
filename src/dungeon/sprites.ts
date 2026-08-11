@@ -147,11 +147,15 @@ const SPRITE_FRAG = /* glsl */ `
      * it. Lit, like the walls: an unlit murk that bleached a sprite to white would
      * make a creature in a dark bank the brightest thing on the screen.
      */
+    /*
+     * A body standing IN the bank hazes; a body seen from inside one does not. The
+     * global distance term is gone for the reason the world's is — being in fog is
+     * not a licence to fog everything you can see — and the volume in murkView.ts
+     * does the occluding by actually standing between you and the creature.
+     */
     float lum = dot(L, vec3(0.299, 0.587, 0.114));
     vec3 murk = uMurkCol * mix(vec3(lum), L, 0.33);
-    float bank = exp(-uMurkHere * 0.18 * d * d);
-    c = mix(c, murk, uTileMurk * 0.6 * (1.0 - uMurkHere * 0.75));
-    c = mix(murk, c, clamp(bank, 0.0, 1.0));
+    c = mix(c, murk, uTileMurk * 0.45);
 
     c = mix(c, uFlashCol, uFlash);
 
@@ -579,12 +583,26 @@ export class Sprite {
     const p = POSE;
     p.lift = 0; p.slide = 0; p.push = 0; p.sx = 1; p.sy = 1; p.roll = 0; p.flash = 0; p.alpha = 1;
 
-    // Always-on idle breath, so nothing is ever perfectly still.
-    const b = Math.sin(time * this.bobRate + this.phase);
-    p.lift += b * this.bobAmt;
-    p.sy += b * 0.012;
-    p.sx -= b * 0.012;
-    p.roll += Math.sin(time * this.bobRate * 0.5 + this.phase) * 0.012;
+    /**
+     * Idle breath — for things that BREATHE, which `bob` is the switch for.
+     *
+     * It used to be unconditional and only its amplitude was tunable, so the squash
+     * and the roll ran at full strength on everything in the dungeon: a chest, a
+     * brazier, a stone plinth with a lever bolted to it. A creature swaying is alive.
+     * A block of masonry swaying is the floor coming loose, and once you notice it on
+     * one prop you notice it on all of them at once.
+     *
+     * So the whole breath is scaled by the same number, and `bob: 0` now means STILL
+     * rather than "lifts less while it keeps rolling".
+     */
+    const k = this.bobAmt / 0.016;
+    if (k > 0) {
+      const b = Math.sin(time * this.bobRate + this.phase);
+      p.lift += b * this.bobAmt;
+      p.sy += b * 0.012 * k;
+      p.sx -= b * 0.012 * k;
+      p.roll += Math.sin(time * this.bobRate * 0.5 + this.phase) * 0.012 * k;
+    }
 
     const t = this.t;
     switch (this.state) {

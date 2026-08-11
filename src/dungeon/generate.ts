@@ -59,10 +59,16 @@ export function generate(opts: GenOpts): Grid {
     for (let x = 0; x < g.w; x++) g.variant[g.idx(x, y)] = rng.int(0, 255);
   }
 
-  dress(g, rng, opts.depth);
-  raise(g, rng, opts.depth);
-  wind(g, rng, opts.depth);
-  lock(g, rng, opts.depth);
+  /**
+   * The four dressing passes, unless the layout says it dressed itself. Only the
+   * showroom does — see `Layout.dressed`.
+   */
+  if (!layout.dressed) {
+    dress(g, rng, opts.depth);
+    raise(g, rng, opts.depth);
+    wind(g, rng, opts.depth);
+    lock(g, rng, opts.depth);
+  }
   placeLights(g, rng);
   bakeLight(g);
   return g;
@@ -674,8 +680,24 @@ function wind(g: Grid, rng: Rng, depth: number): void {
      * row — a hazard you cannot cross at all is a wall that took a turn to explain.
      */
     const period = rng.int(3, 4);
+    /**
+     * A TRAPDOOR STAYS OPEN LONGER, because it is the one hazard you have to be able
+     * to MEET rather than only avoid.
+     *
+     * A blade or a bed of spikes is a thing you time your way past, and one live beat
+     * in four is exactly the right price for that. A trapdoor is a route: it is the
+     * fast way down and the only hazard the player will ever deliberately step onto.
+     * Live for one beat of four means that if your rhythm is out by a single turn —
+     * and it always is, because everything else in the room is also spending your
+     * turns — the hole is simply never open when you are standing next to it, and a
+     * shortcut you cannot take on purpose is not a shortcut.
+     *
+     * Half the cycle, so it is open as often as it is shut. It still costs a turn to
+     * wait for, and it can still take a floor off you when you did not want one.
+     */
+    const live = kind === 'trapdoor' ? Math.max(2, period >> 1) : 1;
     g.hazards.push({
-      x, y, kind, period, live: 1,
+      x, y, kind, period, live,
       beat: rng.int(0, period - 1),
       damage: kind === 'trapdoor' ? 0 : 5 + depth,
     });

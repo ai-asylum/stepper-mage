@@ -27,7 +27,8 @@ import { Grid, Tile, Surface, DIR_VEC, type Room } from './grid';
 
 export type LayoutId =
   | 'rooms' | 'cave' | 'ring' | 'spiral' | 'hub' | 'gridcity' | 'cathedral'
-  | 'gauntlet' | 'labyrinth' | 'warren' | 'islands' | 'chasm' | 'nested' | 'terraces';
+  | 'gauntlet' | 'labyrinth' | 'warren' | 'islands' | 'chasm' | 'nested' | 'terraces'
+  | 'showroom';
 
 export interface Layout {
   id: LayoutId;
@@ -35,6 +36,14 @@ export interface Layout {
   brief: string;
   /** Grid edge length, when the shape needs a particular one (a maze wants odd). */
   size?(base: number): number;
+  /**
+   * This layout places its OWN surfaces, elevation and clock; leave it alone.
+   *
+   * Only the showroom sets it. The four dressing passes would scatter their own
+   * water and blades over a gallery that already holds exactly one of each, which is
+   * the one thing that must not happen to a room built to be looked at.
+   */
+  dressed?: boolean;
   /** Carve tiles and declare rooms. Everything else is the shared pass. */
   carve(g: Grid, rng: Rng, depth: number): void;
   /**
@@ -854,13 +863,174 @@ const terraces: Layout = {
   },
 };
 
+/**
+ * THE SHOWROOM. Not a floor — a gallery with one of everything in it.
+ *
+ * This exists because four phases of dungeon vocabulary shipped without anybody
+ * LOOKING at most of it. Gaps, five surfaces, elevation, three hazards, a timed gate
+ * and a lever lock were all proven by assertion over thousands of generated floors,
+ * and assertions cannot tell you that a blade reads as a blade from three tiles back,
+ * or that a fog bank and a sunken room look like two different things. Getting a
+ * camera in front of each feature meant finding a seed that happened to contain it and
+ * then walking there, which is why so little of it was ever seen.
+ *
+ * So: one bay per feature, all opening onto a spine, everything within a short walk of
+ * everything else. It is a DEBUG ROOM and it is deliberately not a floor anybody could
+ * mistake for one — the bays are regular, the spine is straight, and nothing here is
+ * trying to be a good place to fight.
+ *
+ * `dressed` keeps the four dressing passes off it. They would scatter their own
+ * surfaces and hazards over a layout that has already placed exactly one of each,
+ * which is the one thing a showroom must not have happen to it.
+ */
+const showroom: Layout = {
+  id: 'showroom',
+  brief: 'One bay per feature. A gallery, not a floor.',
+  dressed: true,
+  size() { return 35; },
+  carve(g, rng) {
+    const SPINE = 17;
+    const BAY_W = 7, BAY_H = 5;
+    // the walkway everything opens onto
+    for (let y = 2; y <= g.h - 3; y++) for (let x = SPINE - 1; x <= SPINE + 1; x++) dig(g, x, y);
+    addRoom(g, digRect(g, SPINE - 1, 2, 3, g.h - 5));
+
+    /** Carve a bay on one side at a given row and hand back its tiles. */
+    const bay = (row: number, left: boolean): { tiles: [number, number][]; x: number; y: number } => {
+      const y = 3 + row * (BAY_H + 1);
+      const x = left ? SPINE - 2 - BAY_W : SPINE + 2;
+      const tiles = digRect(g, x, y, BAY_W, BAY_H);
+      // a doorway onto the spine
+      const dy = y + (BAY_H >> 1);
+      dig(g, left ? SPINE - 2 : SPINE + 1, dy);
+      return { tiles, x, y };
+    };
+
+    const put = (b: { x: number; y: number }, dx: number, dy: number, s: Surface): number => {
+      const i = g.idx(b.x + dx, b.y + dy);
+      g.surface[i] = s;
+      return i;
+    };
+
+    // ---- left side, top to bottom ------------------------------------------
+    const gapBay = bay(0, true);
+    // a chasm across the middle of the bay, walkable round both ends
+    for (let x = gapBay.x + 2; x < gapBay.x + 5; x++) cut(g, x, gapBay.y + 2);
+    addRoom(g, gapBay.tiles);
+
+    const waterBay = bay(1, true);
+    for (let j = 1; j <= 3; j++) for (let i = 1; i <= 5; i++) put(waterBay, i, j, Surface.Water);
+    addRoom(g, waterBay.tiles);
+
+    const rubbleBay = bay(2, true);
+    for (let i = 1; i <= 5; i++) put(rubbleBay, i, 2, Surface.Rubble);
+    addRoom(g, rubbleBay.tiles);
+
+    const fogBay = bay(3, true);
+    for (let j = 0; j < BAY_H; j++) for (let i = 0; i < BAY_W; i++) put(fogBay, i, j, Surface.Fog);
+    addRoom(g, fogBay.tiles);
+
+    const portalBay = bay(4, true);
+    const pa = put(portalBay, 3, 2, Surface.Portal);
+    addRoom(g, portalBay.tiles);
+
+    // ---- right side --------------------------------------------------------
+    const ironBay = bay(0, false);
+    for (let j = 1; j <= 3; j++) for (let i = 1; i <= 5; i++) put(ironBay, i, j, Surface.Iron);
+    addRoom(g, ironBay.tiles);
+
+    /**
+     * The drop bay: half of it a level down with a ladder at the foot, which is the
+     * one feature that needs two tiles to read — you have to be able to stand on top,
+     * see the ledge, go down it and climb back.
+     */
+    const dropBay = bay(1, false);
+    for (let j = 0; j < BAY_H; j++) for (let i = 4; i < BAY_W; i++) {
+      g.height[g.idx(dropBay.x + i, dropBay.y + j)] = -1;
+    }
+    put(dropBay, 4, 2, Surface.Ladder);
+    addRoom(g, dropBay.tiles);
+
+    const riseBay = bay(2, false);
+    for (let j = 0; j < BAY_H; j++) for (let i = 4; i < BAY_W; i++) {
+      g.height[g.idx(riseBay.x + i, riseBay.y + j)] = 1;
+    }
+    // a ladder on the low side, so the terrace can be climbed as well as looked at
+    put(riseBay, 3, 2, Surface.Ladder);
+    addRoom(g, riseBay.tiles);
+
+    const bladeBay = bay(3, false);
+    g.hazards.push({ x: bladeBay.x + 2, y: bladeBay.y + 2, kind: 'blade', period: 4, live: 1, beat: 0, damage: 5 });
+    g.hazards.push({ x: bladeBay.x + 5, y: bladeBay.y + 2, kind: 'spikes', period: 3, live: 1, beat: 1, damage: 5 });
+    addRoom(g, bladeBay.tiles);
+
+    const trapBay = bay(4, false);
+    // open for three beats of six — see the `live` note in `wind`
+    g.hazards.push({ x: trapBay.x + 3, y: trapBay.y + 2, kind: 'trapdoor', period: 6, live: 3, beat: 3, damage: 0 });
+    const pb = put(trapBay, 5, 4, Surface.Portal);
+    addRoom(g, trapBay.tiles);
+    g.portals.push({ a: pa, b: pb });
+
+    /**
+     * The far end of the spine: a timed gate with its plate, then the boss door with
+     * its levers behind it. In series on purpose — it is the one place you can see
+     * both kinds of door at once and tell them apart.
+     */
+    const gateY = g.h - 8;
+    g.tiles[g.idx(SPINE, gateY)] = Tile.Door;
+    for (const x of [SPINE - 1, SPINE + 1]) g.tiles[g.idx(x, gateY)] = Tile.Wall;
+    /**
+     * The approach NARROWS to one tile, and that tile is the plate.
+     *
+     * Off to one side it was a gate nobody could open: the walk down the spine goes
+     * straight down the middle column, the plate sat in the left one, and the only
+     * way past a shut portcullis was to already know there was a plate and go and
+     * find it. On a generated floor that hunt IS the mechanic. Here the mechanic
+     * being demonstrated is the COUNTDOWN, and you cannot demonstrate a countdown to
+     * somebody stuck on the wrong side of the door — so the corridor pinches to a
+     * single tile three squares out and the gate opens because you walked at it.
+     *
+     * One plate and one door, rather than a plate per column: a gate is one `Door`
+     * record with one countdown, and three of them pointed at the same tile would be
+     * three countdowns racing, with the first to expire dropping the portcullis on
+     * the other two.
+     */
+    const plate = g.idx(SPINE, gateY - 3);
+    g.surface[plate] = Surface.Plate;
+    for (const x of [SPINE - 1, SPINE + 1]) g.tiles[g.idx(x, gateY - 3)] = Tile.Wall;
+    g.doors.push({ i: g.idx(SPINE, gateY), plate, turns: 0, span: 8 });
+
+    const lockY = g.h - 5;
+    g.tiles[g.idx(SPINE, lockY)] = Tile.Door;
+    for (const x of [SPINE - 1, SPINE + 1]) g.tiles[g.idx(x, lockY)] = Tile.Wall;
+    const vault = digRect(g, SPINE - 3, lockY + 1, 7, 3);
+    addRoom(g, vault);
+    // clear of the pinch, so a lever is never the tile you are forced to stand on
+    const levers = [g.idx(SPINE + 1, gateY - 5), g.idx(SPINE - 1, gateY - 7)];
+    for (const L of levers) g.surface[L] = Surface.Lever;
+    g.bossDoor = { i: g.idx(SPINE, lockY), levers, pulled: new Set() };
+    void rng;
+  },
+  boss(g) {
+    /**
+     * The vault behind the lock, nominated rather than assigned by hand.
+     *
+     * Setting `kind` in the carve did not work and the reason is worth keeping: the
+     * shared pass assigns the roles AFTERWARDS and does not know a room has already
+     * called itself the boss's, so the floor ended up with two of them — and two boss
+     * rooms is two bosses and two staircases, which `populate` will cheerfully build.
+     */
+    return g.rooms[g.rooms.length - 1] ?? null;
+  },
+};
+
 // ---------------------------------------------------------------------------
 // the roster
 // ---------------------------------------------------------------------------
 
 export const LAYOUTS: Record<LayoutId, Layout> = {
   rooms, cave, ring, spiral, hub, gridcity, cathedral,
-  gauntlet, labyrinth, warren, islands, chasm, nested, terraces,
+  gauntlet, labyrinth, warren, islands, chasm, nested, terraces, showroom,
 };
 
 /**
