@@ -54,6 +54,33 @@ const SPIKE_ASPECT = 19 / 98;
 const BLADE_H = 1.0;
 const BLADE_ASPECT = 64 / 130;
 const BLADE_W = BLADE_H * BLADE_ASPECT;
+/**
+ * THE PRESSURE PLATE, measured off `public/art/plate.png` rather than guessed.
+ *
+ * The generated art is a strict top-down view of the whole fixture — the stone
+ * rebate, the black gap, and the slab sitting in it — so one file serves both parts
+ * of the object. The socket is the image drawn flat on the tile; the slab is the
+ * middle of that same image, on its own geometry, standing out of it.
+ *
+ * The slab runs texels 13..82 of 96 across the middle row, which is where the gap
+ * ring ends and the banded stone begins. Reading it off the file is what makes the
+ * physical block land exactly on the painted one underneath: when it presses flush,
+ * the two are the same square and the seam vanishes.
+ */
+const PLATE_LO = 13 / 96, PLATE_HI = 83 / 96;
+const PLATE_W = PLATE_HI - PLATE_LO;
+/** The dark gap ring, which is what the four rims are textured with. */
+const PLATE_GAP_V0 = 8 / 96, PLATE_GAP_V1 = 13 / 96;
+/**
+ * How far the slab stands proud when nothing is on it.
+ *
+ * It shipped at 0.055 and read as a kerb. A plate is a thing that gives under a boot
+ * by a finger's width, not a step you climb — and the height only has to do one job,
+ * which is to break the floor line into a silhouette from across a room. Two texels
+ * at the middle step does that; the movement does the rest.
+ */
+const PLATE_H = 0.03;
+
 /** How deep an open trapdoor is drawn. Not how far you FALL — see `hazardBites`. */
 const SHAFT_D = 3.2;
 /** How far a ladder's stiles stand proud of the lip they lean on. */
@@ -187,11 +214,26 @@ export class ClockView {
    * the current density itself, exactly as it does for every creature and prop, so
    * `restep` only has to ask again.
    */
-  private art: Partial<Record<'gate' | 'spike' | 'blade' | 'ladder' | 'trapdoor', THREE.Texture>> = {};
+  private art: Partial<Record<'gate' | 'spike' | 'blade' | 'ladder' | 'trapdoor' | 'plate', THREE.Texture>> = {};
   private geo: THREE.PlaneGeometry;
   private barGeo: THREE.PlaneGeometry;
   private lintelGeo: THREE.BufferGeometry;
+  private plateTopGeo: THREE.BufferGeometry;
+  private plateRimGeo: THREE.BufferGeometry;
   private barsGeo = new Map<number, THREE.BufferGeometry>();
+  /**
+   * How far each plate is DRAWN pressed, 0 proud to 1 flush, per tile.
+   *
+   * Kept across syncs for the same reason `lift` is: `sync` rebuilds every mesh from
+   * scratch each round, so a value living on the mesh would snap back to its target
+   * the instant anything else on the floor moved. The animation belongs to the PLATE,
+   * not to the quad that happens to be drawing it this frame.
+   */
+  private press = new Map<number, number>();
+  /** This sync's plate quads, and where each sits relative to the slab's top face. */
+  private pressing: {
+    i: number; base: number; target: number; parts: { m: THREE.Mesh; dy: number }[];
+  }[] = [];
   private shaftGeo: THREE.PlaneGeometry;
   /**
    * How far each door is DRAWN, per tile, which is not the same as how far it is.
@@ -251,6 +293,36 @@ export class ClockView {
       }
       uv.needsUpdate = true;
     }
+    /**
+     * The slab's top and its four rims, both windowed onto the middle of the plate
+     * art so the block is textured with the picture of itself.
+     *
+     * The rims take the GAP ring instead: a rim is two texels of world height and
+     * the only thing it has to be is the dark edge of a stone block, which is
+     * exactly what the grime in the rebate already is. One file, no second asset,
+     * and the edge can never disagree with the top it belongs to.
+     */
+    this.plateTopGeo = new THREE.PlaneGeometry(PLATE_W, PLATE_W);
+    this.plateTopGeo.rotateX(-Math.PI / 2);
+    {
+      const uv = this.plateTopGeo.getAttribute('uv') as THREE.BufferAttribute;
+      for (let i = 0; i < uv.count; i++) {
+        uv.setXY(i, PLATE_LO + uv.getX(i) * PLATE_W, PLATE_LO + uv.getY(i) * PLATE_W);
+      }
+      uv.needsUpdate = true;
+    }
+    this.plateRimGeo = new THREE.PlaneGeometry(PLATE_W, PLATE_H);
+    {
+      const uv = this.plateRimGeo.getAttribute('uv') as THREE.BufferAttribute;
+      for (let i = 0; i < uv.count; i++) {
+        uv.setXY(
+          i,
+          PLATE_LO + uv.getX(i) * PLATE_W,
+          PLATE_GAP_V0 + uv.getY(i) * (PLATE_GAP_V1 - PLATE_GAP_V0),
+        );
+      }
+      uv.needsUpdate = true;
+    }
     // the trapdoor's shaft: as wide as the hole in `trapTile`, hung from its lip
     this.shaftGeo = new THREE.PlaneGeometry(0.8, SHAFT_D);
     this.shaftGeo.translate(0, -SHAFT_D / 2, 0);
@@ -288,7 +360,7 @@ export class ClockView {
    * hazard on the floor it first appears on and never blocks the floor being built.
    */
   private async loadArt(): Promise<void> {
-    const want = ['gate', 'spike', 'blade', 'ladder', 'trapdoor'] as const;
+    const want = ['gate', 'spike', 'blade', 'ladder', 'trapdoor', 'plate'] as const;
     await Promise.all(want.map(async (id) => {
       try { this.art[id] = await loadSprite(id); } catch { /* draws nothing */ }
     }));
@@ -372,6 +444,89 @@ export class ClockView {
     this.lit(m, g, x, y);
     this.cropBars(m, k);
     this.barMesh.set(i, m);
+  }
+
+  /**
+   * THE PLATE, AND IT MOVES BEFORE THE DOOR DOES.
+   *
+   * Six quads: the socket lying flat on the tile, then the slab — a top face and four
+   * rims — standing out of it. Drawn here rather than batched with the floor because
+   * a plate that never moved was the whole complaint: flat, it is a conductive panel
+   * painted on the masonry, and static, it is a block that has nothing to do with you.
+   * What makes it a MECHANISM is that your foot puts it down and taking your foot off
+   * lets it up.
+   *
+   * The ordering falls out of where the two things live rather than being sequenced by
+   * hand, which is why it is worth writing down. `refreshPlates` moves the rule and
+   * calls `syncClock` the moment the step lands, so the slab starts pressing on that
+   * frame; the door's DRAWN position is held at where it was by `showDoor` until the
+   * camera has finished swinging round to look at it. So the plate goes down under
+   * your foot, and then the gate answers. Cause, then effect, in that order, which is
+   * the only order that teaches anybody anything.
+   *
+   * Pressed is read off the door's LIFT and not off the player's tile, because this
+   * class only ever gets a grid — and the lift is the honest source anyway: a plate is
+   * held by whatever is standing on it, and a body's weight counts the same as yours.
+   */
+  private drawPlate(g: Grid, d: { i: number; plate: number }): void {
+    const px = d.plate % g.w, py = (d.plate / g.w) | 0;
+    const e = g.heightAt(px, py) * STEP_H;
+
+    // the socket: the whole fixture, painted on the floor, never moving
+    const s = this.take();
+    const smat = s.material as THREE.MeshBasicMaterial;
+    smat.map = this.art.plate ?? null;
+    smat.opacity = 1;
+    smat.needsUpdate = true;
+    s.geometry = this.geo;
+    s.rotation.set(0, 0, 0);
+    s.scale.set(1, 1, 1);
+    s.position.set(px, e + LIFT, py);
+    this.lit(s, g, px, py);
+
+    const parts: { m: THREE.Mesh; dy: number }[] = [];
+    const top = this.take();
+    const tmat = top.material as THREE.MeshBasicMaterial;
+    tmat.map = this.art.plate ?? null;
+    tmat.opacity = 1;
+    tmat.needsUpdate = true;
+    top.geometry = this.plateTopGeo;
+    top.rotation.set(0, 0, 0);
+    top.scale.set(1, 1, 1);
+    this.lit(top, g, px, py);
+    parts.push({ m: top, dy: 0 });
+
+    for (let f = 0; f < 4; f++) {
+      const [dx, dy] = DIR_VEC[f];
+      const m = this.take();
+      const mat = m.material as THREE.MeshBasicMaterial;
+      mat.map = this.art.plate ?? null;
+      mat.opacity = 1;
+      mat.needsUpdate = true;
+      m.geometry = this.plateRimGeo;
+      // Faced outward: a rim is only ever looked at from outside the block it edges.
+      m.rotation.set(0, Math.atan2(dx, dy), 0);
+      m.scale.set(1, 1, 1);
+      m.position.x = px + dx * (PLATE_W / 2);
+      m.position.z = py + dy * (PLATE_W / 2);
+      // A shade under the top, so the block has a corner rather than a fold.
+      this.lit(m, g, px, py, 0.72);
+      parts.push({ m, dy: -PLATE_H / 2 });
+    }
+
+    const target = g.doorLift[d.i] > 0 ? 1 : 0;
+    this.pressing.push({ i: d.plate, base: e + LIFT, target, parts });
+    // Placed once here as well as per frame, so a plate is never drawn at the wrong
+    // height for the one frame between a sync and the next update.
+    this.placePlate(this.pressing[this.pressing.length - 1], this.press.get(d.plate) ?? target);
+  }
+
+  /** Put a plate's six quads at a given press, 0 proud and 1 flush with the socket. */
+  private placePlate(
+    p: { base: number; parts: { m: THREE.Mesh; dy: number }[] }, at: number,
+  ): void {
+    const top = p.base + PLATE_H * (1 - at);
+    for (const q of p.parts) q.m.position.y = top + q.dy;
   }
 
   /** One quad per door, owned here, because each one is cropped to its own position. */
@@ -495,6 +650,7 @@ export class ClockView {
      * between three angles once a turn is not a swinging blade.
      */
     this.moving.length = 0;
+    this.pressing.length = 0;
     for (const h of g.hazards) {
       const state = hazardState(h);
       const e = g.heightAt(h.x, h.y) * STEP_H;
@@ -650,7 +806,7 @@ export class ClockView {
       const across = g.walkable(x - 1, y) || g.walkable(x + 1, y);
 
       this.drawDoor(g, d.i, x, y, e, across);
-
+      this.drawPlate(g, d);
     }
 
     /**
@@ -731,6 +887,20 @@ export class ClockView {
    */
   update(cam?: THREE.Vector3): void {
     if (cam) this.refog(cam);
+    /**
+     * The plates, eased on the same curve as everything else on this clock.
+     *
+     * Faster than the door on purpose, and it is the same `EASE` — the slab only has
+     * `PLATE_H` to travel where the gate has most of a wall, so the same rate reads as
+     * a quick press followed by a long grind. The order is the point: your foot lands,
+     * the plate goes down under it, and the gate answers.
+     */
+    for (const p of this.pressing) {
+      const at = this.press.get(p.i) ?? p.target;
+      const next = at + (p.target - at) * EASE;
+      this.press.set(p.i, Math.abs(p.target - next) < 0.001 ? p.target : next);
+      this.placePlate(p, next);
+    }
     for (const m of this.moving) {
       m.at += (m.target - m.at) * EASE;
       if (m.kind === 'spikes') {
@@ -772,6 +942,8 @@ export class ClockView {
     this.geo.dispose();
     this.barGeo.dispose();
     this.lintelGeo.dispose();
+    this.plateTopGeo.dispose();
+    this.plateRimGeo.dispose();
     for (const gg of this.barsGeo.values()) gg.dispose();
     this.barsGeo.clear();
     this.shaftGeo.dispose();

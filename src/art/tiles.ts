@@ -467,10 +467,6 @@ export interface TileSet {
   water: Pix[];
   rubble: Pix[];
   fog: Pix[];
-  /** The recess a plate stands in. The block itself is `plateTop` — see `buildPlateWell`. */
-  plate: Pix[];
-  /** One texture for the slab's top face and its four rims. */
-  plateTop: Pix[];
   ladder: Pix[];
   /** One per portal PAIR, so two mouths that match are drawn the same colour. */
   portal: Pix[];
@@ -643,104 +639,6 @@ function buildFloor(theme: Theme, seed: string, variant: number): Pix {
  * thing on a floor with straight edges and repeating rivets, rubble is the only thing
  * with cast shadows, water is the only thing that reflects.
  */
-
-/**
- * THE WELL A PRESSURE PLATE SITS IN. The floor half of a two-part object.
- *
- * The plate shipped INVISIBLE — `Surface.Plate` placed by the generator, read every
- * round by `refreshPlates`, and drawn by nothing at all, so the one tile in the
- * dungeon that opens a door was bare flagstone for two phases. The first attempt at
- * fixing that drew the whole plate as a floor texture, and a picture of a slab lying
- * flat on the ground is the same mistake the ladder made before it was hung on the
- * ledge face: at this camera height a painted-on plate is a conductive panel in the
- * masonry, not a thing you can stand on and press.
- *
- * So the object is GEOMETRY (see `Surface.Plate` in `render.ts`) and this is only the
- * hole it stands in: the room's own floor with a square recess sunk into it, wider
- * than the slab so a band of shadow shows all the way round. That gap is what makes
- * the slab read as separate from the floor rather than as a patch of it — the same
- * job the gutter did in the flat version, except now there is a real edge above it
- * casting into a real recess.
- */
-function buildPlateWell(theme: Theme, seed: string, variant: number): Pix {
-  const p = buildFloor(theme, `${seed}-base`, variant);
-  const P = ppu();
-  const well = hex(0x141619);
-  // Wider than the slab's half-width in `render.ts`, so the recess is visible round
-  // it from every angle rather than only from the two edges the slab does not cover.
-  const lo = Math.round(P * 0.11), hi = P - 1 - lo;
-  for (let y = 0; y < P; y++) {
-    for (let x = 0; x < P; x++) {
-      if (x < lo || x > hi || y < lo || y > hi) continue;
-      // Deepest at the lip and lifting toward the middle: the middle is under the
-      // slab and never seen, and the lip is the only part that has to read.
-      const d = Math.min(x - lo, hi - x, y - lo, hi - y) / Math.max(1, (hi - lo) / 2);
-      p.set(x, y, mix(p.get(x, y), well, 0.92 - Math.min(0.35, d * 0.35)));
-    }
-  }
-  void variant;
-  return p;
-}
-
-/**
- * THE SLAB ITSELF: the top and the four rims of the block that stands in the well.
- *
- * One texture for five quads, which is what decides the layout. The rim quads are
- * `PLATE_H` tall and sample the bottom tenth of this image, so that tenth is authored
- * as flat dark metal — and because a border has to be a border on all four sides, the
- * same dark ring runs round the whole thing and reads on the TOP face as the chamfer
- * a cast slab actually has. One drawing, two jobs, no second texture.
- *
- * Radially symmetric on purpose. A floor quad is wound spatially and has no up, so
- * anything with a lit edge and a shadowed one would face a different way per tile;
- * a dish and a boss look the same from all four sides of the room.
- *
- * Distinct from IRON, which is the other regular metal surface: iron is a seam and
- * rivets and covers whole bays, this is one block with a pressed boss in the middle.
- * A room of iron plating must never read as a room full of things that open doors.
- */
-function buildPlateTop(theme: Theme, seed: string, variant: number): Pix {
-  const P = ppu();
-  const p = new Pix(P, P);
-  const slab = hex(0x5a5f68), lit = hex(0x8b93a0), dark = hex(0x24272c);
-
-  for (let y = 0; y < P; y++) {
-    for (let x = 0; x < P; x++) {
-      // A shallow dish: the middle of a plate somebody has stood on a thousand times
-      // is lower than its edges, and the gradient is what stops the face reading flat.
-      const cx = (x - P / 2) / (P / 2), cy = (y - P / 2) / (P / 2);
-      const dish = Math.min(1, (cx * cx + cy * cy) * 0.5);
-      p.set(x, y, mix(slab, shade(slab, 0.8), dish));
-    }
-  }
-  // The chamfer, and the rim strip the side quads sample. A tenth of the image, which
-  // at `ppu()` 16 is two texels — the floor below which an edge stops being an edge.
-  const b = Math.max(2, Math.round(P * 0.1));
-  for (let y = 0; y < P; y++) {
-    for (let x = 0; x < P; x++) {
-      const d = Math.min(x, y, P - 1 - x, P - 1 - y);
-      if (d >= b) continue;
-      // Darkest at the outside and catching a highlight on the inner lip, so the
-      // chamfer has a direction even though the tile has no up.
-      const t = d / b;
-      p.set(x, y, mix(mix(dark, slab, t * 0.85), lit, t > 0.72 ? 0.35 : 0));
-    }
-  }
-  // The boss: the mark that says PRESS on every machine anybody has ever used.
-  const r = Math.max(2, Math.round(P * 0.17));
-  const c = P >> 1;
-  p.ellipse(c, c, r, r, shade(slab, 0.88));
-  p.ellipseFrame(c, c, r, r, shade(slab, 0.62));
-  p.ellipse(c, c - Math.max(1, r >> 1), Math.max(1, Math.round(r * 0.55)),
-    Math.max(1, Math.round(r * 0.4)), mix(slab, lit, 0.45));
-  if (variant % 2 === 1) {
-    // Two variants so a pair of plates on one floor is not one stamp repeated: the
-    // second is scuffed across the boss, which is where a boot actually lands.
-    p.line(b, c + Math.max(1, r >> 1), P - 1 - b, c + Math.max(1, r >> 1) - 1, shade(slab, 0.74));
-  }
-  void theme; void seed;
-  return p;
-}
 
 /** Iron plating: straight seams, rivets, a rolled sheen. The only regular thing here. */
 function buildIron(theme: Theme, seed: string, variant: number): Pix {
@@ -1029,22 +927,18 @@ export function buildTileSet(theme: Theme, seed: string, pairs = 0): TileSet {
   const water: Pix[] = [];
   const rubble: Pix[] = [];
   const fog: Pix[] = [];
-  const plate: Pix[] = [];
-  const plateTop: Pix[] = [];
   const ladder: Pix[] = [buildLadder(theme, `${seed}-lad`)];
   for (let i = 0; i < 2; i++) {
     iron.push(buildIron(theme, `${seed}-s${i}`, i));
     water.push(buildWater(theme, `${seed}-s${i}`, i));
     rubble.push(buildRubble(theme, `${seed}-s${i}`, i));
     fog.push(buildFog(theme, `${seed}-s${i}`, i));
-    plate.push(buildPlateWell(theme, `${seed}-s${i}`, i));
-    plateTop.push(buildPlateTop(theme, `${seed}-s${i}`, i));
   }
   const portal: Pix[] = [];
   for (let i = 0; i < pairs; i++) {
     portal.push(buildPortal(theme, `${seed}-p${i}`, PORTAL_HUES[i % PORTAL_HUES.length]));
   }
-  return { walls, floors, ceils, iron, water, rubble, fog, plate, plateTop, ladder, portal };
+  return { walls, floors, ceils, iron, water, rubble, fog, ladder, portal };
 }
 
 /**

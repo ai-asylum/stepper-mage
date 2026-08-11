@@ -1026,6 +1026,16 @@
       "keyline": false,
       "prompt": "A SHUT IRON TRAPDOOR set into a stone floor, viewed from DIRECTLY ABOVE looking straight down: a square pair of iron-banded double leaves that meet along a seam down the middle, heavy riveted iron straps across each leaf, a recessed ring pull, set in a square stone rebate. Flat top-down plan view, no perspective, no side walls visible.",
       "extra": "CRITICAL: a strict top-down bird's eye view of a flat square panel in the floor. Square, filling the frame. No perspective, no walls, no room, no side of anything."
+    },
+    {
+      "id": "plate",
+      "kind": "icon",
+      "height": 96,
+      "seed": 1325,
+      "holes": false,
+      "keyline": false,
+      "prompt": "A STONE PRESSURE PLATE set into a dungeon floor, viewed from DIRECTLY ABOVE looking straight down: one thick square slab of grey stone banded with dark iron along its four edges, sitting inside a square rebate cut into the flagstones with a narrow black gap all the way around it, and a heavy round iron boss in the middle of the slab worn smooth and bright by boots. Chipped stone, pitted iron, old grime down in the gap. Flat top-down plan view, no perspective, no side walls visible.",
+      "extra": "CRITICAL: a strict top-down bird's eye view of one flat square slab in the floor. Square, filling the frame, with the black gap visible on all four sides. No perspective, no walls, no room, no side of anything, no lever, no chain, no keyhole, no spikes."
     }
   ]
 }
