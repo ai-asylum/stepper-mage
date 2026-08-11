@@ -62,7 +62,7 @@ screen with a permanently empty column.
 the idea good; it does not list a single blessing. They must obey the same non-overlap
 rule everything else does — a blessing that grants an element duplicates a page, one
 that shapes a cast duplicates an ingredient — so the honest space is probably run-level
-rather than cast-level: start deeper in the book, start with a reroll charge, start
+rather than cast-level: start deeper in the book, start with a longer bar, start
 with a rank. Propose them, do not invent them silently.
 
 **The compass has to survive not knowing.** The altar may be in an unexplored room, so
@@ -80,11 +80,16 @@ for its main job. That tension is the whole design problem of this phase.
   rejected — bearing plus distance over two steps triangulates the exact tile, which
   is a revealed map wearing one arrow.
 - **The three blessings are RUN-LEVEL, on three different axes.** A wider book (a
-  fourth page), a spare hand (a reroll charge banked), a deeper page (an owned page at
-  rank 2). Breadth, agency, power — so the choice is about how you want to play rather
-  than which number is biggest. Run-level because the non-overlap rule leaves nothing
-  else honest: a blessing granting an element duplicates a page, one shaping a cast
-  duplicates an ingredient.
+  fourth page), a deeper well (+8 max health, kept for the descent), a deeper page (an
+  owned page at rank 2). Breadth, endurance, power — so the choice is about how you
+  want to play rather than which number is biggest. Run-level because the non-overlap
+  rule leaves nothing else honest: a blessing granting an element duplicates a page,
+  one shaping a cast duplicates an ingredient.
+- **The middle axis was AGENCY — a banked reroll charge — and it was replaced.** It
+  was the card nobody took, for the reason rerolls left the game entirely: a charge is
+  a certain prize traded for the right to ask later, which loses to any card that is a
+  spell. Endurance is the one run-level axis left that is neither a page nor a cast,
+  and unlike a charge it is worth the same at the mouth as it is on floor five.
 - **The bestiary ships its FUSION half only.** Entries fill from each source
   independently and only the sections that can fill are shown, so there is no
   permanently empty column and the animation half lights up by itself whenever

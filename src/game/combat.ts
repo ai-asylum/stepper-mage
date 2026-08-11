@@ -1625,24 +1625,15 @@ export class Combat {
       this.hazardBites(h);
     }
 
-    for (const d of g.doors) {
-      if (d.turns <= 0) continue;
-      d.turns--;
-      if (d.turns > 0) continue;
-      /**
-       * SHUTTING ON SOMETHING is not allowed to trap it inside the geometry. The
-       * portcullis simply stays up while a body is under it, which reads as the door
-       * being blocked and costs the player a turn of the countdown they were
-       * spending — a better answer than either crushing the thing or clipping it.
-       */
-      if (this.floor.entityAt(d.i % g.w, (d.i / g.w) | 0)
-        || (this.playerTile.x + this.playerTile.y * g.w) === d.i) {
-        d.turns = 1;
-        continue;
-      }
-      g.doorOpen[d.i] = 0;
-      this.onEvent({ kind: 'status', text: 'THE GATE FALLS.', colour: 0x9aa3ad });
-    }
+    /**
+     * The plates, re-read every round rather than fired as an event.
+     *
+     * A gate is up while something stands on its plate, so the question is about the
+     * state of the world and has to be asked again whenever the world moves — a body
+     * walking off a plate drops the gate exactly as surely as the player doing it,
+     * and neither of them is a "plate press" anybody would have thought to fire.
+     */
+    this.refreshPlates();
     this.floor.syncClock();
   }
 
@@ -1713,51 +1704,61 @@ export class Combat {
      * nothing to allow and makes the mechanism legible in one gesture instead of one
      * gesture and a paragraph.
      */
-    if (bd.pulled.has(i)) {
-      bd.pulled.delete(i);
-      this.floor.markLever(i, false);
-      if (g.doorOpen[bd.i]) g.doorOpen[bd.i] = 0;
-      this.floor.syncClock();
-      return 'released';
-    }
-
-    bd.pulled.add(i);
-    this.floor.markLever(i, true);
-    if (bd.pulled.size < bd.levers.length) {
-      const left = bd.levers.length - bd.pulled.size;
-      this.onEvent({
-        kind: 'status',
-        text: left > 1 ? `${left} SOCKETS STILL DARK` : 'ONE SOCKET STILL DARK',
-        colour: 0xffc23e,
-      });
-      this.floor.syncClock();
-      return 'pulled';
-    }
+    const was = bd.pulled.has(i);
+    if (was) { bd.pulled.delete(i); } else { bd.pulled.add(i); }
+    this.floor.markLever(i, !was);
     /**
-     * NO ANNOUNCEMENT. The cut flies to the gate and you watch it go up — saying
-     * "the way in opens" over the top of that is the caption on a photograph of the
-     * thing you are already looking at.
+     * EVERY LEVER MOVES THE DOOR. Its own share of it, up or down.
+     *
+     * The old rule was that the last lever opened the gate and the others reported a
+     * number: "two sockets still dark". That is a door that does nothing at all until
+     * it does everything, which makes the first lever an act of faith — you throw it,
+     * a caption appears, and the only evidence it was connected to anything is a
+     * count somebody is telling you. So each lever now owns 1/N of the travel and
+     * spends it in both directions: throw it and the gate grinds up a share, put it
+     * back and the gate grinds down again.
+     *
+     * The player never has to be told how many are left, because they can see how
+     * far up the door is.
      */
+    g.setDoorLift(bd.i, bd.pulled.size / Math.max(1, bd.levers.length));
     this.floor.syncClock();
-    return 'opened';
+    if (was) return 'released';
+    return bd.pulled.size >= bd.levers.length ? 'opened' : 'pulled';
   }
 
-  /** Stepping onto a plate opens its gate. Called from the step, not from the clock. */
-  pressPlate(x: number, y: number): boolean {
+  /**
+   * A PLATE HOLDS ITS GATE UP WHILE SOMETHING IS STANDING ON IT. That is all it does.
+   *
+   * It used to buy a COUNTDOWN — press it and the gate stayed up for eight turns —
+   * and eight turns was never a budget anybody could misspend. The plate sat on the
+   * only path to the gate, three tiles short of it, so the whole mechanic was: walk
+   * onto a tile, a door opens, walk through it. There is no decision in that. It was
+   * a door that took two steps instead of one, and it needed a countdown drawn on it
+   * to be legible at all, which is the tell.
+   *
+   * Held, it is a PROBLEM: the thing that opens the gate is the thing that cannot go
+   * through it. You need a second body on the plate, or a second way round, and the
+   * floor has to be finishable without ever solving it — see `placeGate`, which now
+   * only puts a gate where the run does not need one.
+   *
+   * Called from the step and from the clock, because "is something standing on it"
+   * is a question about the world and not an event that fires once.
+   */
+  refreshPlates(): boolean {
     const g = this.floor.grid;
-    const i = g.idx(x, y);
-    let any = false;
+    let moved = false;
     for (const d of g.doors) {
-      if (d.plate !== i) continue;
-      d.turns = d.span;
-      g.doorOpen[d.i] = 1;
-      any = true;
+      const px = d.plate % g.w, py = (d.plate / g.w) | 0;
+      const held = (this.playerTile.x === px && this.playerTile.y === py)
+        || !!this.floor.entityAt(px, py);
+      const want = held ? 1 : 0;
+      if (g.doorLift[d.i] === want) continue;
+      g.setDoorLift(d.i, want);
+      moved = true;
     }
-    if (any) {
-      this.onEvent({ kind: 'status', text: 'THE GATE GRINDS UP.', colour: 0xffc23e });
-      this.floor.syncClock();
-    }
-    return any;
+    if (moved) this.floor.syncClock();
+    return moved;
   }
 
   private tickStatuses(): void {

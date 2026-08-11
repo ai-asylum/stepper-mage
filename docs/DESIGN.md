@@ -234,11 +234,28 @@ you want to open a room.
 
 ## Altar — a 3-choice reward node
 
-Always at least one spell option. Otherwise any of: heal · stars · rank-up ·
-**sacrifice a rank-2 page to reach rank 3** · reroll charge · **golden page**.
+**An altar is where spells come from, and the roll is built to keep saying so.**
+Usually all three cards are pages; one non-page card is the common exception and two
+is rare. Otherwise any of: heal · ingredient bundle · rank-up · **sacrifice a rank-2
+page to reach rank 3** · **golden page**.
 
-A rolled page already at max rank pays **2 stars** instead — the run funds the meta
-precisely when the run has nothing left to teach you.
+**A page you do not own beats every rank-up.** Not a weight, an order: new pages fill
+the page slots first and rank-ups take what is left. With five page elements and a
+three-page loadout that is roughly two floors of genuinely new spells before the
+altar starts offering ranks — which is the point at which a rank IS the prize, rather
+than the thing the altar reaches for because it is easy.
+
+**Stars are a backstop, never an option.** The dedicated star payout is reached only
+when the page queue and the extras are both exhausted — nothing left to teach, a full
+bar, nowhere to put a bundle. A card that hands you meta-currency should mean the
+altar had nothing, not that it would rather pay you than teach you.
+
+A rolled page already at max rank still pays **2 stars** instead, and sinks below
+every page that has something left to give.
+
+**No reroll charges.** Removed outright. A charge is a card that pays out in *maybe*
+— you give up a certain prize now for the right to ask a later altar for a better
+one, which is the worst trade on the table the moment the other two cards are spells.
 
 **Golden page** → **granted at the start of your next run, and that run only.** It
 is a gift forwarded one run, not an addition to the starting book: you begin the

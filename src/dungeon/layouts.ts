@@ -976,29 +976,30 @@ const showroom: Layout = {
      * its levers behind it. In series on purpose — it is the one place you can see
      * both kinds of door at once and tell them apart.
      */
-    const gateY = g.h - 8;
-    g.tiles[g.idx(SPINE, gateY)] = Tile.Door;
-    for (const x of [SPINE - 1, SPINE + 1]) g.tiles[g.idx(x, gateY)] = Tile.Wall;
     /**
-     * The approach NARROWS to one tile, and that tile is the plate.
+     * THE TIMED GATE GOES IN A SIDE STUB, not across the spine.
      *
-     * Off to one side it was a gate nobody could open: the walk down the spine goes
-     * straight down the middle column, the plate sat in the left one, and the only
-     * way past a shut portcullis was to already know there was a plate and go and
-     * find it. On a generated floor that hunt IS the mechanic. Here the mechanic
-     * being demonstrated is the COUNTDOWN, and you cannot demonstrate a countdown to
-     * somebody stuck on the wrong side of the door — so the corridor pinches to a
-     * single tile three squares out and the gate opens because you walked at it.
+     * A plate holds its gate up only while something is standing on it, so the thing
+     * that opens this door is the thing that cannot walk through it. Across the only
+     * route it is not a demonstration, it is a wall — which is exactly the mistake
+     * this bay exists to stop shipping, and it is the rule `placeGate` now enforces
+     * on generated floors too: a gate never stands where the run needs to go.
      *
-     * One plate and one door, rather than a plate per column: a gate is one `Door`
-     * record with one countdown, and three of them pointed at the same tile would be
-     * three countdowns racing, with the first to expire dropping the portcullis on
-     * the other two.
+     * So: a two-tile alcove off the west side of the spine with the portcullis at its
+     * mouth and the plate on the spine facing it. Step on, the gate grinds up and you
+     * can see into the alcove. Step off, it falls. Nothing is behind it and nothing
+     * needs to be — what is being shown is the mechanism.
      */
-    const plate = g.idx(SPINE, gateY - 3);
+    const gateY = g.h - 8;
+    const gateX = SPINE - 2;
+    for (let k = 0; k < 3; k++) dig(g, gateX - k, gateY);
+    g.tiles[g.idx(gateX, gateY)] = Tile.Door;
+    for (const dy of [-1, 1]) {
+      for (let k = 0; k < 3; k++) g.tiles[g.idx(gateX - k, gateY + dy)] = Tile.Wall;
+    }
+    const plate = g.idx(SPINE, gateY);
     g.surface[plate] = Surface.Plate;
-    for (const x of [SPINE - 1, SPINE + 1]) g.tiles[g.idx(x, gateY - 3)] = Tile.Wall;
-    g.doors.push({ i: g.idx(SPINE, gateY), plate, turns: 0, span: 8 });
+    g.doors.push({ i: g.idx(gateX, gateY), plate });
 
     const lockY = g.h - 5;
     g.tiles[g.idx(SPINE, lockY)] = Tile.Door;

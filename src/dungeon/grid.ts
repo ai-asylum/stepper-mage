@@ -151,19 +151,22 @@ export function hazardState(h: Hazard): HazardState {
 /**
  * A portcullis and the plate that opens it.
  *
- * `turns` is the countdown and it is the whole mechanic: five turns is five ACTIONS,
- * and walking spends them at the same rate as casting does. The player who plans gets
- * through and the player who wanders does not.
+ * There is no countdown any more and that is the whole change. `turns` bought eight
+ * of them and eight was never a budget anybody could misspend — the plate sat on the
+ * only path to the gate, so the mechanic was: step on a tile, a door opens, walk
+ * through it. No decision in it, and it needed a readout drawn on the door to be
+ * legible at all, which is the tell.
+ *
+ * A plate HOLDS its gate up. The thing that opens it is the thing that cannot go
+ * through it, so it is a problem rather than a toll — and everything behind one is
+ * optional by construction, because `placeGate` will not put one where the run needs
+ * to go.
  */
 export interface Door {
   /** Tile index of the portcullis. */
   i: number;
-  /** Tile index of the plate that opens it. */
+  /** Tile index of the plate that holds it up. */
   plate: number;
-  /** Turns left before it shuts. 0 when shut. */
-  turns: number;
-  /** How long a press buys. */
-  span: number;
 }
 
 /**
@@ -276,8 +279,27 @@ export class Grid {
    * A parallel array rather than a lookup in `doors`, because `walkable` is the
    * hottest question in the codebase — every flood, every fill, every step of every
    * body's pathing — and it must not become a linear scan over a list.
+   *
+   * DERIVED from `doorLift` and never written on its own: a door is open when it is
+   * all the way up and shut every other instant of its travel. Keeping the byte is
+   * not redundancy, it is the fast answer — `walkable` must not do a float compare
+   * over an array the flood fill touches a thousand times a floor.
    */
   readonly doorOpen: Uint8Array;
+
+  /**
+   * HOW FAR UP each `Tile.Door` is, 0 shut to 1 gone. The real state of a door.
+   *
+   * A door used to be a boolean, and a boolean cannot answer the question the
+   * mechanic actually asks: a gate with two levers and one of them thrown is
+   * neither open nor shut, it is HALF UP, and the player has to be able to see that
+   * they are halfway. So the door carries a fraction, every actuator owns a share of
+   * it, and `doorOpen` falls out of the top of the range.
+   *
+   * A half-open door is still shut to your feet. The partial position is
+   * information — how much of the mechanism you have solved — and never access.
+   */
+  readonly doorLift: Float32Array;
 
   rooms: Room[] = [];
   lights: LightSource[] = [];
@@ -307,6 +329,7 @@ export class Grid {
     this.height = new Int8Array(w * h);
     this.surface = new Uint8Array(w * h);
     this.doorOpen = new Uint8Array(w * h);
+    this.doorLift = new Float32Array(w * h);
   }
 
   idx(x: number, y: number): number { return y * this.w + x; }
@@ -345,6 +368,19 @@ export class Grid {
    */
   seeThrough(x: number, y: number): boolean {
     return this.at(x, y) !== Tile.Wall;
+  }
+
+  /**
+   * Move a door to a new position, and keep the fast byte in step with it.
+   *
+   * The ONE write path for both, so `doorOpen` can never disagree with `doorLift` —
+   * which it would within a day if the two were set at the call sites, and the
+   * symptom would be a door you can see is shut and can walk through.
+   */
+  setDoorLift(i: number, lift: number): void {
+    const k = Math.max(0, Math.min(1, lift));
+    this.doorLift[i] = k;
+    this.doorOpen[i] = k >= 1 ? 1 : 0;
   }
 
   /** Elevation in whole steps. 0 outside the map, so the edge never reads as a drop. */

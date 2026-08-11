@@ -959,6 +959,21 @@ async function boot(): Promise<void> {
   let showroom: () => Promise<void> = async () => {};
   /** Set by the boot sequence once the floor and combat exist. */
   let throwLever: (e: Entity) => void = () => {};
+  /**
+   * CUT TO THE DOOR AND WATCH IT MOVE. Every actuation, both directions, no
+   * exceptions.
+   *
+   * Only the last lever used to get a cut, and only in the opening direction, which
+   * made every other actuation an act of faith: you throw a switch, a caption
+   * appears, and nothing you can see has changed. If the mechanism is the fun then
+   * the mechanism has to be SHOWN — so throwing the first of two levers cuts to the
+   * gate and shows it grind halfway up, putting it back cuts to the gate and shows it
+   * grind back down, and stepping off a plate cuts to the gate and shows it fall.
+   *
+   * A no-op is not shown, because a cut that flies across the dungeon to show you
+   * nothing happening is the one thing worse than no cut at all.
+   */
+  let showDoor: (i: number, from: number, to: number) => void = () => {};
   const tmp = new THREE.Vector3();
 
   let floor!: Floor;
@@ -1213,11 +1228,20 @@ async function boot(): Promise<void> {
    * A dedicated star offer pays more than the 2 a maxed page pays.
    *
    * Different jobs: the maxed page's 2 stars is a consolation for a slot nothing
-   * else wanted, while this is competing for a slot against a rank, and it has to
-   * be worth turning one down. Depth-scaled for the reason chests are — late stars
-   * must be worth as much as the floor that yielded them.
+   * else wanted, while this is the whole altar coming up empty — no page left to
+   * teach, a full bar, nowhere to put a bundle. Depth-scaled for the reason chests
+   * are: late stars must be worth as much as the floor that yielded them.
    */
   const altarStars = (depth: number): number => 4 + depth * 2;
+
+  /**
+   * What the endurance blessing adds to the bar.
+   *
+   * Eight on a base of `PLAYER_MAX_HP` is a shade under a fifth, which is about one
+   * extra exchange with a floor-three enemy — enough to be the reason a run
+   * survives, never enough to be the only card worth taking.
+   */
+  const BLESSING_HP = 8;
 
   /**
    * How often a golden page is on the table at all.
@@ -1227,13 +1251,6 @@ async function boot(): Promise<void> {
    * it an event you remember rather than a fixture you budget around.
    */
   const GOLDEN_CHANCE = 0.16;
-
-  /**
-   * How much heavier the favoured half of the page pool draws — see the bias note
-   * in `rollAltarOffers`. Four puts ~1.7 of a two-page roll on the favoured side,
-   * which is the difference between "you can steer this" and "you cannot".
-   */
-  const PAGE_LEAD = 4;
 
   /** Anything with a number in the headline says it the same way. */
   const starsName = (n: number): string => `✦  +${n} Stars`;
@@ -1321,6 +1338,12 @@ async function boot(): Promise<void> {
    * what the FIRST extra slot gets and a roll with two extra slots still shows two
    * different things. Healing is only here when there is damage to undo — an offer
    * that would do nothing is a wasted third of the decision.
+   *
+   * STARS ARE NOT IN THE WEIGHTED POOL. They are appended after it, so a star
+   * payout can only ever reach the table when every other extra has been used up —
+   * a full health bar, a belt with nowhere to put a bundle. An altar is where
+   * spells come from, and a card that hands you meta-currency instead is the
+   * backstop for a slot with nothing to say, not a thing that competes for one.
    */
   const rollExtras = (rng: Rng): AltarOffer[] => {
     const pool: AltarOffer[] = [];
@@ -1338,20 +1361,6 @@ async function boot(): Promise<void> {
       });
       weights.push(4);
     }
-    const stars = altarStars(state.depth);
-    pool.push({
-      kind: 'stars', id: '', name: starsName(stars), tag: 'CELESTIAL STARS',
-      colour: 0xffcf5c,
-      detail: 'Banked for the surface. Nothing in the dungeon takes them.',
-      cost: null, amount: stars, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
-    });
-    weights.push(3);
-    pool.push({
-      kind: 'reroll', id: '', name: 'Reroll Charge', tag: 'FORTUNE', colour: 0x8cc8ff,
-      detail: 'Keep it. It turns over any altar\'s three offers, this run only.',
-      cost: null, amount: 1, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
-    });
-    weights.push(3);
     /**
      * A bundle of one ingredient.
      *
@@ -1382,20 +1391,12 @@ async function boot(): Promise<void> {
         cost: null, amount: ALTAR_INGREDIENTS, rank: 0, toRank: 0, maxRank: MAX_RANK,
         golden: false,
       });
-      // Level with stars and a charge: a hand of consumables is worth about what a
-      // banked charge is, and neither should out-draw the heal that keeps a run alive.
+      // Under the heal, which is the one extra that stops a run ending. A hand of
+      // consumables is a real prize; it is not the prize you needed.
       weights.push(3);
     }
 
     const out: AltarOffer[] = [];
-    // A golden page skips the weighting and goes first: when it is on the table it
-    // IS the table, and burying it behind a heal would be the wrong emphasis.
-    // Never a page the starting book already holds — you would begin the next run
-    // holding that one anyway, so gilding it is a card that grants nothing.
-    const gild = ELEMENT_SPELLS.filter((sp) => !meta.loadout.includes(sp.id)).map((sp) => sp.id);
-    if (!goldenClaimed && gild.length && (goldenForced || rng.chance(GOLDEN_CHANCE))) {
-      out.push(goldenOffer(rng.pick(gild)));
-    }
     while (pool.length) {
       const pick = rng.weighted(pool, weights);
       const i = pool.indexOf(pick);
@@ -1404,6 +1405,50 @@ async function boot(): Promise<void> {
       out.push(pick);
     }
     return out;
+  };
+
+  /**
+   * THE BACKSTOP. Not in `rollExtras`, and that distinction is the whole point.
+   *
+   * Appending it to the extras list was not enough: the fill loop hands a non-page
+   * slot to the extras queue first and only falls back to the pages queue when the
+   * extras run dry, so a stars card sitting at the tail of that queue still beat an
+   * unclaimed page. Measured on the opening floor that produced a star payout in
+   * roughly half of all rolls while four new spells went unoffered.
+   *
+   * So it lives outside both queues and is reached only when BOTH are exhausted —
+   * no page left to teach, no heal to give, nowhere to put a bundle. Reaching it
+   * means the altar genuinely had nothing, which is the only honest time to answer
+   * "what does this stone have for me" with meta-currency.
+   */
+  const starsBackstop = (): AltarOffer => ({
+    kind: 'stars', id: '', name: starsName(altarStars(state.depth)), tag: 'CELESTIAL STARS',
+    colour: 0xffcf5c,
+    detail: 'Banked for the surface. Nothing in the dungeon takes them.',
+    cost: null, amount: altarStars(state.depth), rank: 0, toRank: 0, maxRank: MAX_RANK,
+    golden: false,
+  });
+
+  /**
+   * The golden page, if this altar has one — rolled as a PAGE, not as an extra.
+   *
+   * It used to live at the head of `rollExtras`, which had two consequences the
+   * player felt directly. It spent one of the roll's non-page slots on what is
+   * plainly a spell, and it was drawn from `ELEMENT_SPELLS` with no idea what the
+   * page slots were about to offer — so with five page elements and a three-page
+   * loadout, `gild` is almost exactly the set of pages the roll already favours,
+   * and a page sitting next to its own gilded twin was the common case rather than
+   * a freak roll. Rolled here and excluded from the ordinary page draw below, both
+   * go away: it takes a page slot because it is a page, and it is the only card on
+   * the table for that page.
+   */
+  const rollGolden = (rng: Rng): AltarOffer | null => {
+    // Never a page the starting book already holds — you would begin the next run
+    // holding that one anyway, so gilding it is a card that grants nothing.
+    const gild = ELEMENT_SPELLS.filter((sp) => !meta.loadout.includes(sp.id)).map((sp) => sp.id);
+    if (goldenClaimed || !gild.length) return null;
+    if (!goldenForced && !rng.chance(GOLDEN_CHANCE)) return null;
+    return goldenOffer(rng.pick(gild));
   };
 
   /**
@@ -1423,6 +1468,12 @@ async function boot(): Promise<void> {
      */
     const where = e ? `${e.sprite.tx}-${e.sprite.ty}` : 'mouth';
     const rng = new Rng(`${runSeed}-altar-${state.depth}-${where}-${nonce}`);
+    /**
+     * The gilded page is drawn FIRST, because everything below has to know about it.
+     * It occupies a page slot and its element is struck out of the ordinary draw, so
+     * a page can never appear beside its own golden twin.
+     */
+    const golden = rollGolden(rng);
     // Elements only: an altar grants PAGES, and ingredients have none. Deduped
     // because a book may legitimately hold a page twice.
     const owned = [...new Set(state.pages.filter(isPageElement))];
@@ -1431,35 +1482,25 @@ async function boot(): Promise<void> {
     const rank2 = rng.shuffle(owned.filter((id) => (state.ranks[id] ?? 0) === 2));
 
     /**
-     * WHICH pages lead the roll depends on whether fusion is something the player
-     * can actually do.
+     * A PAGE YOU DO NOT OWN OUTRANKS EVERY RANK-UP. Not a weight — an order.
      *
-     * A page you do not own is only the better prize while it opens combinations,
-     * and at hand size 1 it opens NONE — one page is the whole cast, so a fifth
-     * element is a different status effect while a rank is a straight damage
-     * increase. Leading with unowned pages there meant a three-page loadout was
-     * offered exactly one of its OWN pages per floor, picked at random, so the
-     * player could not steer ranks at the one hand size where ranks are all there
-     * is. Fusion live at hand 2+ flips it back: then a page you lack is a whole set
-     * of casts you cannot make.
+     * This was a 4:1 bias that flipped on hand size, and the flip was the problem:
+     * a rank-up is a number going up, and there are only five page elements, so a
+     * bias meant an altar could always find a reason to offer you the same three
+     * upgrades you have been offered all run. New pages come first and upgrades take
+     * what is left, which makes a rank-up something the altar falls back to once
+     * your book is nearly complete rather than the thing it opens with. With five
+     * elements and a three-page loadout that is two floors of genuinely new spells,
+     * then rank-ups because there is nothing else — which is when a rank-up is
+     * actually the prize.
      *
-     * A weight and not a wall. Grouping the two outright would mean a full
-     * three-page loadout is never offered a fourth element while the hand is one,
-     * and an element you do not own is still a status you do not have — the bias
-     * is about which is usually the headline, not about locking half the book away.
+     * Shuffled within each tier, so WHICH new page and WHICH upgrade still varies.
      */
-    const fusing = handSize() >= 2;
-    const lead = fusing ? unowned : owned;
-    const bag = [...owned, ...unowned];
-    const weights = bag.map((id) => (lead.includes(id) ? PAGE_LEAD : 1));
-    const ordered: string[] = [];
-    while (bag.length) {
-      const pick = rng.weighted(bag, weights);
-      const i = bag.indexOf(pick);
-      bag.splice(i, 1);
-      weights.splice(i, 1);
-      ordered.push(pick);
-    }
+    const gone = golden ? [golden.id] : [];
+    const ordered = [
+      ...rng.shuffle(unowned.filter((id) => !gone.includes(id))),
+      ...rng.shuffle(owned.filter((id) => !gone.includes(id))),
+    ];
 
     /**
      * At most ONE sacrifice and at most one star payout per roll.
@@ -1481,22 +1522,30 @@ async function boot(): Promise<void> {
         once.add(o.kind);
         return true;
       });
+    // The gilded page leads, and `pageSlots` is never below 1, so a golden that
+    // rolled always reaches the table: when it is on the table it IS the table.
     // A maxed page pays stars, which is not a spell, so that sinks below every page
     // that still has something to teach. Otherwise "at least one spell" could be
     // satisfied by a card that grants no spell.
     const pages = [
+      ...(golden ? [golden] : []),
       ...offerable.filter((o) => o.kind !== 'star'),
       ...offerable.filter((o) => o.kind === 'star'),
     ];
     const extras = rollExtras(rng);
 
     /**
-     * How many of the three slots are pages. One is the floor — no roll is ever
-     * spell-free — and two is the usual shape, so the altar still reads as the
-     * place spells come from while everything else it can hand out is genuinely on
-     * the table rather than decorating a page draw.
+     * How many of the three slots are pages. THREE is now the common shape and one
+     * is the rare one, where it used to be the other way about.
+     *
+     * An altar is the place spells come from. Every non-page slot is that promise
+     * being spent on something else, and at 3/5/2 the average roll put more than one
+     * card on heals, charges and payouts — so the stone you crossed a floor for
+     * routinely offered a single spell and two consolations. Weighted this way it
+     * averages a shade over two and a half pages, and a roll with two non-page cards
+     * takes a 1-in-10 to happen at all.
      */
-    const pageSlots = Math.max(1, rng.weighted([1, 2, 3], [3, 5, 2]));
+    const pageSlots = Math.max(1, rng.weighted([1, 2, 3], [1, 4, 5]));
 
     const chosen: AltarOffer[] = [];
     let pi = 0, xi = 0;
@@ -1508,8 +1557,11 @@ async function boot(): Promise<void> {
       const o = chosen.length < pageSlots
         ? nextPage() ?? nextExtra()
         : nextExtra() ?? nextPage();
-      if (!o) break;
-      chosen.push(o);
+      if (o) { chosen.push(o); continue; }
+      // Both dry. One stars card and then stop: a slot with nothing in it is better
+      // than a second identical payout, which is a menu pretending to be a choice.
+      chosen.push(starsBackstop());
+      break;
     }
     // Shuffled for POSITION only: which offers made it in is already decided, so
     // this just stops the guaranteed spell always being the top card.
@@ -1606,7 +1658,16 @@ async function boot(): Promise<void> {
    * shaped a cast would duplicate an ingredient. What is left — and what is actually
    * interesting — is what you START with, and the three sit on three different axes
    * so the choice is about how you want to play rather than which number is largest:
-   * BREADTH (a fourth page), AGENCY (a reroll in hand), POWER (a page already deep).
+   * BREADTH (a fourth page), ENDURANCE (a longer bar), POWER (a page already deep).
+   *
+   * The middle axis used to be AGENCY, a banked reroll charge, and it was the axis
+   * that never got picked. A reroll is not a thing you get, it is a thing you get to
+   * ask for later — you trade a certain prize now against a hope that some altar
+   * further down offers better, which is a worse bargain the moment either of the
+   * other two cards is a spell. Rerolls are gone from the game entirely; endurance
+   * replaces it because it is the one run-level axis left that is neither a page nor
+   * a cast, and unlike a charge it is worth exactly as much at the mouth as it is on
+   * floor five.
    */
   const rollBlessings = (): AltarOffer[] => {
     const rng = new Rng(`${meta.best}:${state.depth}:blessing`);
@@ -1638,9 +1699,10 @@ async function boot(): Promise<void> {
         colour: extra.colour, detail: `Begin the run with ${extra.name} in the book.`,
       },
       {
-        ...blank, kind: 'blessing', id: '', name: 'A Second Chance', tag: 'a spare hand',
-        colour: 0x8cc8ff, amount: 1,
-        detail: 'Begin with a reroll charge banked, to turn over any altar.',
+        ...blank, kind: 'blessing', id: '', name: 'A Longer Breath', tag: 'a deeper well',
+        colour: 0x8ce06a, amount: BLESSING_HP,
+        detail: `Begin with ${BLESSING_HP} more health, and keep it for the whole `
+          + 'descent — the bar itself is bigger, not merely full.',
       },
       /**
        * Named off the LADDER and not as "<page> II". A deepened Frost is a
@@ -1858,8 +1920,14 @@ async function boot(): Promise<void> {
         learnPage(o.id);
         hud.addLog(`You set out with ${o.name} already in the book.`, o.colour);
       } else {
-        state.rerolls += o.amount;
-        hud.addLog('You set out with a reroll charge in hand.', o.colour);
+        // Both, and in that order. Raising the ceiling alone would hand the player a
+        // bar that begins the run already missing the blessing they just took.
+        state.maxHp += o.amount;
+        state.hp += o.amount;
+        hud.addLog(
+          `You set out with a deeper well — ${state.maxHp} health, and all of it.`,
+          o.colour,
+        );
       }
       hud.setShout('BLESSED', o.colour);
       return;
@@ -1960,14 +2028,16 @@ async function boot(): Promise<void> {
         hud.setShout(got ? `${name.toUpperCase()} ×${got}` : 'NOWHERE TO KEEP IT', o.colour);
         break;
       }
-      case 'reroll':
-        state.rerolls += o.amount;
-        hud.setShout('REROLL CHARGE', 0x8cc8ff);
-        hud.addLog(
-          `You pocket a charge. ${state.rerolls} in hand — spend one at any altar.`,
-          0x8cc8ff,
-        );
-        break;
+      /**
+       * No `reroll` case, and no reroll offer to reach it.
+       *
+       * A charge was a card that paid out in maybe: you gave up a certain prize for
+       * the right to ask a later altar for a better one, which is the worst trade on
+       * a table whose other two cards are spells. Both grants are gone — this card
+       * and the mouth blessing — so `state.rerolls` is now permanently 0 and the
+       * pill and the modal button, both guarded on `> 0`, never draw. The spend path
+       * survives for the debug harness only.
+       */
       case 'star':
         // Still the settled rule: a rolled page with no rank left to give pays 2
         // stars, so the run funds the meta exactly when it has nothing left to
@@ -2339,15 +2409,21 @@ async function boot(): Promise<void> {
        * function the shove uses, asked the same question.
        */
       /**
-       * THE PLATE FIRES ON ARRIVAL AND BEFORE THE ROUND.
+       * THE PLATES ARE RE-READ ON EVERY ARRIVAL, not only when one is stepped ONTO.
        *
-       * Before, because the gate opening is the consequence of the step the player
-       * just spent, and a countdown that started a round late would be a countdown
-       * that lies by one — which on a five-turn walk is twenty per cent of the
-       * mechanic. The first tick then comes off it in the same round, which is
-       * correct: standing on the plate is itself a turn.
+       * Which is the whole of the hold-to-open rule: the interesting half is stepping
+       * OFF, and "you left the plate" is not an event anybody would fire — it is the
+       * absence of one. Asking the question after every step catches both, and
+       * catches a body walking off a plate too.
        */
-      if (floor.grid.surfaceAt(x, y) === Surface.Plate) combat.pressPlate(x, y);
+      {
+        const g = floor.grid;
+        const before = g.doors.map((d) => g.doorLift[d.i]);
+        if (combat.refreshPlates()) {
+          const moved = g.doors.findIndex((d, k) => g.doorLift[d.i] !== before[k]);
+          if (moved >= 0) showDoor(g.doors[moved].i, before[moved], g.doorLift[g.doors[moved].i]);
+        }
+      }
 
       /**
        * A LADDER IS A CLIMB IN BOTH DIRECTIONS.
@@ -2462,6 +2538,20 @@ async function boot(): Promise<void> {
      * adjacent. A lever worked from across the room would be the one interaction in
      * the game that reaches, and reaching is what spells are for.
      */
+    showDoor = (i: number, from: number, to: number): void => {
+      if (Math.abs(to - from) < 0.001) return;
+      const g = floor.grid;
+      // Hold it where it WAS while the camera travels, so the move is watched and
+      // not discovered — the rule has already changed, only the picture is waiting.
+      floor.clockView.setLift(i, from);
+      cutToward(
+        i % g.w,
+        (i / g.w) | 0,
+        undefined,
+        (u) => { floor.clockView.setLift(i, from + (to - from) * u); },
+      );
+    };
+
     throwLever = (e: Entity): void => {
       const d = Math.abs(e.sprite.tx - stepper.x) + Math.abs(e.sprite.ty - stepper.y);
       if (d > 1) {
@@ -2469,31 +2559,12 @@ async function boot(): Promise<void> {
         return;
       }
       const bd = floor.grid.bossDoor;
+      if (!bd) return;
+      const g = floor.grid;
+      const before = g.doorLift[bd.i];
       const r = combat.pullLever(e.sprite.tx, e.sprite.ty);
-      if (r === 'opened' && bd) {
-        const g = floor.grid;
-        // Shut it straight back and let the CUT open it, once the camera is there.
-        g.doorOpen[bd.i] = 0;
-        floor.syncClock();
-        cutToward(
-          bd.i % g.w,
-          (bd.i / g.w) | 0,
-          () => {
-            /**
-             * The RULE opens here — the tile is walkable from this instant, before
-             * the bars have finished travelling. Nobody can act during a cut, so the
-             * gap costs nothing, and the alternative is a door that is visibly open
-             * and mechanically shut for two and a half seconds.
-             */
-            g.doorOpen[bd.i] = 1;
-            floor.clockView.doorLift = 0;
-            floor.syncClock();
-            fx.burst(new THREE.Vector3(bd.i % g.w, 0.6, (bd.i / g.w) | 0), 0xffc23e, 1.2);
-          },
-          // and the PICTURE follows, on the winch's own clock
-          (u) => { floor.clockView.doorLift = u; },
-        );
-      }
+      if (r === null) return;
+      showDoor(bd.i, before, g.doorLift[bd.i]);
     };
 
     /**
@@ -3710,20 +3781,20 @@ async function boot(): Promise<void> {
      */
     hudAt: (x: number, y: number) => hud.hit(x, y).kind,
     /** Resolve a tap against the HUD, so a drawn control can be proven tappable. */
-    /** Fire the door cut at a tile, so it can be watched without finding two levers. */
-    cine: (x: number, y: number) => {
-      const g = floor.grid, bd = g.bossDoor;
-      if (bd) { g.doorOpen[bd.i] = 0; floor.clockView.doorLift = 0; floor.syncClock(); }
-      cutToward(
-        x, y,
-        () => {
-          if (!bd) return;
-          g.doorOpen[bd.i] = 1;
-          floor.clockView.doorLift = 0;
-          floor.syncClock();
-        },
-        (u) => { floor.clockView.doorLift = u; },
-      );
+    /**
+     * Wind a door to a position and watch it go, without finding two levers first.
+     *
+     * `to` is the fraction, so a two-lever door can be driven to a half and the
+     * partial state actually looked at — which is the state that only exists on a
+     * floor you have half solved.
+     */
+    cine: (x: number, y: number, to = 1) => {
+      const g = floor.grid;
+      const i = g.idx(Math.round(x), Math.round(y));
+      const from = g.doorLift[i];
+      g.setDoorLift(i, to);
+      floor.syncClock();
+      showDoor(i, from, to);
     },
     tapHud: (x: number, y: number) => {
       const a = hud.hit(x, y);

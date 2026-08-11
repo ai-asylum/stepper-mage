@@ -183,14 +183,36 @@ export class ClockView {
   private barGeoTop: THREE.PlaneGeometry;
   private shaftGeo: THREE.PlaneGeometry;
   /**
-   * How far the BOSS DOOR has been raised, 0 shut to 1 gone.
+   * How far each door is DRAWN, per tile, which is not the same as how far it is.
    *
-   * Driven by the cutscene rather than by the rule: the gate is unlocked the moment
-   * the last lever is thrown, and this is the several seconds it takes to physically
-   * grind out of the way while somebody watches.
+   * `Grid.doorLift` is the rule and changes the instant a lever is thrown. This is
+   * the picture, and it lags — a cut flies to the door and then winds this from the
+   * old position to the new one over a couple of seconds, so the player watches the
+   * thing move instead of finding it moved. Between cuts the two agree.
+   *
+   * A map rather than one number, because a floor has a boss door and a gate on it
+   * and they are not the same door.
    */
-  doorLift = 0;
-  private bossBars: THREE.Mesh | null = null;
+  private lift = new Map<number, number>();
+  private barMesh = new Map<number, THREE.Mesh>();
+
+  /** Where a door should be DRAWN. Driven by the cut; see `showDoor` in main. */
+  setLift(i: number, k: number): void {
+    this.lift.set(i, Math.max(0, Math.min(1, k)));
+    const m = this.barMesh.get(i);
+    if (m) this.applyLift(m, this.lift.get(i) ?? 0);
+  }
+
+  /** What the drawing believes, falling back to the rule for a door nobody has cut to. */
+  private liftOf(g: Grid, i: number): number {
+    return this.lift.get(i) ?? g.doorLift[i];
+  }
+
+  private applyLift(m: THREE.Mesh, k: number): void {
+    const h = Math.max(0, 1 - k);
+    m.scale.set(1, h, 1);
+    m.visible = h > 0.02;
+  }
   private pool: THREE.Mesh[] = [];
   private live = 0;
   private spikeGeo: THREE.PlaneGeometry;
@@ -269,6 +291,32 @@ export class ClockView {
   }
 
   /**
+   * ONE PORTCULLIS DRAW, for the boss door and for a plate's gate alike.
+   *
+   * They were two blocks doing the same thing badly in two different ways — one
+   * centred on a fixed quad and one top-anchored, so a gate and a boss door on the
+   * same floor hung at different heights. To the player's feet they are the same
+   * object, and now they are the same drawing: bars hung from the lintel, retracting
+   * upward into it by however far this door has been wound.
+   */
+  private drawDoor(g: Grid, i: number, x: number, y: number, e: number, across: boolean): void {
+    const k = this.liftOf(g, i);
+    if (k >= 0.99) { this.barMesh.delete(i); return; }
+    const m = this.take();
+    const mat = m.material as THREE.MeshBasicMaterial;
+    mat.map = this.art.gate ?? null;
+    mat.opacity = 1;
+    mat.needsUpdate = true;
+    m.geometry = this.barGeoTop;
+    m.rotation.set(0, across ? Math.PI / 2 : 0, 0);
+    // hung from the lintel, so what retracts is the bottom edge
+    m.position.set(x, e + WALL_H, y);
+    this.lit(m, g, x, y);
+    this.applyLift(m, k);
+    this.barMesh.set(i, m);
+  }
+
+  /**
    * Put a quad in the room's LIGHT, which a `MeshBasicMaterial` will never do on its
    * own.
    *
@@ -285,7 +333,40 @@ export class ClockView {
    */
   private lit(m: THREE.Mesh, g: Grid, x: number, y: number, k = 1): void {
     const l = Math.max(0.07, g.lightAt(x, y)) * k;
+    // kept, because `update` re-applies it every frame with the distance falloff on
+    m.userData.lit = l;
     (m.material as THREE.MeshBasicMaterial).color.setScalar(l);
+  }
+
+  /**
+   * THE SAME FALLOFF THE ROOM HAS. Applied per frame, because it depends on where
+   * you are standing.
+   *
+   * Every quad in this file is a `MeshBasicMaterial` with `fog: false`, so the
+   * dungeon's exponential fog — the thing that takes a corridor down to almost
+   * nothing forty tiles out — never touched any of them. The room receded and the
+   * gate did not, so a portcullis at the far end of a dark passage came out as a
+   * bright white rectangle floating in the black: the single most visible object on
+   * the screen, at the greatest possible distance, which is the exact inverse of
+   * what it should be.
+   *
+   * Matched to `uFogDensity` in `render` rather than guessed. Approximated as a
+   * multiply toward black instead of a mix toward the fog colour, which is the one
+   * thing a basic material's `color` can do — and at the distances where the
+   * difference would show, both answers are indistinguishable from dark.
+   */
+  private static readonly FOG_DENSITY = 0.016;
+
+  private refog(cam: THREE.Vector3): void {
+    for (let k = 0; k < this.live; k++) {
+      const m = this.pool[k];
+      const base = m.userData.lit as number | undefined;
+      if (base === undefined) continue;
+      const dx = m.position.x - cam.x, dy = m.position.y - cam.y, dz = m.position.z - cam.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      const f = Math.exp(-ClockView.FOG_DENSITY * d2);
+      (m.material as THREE.MeshBasicMaterial).color.setScalar(base * f);
+    }
   }
 
   private take(): THREE.Mesh {
@@ -315,7 +396,7 @@ export class ClockView {
    */
   sync(g: Grid): void {
     this.live = 0;
-    this.bossBars = null;
+    this.barMesh.clear();
 
     /**
      * Hazards are OBJECTS now, not decals, so each kind is placed differently and
@@ -478,18 +559,7 @@ export class ClockView {
        */
       const across = g.walkable(x - 1, y) || g.walkable(x + 1, y);
 
-      if (d.turns <= 0) {
-        const m = this.take();
-        const mat = m.material as THREE.MeshBasicMaterial;
-        mat.map = this.art.gate ?? null;
-        mat.opacity = 1;
-        mat.needsUpdate = true;
-        m.geometry = this.barGeo;
-        m.rotation.set(0, across ? Math.PI / 2 : 0, 0);
-        m.position.set(x, e + 0.52, y);
-        this.lit(m, g, x, y);
-        continue;
-      }
+      this.drawDoor(g, d.i, x, y, e, across);
 
     }
 
@@ -553,19 +623,7 @@ export class ClockView {
       const x = bd.i % g.w, y = (bd.i / g.w) | 0;
       const e = g.heightAt(x, y) * STEP_H;
       const across = g.walkable(x - 1, y) || g.walkable(x + 1, y);
-      if (!g.doorOpen[bd.i] || this.doorLift < 1) {
-        const m = this.take();
-        const mat = m.material as THREE.MeshBasicMaterial;
-        mat.map = this.art.gate ?? null;
-        mat.opacity = 1;
-        mat.needsUpdate = true;
-        m.geometry = this.barGeoTop;
-        m.rotation.set(0, across ? Math.PI / 2 : 0, 0);
-        // top-anchored: the head-beam sits where the ceiling is, bars hang below
-        m.position.set(x, e + 0.52 + 1.05 / 2, y);
-        this.lit(m, g, x, y);
-        this.bossBars = m;
-      }
+      this.drawDoor(g, bd.i, x, y, e, across);
     }
 
     for (let i = this.live; i < this.pool.length; i++) this.pool[i].visible = false;
@@ -582,12 +640,7 @@ export class ClockView {
    * how long the trip takes.
    */
   update(cam?: THREE.Vector3): void {
-    // The gate, mid-grind. Scaled from its head-beam so the bars retract upward.
-    if (this.bossBars) {
-      const k = Math.max(0, 1 - this.doorLift);
-      this.bossBars.scale.set(1, k, 1);
-      this.bossBars.visible = k > 0.02;
-    }
+    if (cam) this.refog(cam);
     for (const m of this.moving) {
       m.at += (m.target - m.at) * EASE;
       if (m.kind === 'spikes') {

@@ -741,15 +741,31 @@ function placeGate(g: Grid, rng: Rng): boolean {
     const x = i % g.w, y = (i / g.w) | 0;
     const wasTile = g.tiles[i];
     g.tiles[i] = Tile.Door;
-    g.doorOpen[i] = 0;
+    g.setDoorLift(i, 0);
 
     // Reachable with the gate SHUT — this is the set the plate has to be inside.
     const shut = reachable(g);
-    g.doorOpen[i] = 1;
+    g.setDoorLift(i, 1);
     const open = reachable(g);
-    g.doorOpen[i] = 0;
+    g.setDoorLift(i, 0);
 
-    // It has to gate something: a door that changes nothing is scenery with a timer.
+    /**
+     * NOTHING THE RUN NEEDS MAY BE BEHIND IT.
+     *
+     * This check did not exist and did not need to, because a gate used to open for
+     * eight turns: anything behind one was reachable by anybody who walked at it. A
+     * plate now HOLDS its gate up, so whoever opens it is standing on the plate and
+     * cannot also be walking through the door — a lone player never passes one.
+     *
+     * So the gate has to be a side door, always. If the stairs or the start end up
+     * on the far side of it the floor is simply unfinishable, and that is a bug you
+     * would only find on the one seed in forty that produced it.
+     */
+    let stranded = false;
+    for (const j of sacred) if (!shut[j]) { stranded = true; break; }
+    if (stranded) { g.tiles[i] = wasTile; continue; }
+
+    // It has to gate something: a door that changes nothing is scenery.
     let gated = 0;
     for (let j = 0; j < open.length; j++) if (open[j] && !shut[j]) gated++;
     if (gated < 6) { g.tiles[i] = wasTile; continue; }
@@ -769,16 +785,7 @@ function placeGate(g: Grid, rng: Rng): boolean {
 
     const plate = rng.pick(plates);
     g.surface[plate] = Surface.Plate;
-    const px = plate % g.w, py = (plate / g.w) | 0;
-    /**
-     * The span is the walk plus a couple of turns of slack, so the gate is
-     * REACHABLE BY A PLAYER WHO PLANS and not by one who wanders. Measured against
-     * the actual path with the gate open, not against the map distance — the whole
-     * point is that the arithmetic is honest.
-     */
-    const dist = g.flood(px, py, g.w * g.h);
-    const steps = dist[i];
-    g.doors.push({ i, plate, turns: 0, span: Math.max(4, Math.min(8, (steps < 0 ? 6 : steps) + 2)) });
+    g.doors.push({ i, plate });
     return true;
   }
   return false;
@@ -822,35 +829,56 @@ function lock(g: Grid, rng: Rng, depth: number): void {
       if (g.surface[i] !== Surface.Plain || g.at(x, y) !== Tile.Floor) continue;
       if (g.hazards.some((h) => g.idx(h.x, h.y) === i)) continue;
       if (g.doors.some((d) => d.i === i || d.plate === i)) continue;
-      if (DIR_VEC.some(([dx, dy]) => own.has(g.idx(x + dx, y + dy)))) thresholds.push(i);
+      if (!DIR_VEC.some(([dx, dy]) => own.has(g.idx(x + dx, y + dy)))) continue;
+      /**
+       * A CHOKEPOINT, not just a tile beside the boss room.
+       *
+       * A portcullis is one tile wide because it hangs in a doorway. Dropped into one
+       * tile of a three-wide opening it is a grille standing in mid-air with a gap
+       * either side of it — which is what it looked like, and the complaint was that
+       * the art was too narrow. The art is fine; it was being hung in a hole four
+       * times its size.
+       *
+       * Exactly two open neighbours is a passage. `placeGate` has always asked for
+       * this and `lock` never did.
+       */
+      let open = 0;
+      for (const [dx, dy] of DIR_VEC) if (g.walkable(x + dx, y + dy)) open++;
+      if (open === 2) thresholds.push(i);
     }
   }
   if (!thresholds.length) return;
 
   /**
-   * EVERY TIMED GATE COUNTS AS OPEN while this pass reasons.
+   * A TIMED GATE IS ASSUMED SHUT NOW, not open — and that is a load-bearing flip.
    *
-   * A gate on a plate is not a barrier, it is a delay — the player can always open it,
-   * so a route into the boss room that runs through one is a route. Testing with them
-   * shut said otherwise, and accepted boss doors that gated nothing: fifteen floors in
-   * six hundred could be finished by pressing a plate and walking past the lock with
-   * every socket still dark, which is the one thing this phase must not allow.
+   * It assumed open when a plate bought a countdown: press it, walk through, the
+   * gate was a toll and not a wall. A plate now HOLDS its gate up only while
+   * something stands on it, so the thing that opens the gate is the thing that
+   * cannot go through it. Nobody can pass one alone.
+   *
+   * Which means a gate must never be on the way to anything the run needs. Checking
+   * finishability with them open would let generation put one across the only route
+   * to the stairs and call the floor sound; checking with them shut is the honest
+   * question — is this floor completable by somebody who never solves a single gate?
+   * Everything behind one is therefore optional by construction, which is also what
+   * makes it worth putting something there.
    */
   const gatesWere = g.doors.map((d) => g.doorOpen[d.i]);
-  for (const d of g.doors) g.doorOpen[d.i] = 1;
-  const restore = () => { g.doors.forEach((d, k) => { g.doorOpen[d.i] = gatesWere[k]; }); };
+  for (const d of g.doors) g.setDoorLift(d.i, 0);
+  const restore = () => { g.doors.forEach((d, k) => { g.setDoorLift(d.i, gatesWere[k]); }); };
 
   for (const i of rng.shuffle(thresholds).slice(0, 8)) {
     const was = g.tiles[i];
     g.tiles[i] = Tile.Door;
-    g.doorOpen[i] = 0;
+    g.setDoorLift(i, 0);
     const shut = reachable(g);
 
     // Does it gate the boss at all? If any boss tile is still reachable with the door
     // shut, the room has another way in and this door is decoration.
     let leaks = false;
     for (const j of own) if (shut[j]) { leaks = true; break; }
-    if (leaks) { g.tiles[i] = was; g.doorOpen[i] = 0; continue; }
+    if (leaks) { g.tiles[i] = was; g.setDoorLift(i, 0); continue; }
 
     /**
      * Levers go in ROOMS, one per room, as far from each other as the floor allows —
@@ -872,7 +900,7 @@ function lock(g: Grid, rng: Rng, depth: number): void {
       .sort((a, b) => b.far - a.far);
 
     const wanted = depth >= 8 ? 3 : 2;
-    if (candidates.length < wanted) { g.tiles[i] = was; g.doorOpen[i] = 0; continue; }
+    if (candidates.length < wanted) { g.tiles[i] = was; g.setDoorLift(i, 0); continue; }
 
     const levers: number[] = [];
     for (const c of candidates.slice(0, wanted)) levers.push(rng.pick(c.tiles));
