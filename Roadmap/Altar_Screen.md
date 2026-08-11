@@ -36,8 +36,11 @@ Then it arrives in the book looking like every other page.
   The art was authored once off the rank-1 name, so an upgrade offer was a card headed
   "Flame" under a caption reading "Fireball" — the object contradicting the sentence
   describing it, and reading as a second copy of a page already held.
-- **The golden page is gold everywhere.** On the altar and in the book after it is
-  claimed. It is a one-run gift and it should look like one for the whole run.
+- **The golden page is gold everywhere, on the run that WINS it.** On the altar, and
+  in the book from the moment it is claimed until that descent ends. The gift it
+  leaves is a different thing and carries no gold: the next run begins holding the
+  page as an ordinary sheet. Gilding the gift instead put the mark on the descent
+  that had not earned it and showed nothing at all to the descent that had.
 
 ## Out of scope
 

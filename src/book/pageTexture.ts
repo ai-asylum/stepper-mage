@@ -1183,10 +1183,13 @@ let blankTex: THREE.Texture | null = null;
 /**
  * The pages of the book that are GILDED, by spell id.
  *
- * A golden page is a one-run gift, and `Roadmap/Altar_Screen.md` is specific that it
- * should look like one for the whole run rather than only on the altar that offered
- * it — it used to arrive in the book looking like every other page, which made the
- * rarest thing in the roll the least remarkable thing in the grimoire.
+ * GILDED IS THE RUN YOU WON IT IN, and nothing after that.
+ *
+ * The gold is a trophy for the altar you took it from — you claim it, and the page is
+ * gold in your hand for the rest of that descent. The gift it leaves is a separate
+ * thing: the next run BEGINS holding that page, and holds it as an ordinary sheet.
+ * Carrying the gold forward instead put it on the one run that had not earned it and
+ * took it off the one that had, so the mark never coincided with the moment.
  *
  * A set rather than a flag on the spell, because gilding is a property of THIS RUN's
  * copy: the same Fireball is an ordinary page in the next one.
@@ -1194,11 +1197,21 @@ let blankTex: THREE.Texture | null = null;
 const gilded = new Set<string>();
 
 export function setGilded(id: string | null): void {
+  /**
+   * Evicted by SIGIL id, which is what `pageArt` caches on — `gilded` is keyed by
+   * GAME id, and deleting the game id from that cache hit nothing at all. It never
+   * showed while this was only ever called at boot, before a page had been drawn;
+   * gilding one MID-RUN is what needs the eviction to actually land, because the page
+   * being gilded is by definition one the book is already holding.
+   *
+   * Both the old id and the new one, so putting the gold on a page takes it off the
+   * last one in the same call.
+   */
+  const touched = new Set([...gilded, ...(id ? [id] : [])]);
   gilded.clear();
-  if (id) {
-    gilded.add(id);
-    // The art is cached per spell, and this one has to be re-authored in gold.
-    artCache.delete(id);
+  if (id) gilded.add(id);
+  for (const gameId of touched) {
+    for (const pg of ALL_PAGES) if (pg.gameId === gameId) artCache.delete(pg.id);
   }
 }
 

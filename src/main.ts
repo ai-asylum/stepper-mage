@@ -312,11 +312,19 @@ async function boot(): Promise<void> {
   /** Kept for the log line the first floor raises: a gift has to be announced. */
   const gifted = takeGift();
   /**
-   * The gilded page is gold in the BOOK too, for the whole run — not just on the
-   * altar that offered it. It is the one thing that crosses a run boundary, and it
-   * used to arrive in the grimoire looking like every other page.
+   * A GIFT ARRIVES AS AN ORDINARY PAGE. The gold belonged to the run that won it.
+   *
+   * This used to gild whatever the last run left, which put the mark on the descent
+   * that had not earned it and left the descent that had looking like every other:
+   * you took the rarest thing the altar offers, and the book you were holding when you
+   * took it did not change at all. The gold goes on at the altar now (see the `golden`
+   * case in `chooseOffer`) and comes off with the run, so what crosses the boundary is
+   * the PAGE and not the trophy.
+   *
+   * Called with null rather than skipped, because the gilded set outlives a reload in
+   * module scope and a run that began with no gift must not inherit the last one's.
    */
-  setGilded(gifted);
+  setGilded(null);
   /**
    * A run now BEGINS EMPTY, or holding nothing but last run's gift.
    *
@@ -1982,6 +1990,22 @@ async function boot(): Promise<void> {
           learnPage(o.id);
         }
         giftGolden(o.id);
+        /**
+         * AND IT TURNS GOLD IN YOUR HAND, NOW, ON THE RUN THAT WON IT.
+         *
+         * The gild used to be applied at the START of the next run, to the page this
+         * one left behind — so the descent where you actually beat the odds and took
+         * the rarest card on the table showed you nothing, and a later descent you
+         * had not earned opened on a gold sheet for no reason it could name. The
+         * trophy has to coincide with the moment or it is not a trophy.
+         *
+         * `book.refresh` explicitly: `learnPage` only runs for a page not already
+         * held, and `syncPageRanks` below rebuilds only when a RANK moved, so a
+         * golden claimed on a page the run is already carrying would change the art
+         * and never redraw it.
+         */
+        setGilded(o.id);
+        book.refresh();
         hud.setShout(`${o.name.toUpperCase()} GILDED`, 0xffcf5c);
         hud.addLog(
           `${o.name} is gilded — you begin your next descent holding it, that descent only.`,
