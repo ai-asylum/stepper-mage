@@ -1,7 +1,7 @@
 # Dungeon Shape
 
 **Player-facing:** yes
-**Status:** in progress
+**Status:** shipped
 **Started:** 2026-08-10
 
 Where the boss stands, where the way down is, and when the map admits it exists.

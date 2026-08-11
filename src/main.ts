@@ -1908,17 +1908,31 @@ async function boot(): Promise<void> {
    * SUBJECT before the first tile, and the altar's second page is an answer to a
    * question the player actually asked.
    *
-   * The menu is `meta.loadout` — what the star tree has bound — minus anything last
-   * run already gifted, so the gift widens the book instead of paying for a rung of
-   * it twice.
+   * THE MENU IS ROLLED, not listed.
+   *
+   * It used to be `meta.loadout`, which nothing writes any more — so it was the same
+   * three cards, in the same order, at the mouth of every run this game has ever
+   * begun. A question whose three answers never change is not a question the second
+   * time it is asked; it is a keypress on the way to the first floor.
+   *
+   * Drawn off the whole page pool on the RUN's seed, so the pick you make is a
+   * reaction to what the dungeon offered rather than a habit. What the star tree
+   * buys here is the WIDTH of the menu — `meta.slots`, the same number that used to
+   * be the size of the starting book — which keeps the binding worth paying for
+   * while leaving which pages appear to the roll.
+   *
+   * Minus anything last run already gifted, so the gift widens the book instead of
+   * paying for a rung of it twice.
    *
    * Granted silently when it is not a choice. A tree trimmed to a single binding, or
    * a gift that leaves one page on the menu, produces a modal with one card and no
    * decision, which is the toll `offerStartDepth` refuses to charge for the same
    * reason.
    */
-  const startPageMenu = (): string[] =>
-    meta.loadout.filter((id) => id !== gifted && SPELL_BY_ID[id]);
+  const startPageMenu = (): string[] => {
+    const pool = ELEMENT_SPELLS.map((sp) => sp.id).filter((id) => id !== gifted);
+    return new Rng(`${runSeed}-start-page`).sample(pool, meta.slots);
+  };
 
   const grantStartPage = (id: string): void => {
     state.ranks[id] = 1;
@@ -1939,7 +1953,10 @@ async function boot(): Promise<void> {
     hud.offers = menu.map((id) => {
       const sp = SPELL_BY_ID[id];
       return {
-        kind: 'startPage' as const, id, name: sp.name, tag: 'the one page',
+        // No tag. The same three words over all three cards labelled nothing — the
+        // subtitle already says you carry one — and `hud` draws nothing for an
+        // empty one.
+        kind: 'startPage' as const, id, name: sp.name, tag: '',
         colour: sp.colour, detail: sp.effect,
         cost: null, amount: 0, rank: 1, toRank: 0, maxRank: MAX_RANK, golden: false,
       };
@@ -2264,6 +2281,11 @@ async function boot(): Promise<void> {
       fx.shake = Math.min(1.5, fx.shake + 0.9);
       void descend();
     };
+    /**
+     * The one door a CAST can open: a block shoved onto a plate. Watched exactly the
+     * way a lever and a boot on a plate are, through the same cut.
+     */
+    combat.onDoorMoved = (i, from, to) => { showDoor(i, from, to); };
     combat.onPlayerHurt = (amount, by) => {
       /**
        * The STRIKE only plays for something you are looking at.

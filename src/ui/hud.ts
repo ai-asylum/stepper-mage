@@ -28,8 +28,9 @@ import { Pix, hex } from '../art/pixel';
 import { drawCentered, CELL_H } from '../art/bitfont';
 import * as THREE from 'three';
 import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
-import { PORTAL_HUES } from '../art/tiles';
+import { PORTAL_HUES, STEP_H } from '../art/tiles';
 import { spriteTexture } from '../dungeon/sprites';
+import { BLOCK_H } from '../dungeon/clockView';
 import type { Floor } from '../game/floor';
 import { CARD_H, CARD_W, pageCard, scrollCard } from '../book/offerCard';
 import { ALL_PAGES } from '../spells/pages';
@@ -913,6 +914,29 @@ export class Hud {
          */
         const corner = { x: 0, y: 0, behind: false };
         const pts: [number, number][] = [];
+        /**
+         * A BLOCK IS MARKED ON THE TOP OF IT, not on the tile under it.
+         *
+         * The two things a tile target can be are now opposite shapes: burning ground
+         * lies flat, and a block stands nearly to the ceiling. Ringing the floor plane
+         * under a block draws the outline where the stone is hiding it and puts the
+         * tap region at its feet — so most of the object the player is looking at is
+         * not the thing they can press. Lifting both to the lid fixes the same defect
+         * twice, because the outline IS the hit region.
+         */
+        /**
+         * AND IT STANDS ON ITS OWN FLOOR, which is not always the plane y=0.
+         *
+         * The corners were projected at zero flat, which was right for as long as
+         * every tile in the game was at zero. Verticality made it wrong for both
+         * kinds of tile target — a fire in a sunken room got its outline drawn a
+         * whole storey above the flames — and it is only visible at all in the rooms
+         * that step, which is why it survived.
+         */
+        const cg = this.map ? this.map().floor.grid : null;
+        const lift = cg
+          ? cg.heightAt(c.x, c.y) * STEP_H + (cg.at(c.x, c.y) === Tile.Block ? BLOCK_H : 0)
+          : 0;
         for (const [ox, oz] of [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]] as const) {
           /**
            * y = 0 exactly, which is the floor plane the tiles are built on.
@@ -923,7 +947,7 @@ export class Hud {
            * from five centimetres above the ground, and at this camera's grazing
            * angle that is a visible slide up-frame. The outline sat off its own tile.
            */
-          project(new THREE.Vector3(c.x + ox, 0, c.y + oz), corner);
+          project(new THREE.Vector3(c.x + ox, lift, c.y + oz), corner);
           if (corner.behind) { pts.length = 0; break; }
           pts.push([corner.x, corner.y]);
         }
@@ -1339,6 +1363,21 @@ export class Hud {
           : g.visited[g.idx(tx, ty)] ? '#c9b590'
           : '#6a5c48';
         ctx.fillRect(cx + 1, cy + 1, CELL - 2, CELL - 2);
+
+        /**
+         * A BLOCK is floor with something on it, and the map says exactly that: the
+         * floor tone, with a solid stone square standing in the middle of it.
+         *
+         * Not the wall tone edge to edge, which is what it would get for free by
+         * being impassable — and which would be a lie the moment you shove it, because
+         * the map would then be remembering a wall that is not there any more. Drawn
+         * inset instead, so the cell still reads as a square of floor and the mark on
+         * it is plainly a thing rather than the room.
+         */
+        if (kind === Tile.Block) {
+          ctx.fillStyle = '#4a4038';
+          ctx.fillRect(cx + 2, cy + 2, CELL - 4, CELL - 4);
+        }
 
         /**
          * PORTAL MOUTHS, in the pair's own colour, and no other surface.
@@ -3204,7 +3243,10 @@ export class Hud {
       ctx.fillStyle = o.kind === 'sacrifice' ? 'rgba(255,150,110,0.95)'
         : o.golden ? 'rgba(255,207,92,0.9)'
         : hexCss(o.colour, 0.9);
-      ctx.fillText(o.tag.toUpperCase(), x + cardW / 2, top - 10);
+      // An offer may carry no tag at all, and then nothing is drawn there. A line
+      // that is the same on all three cards is not a label, it is decoration in the
+      // one place the player is reading — see `offerStartPage`.
+      if (o.tag) ctx.fillText(o.tag.toUpperCase(), x + cardW / 2, top - 10);
 
       let ty = top + cardH + 20;
       ctx.font = 'bold 16px ui-serif, Georgia, serif';

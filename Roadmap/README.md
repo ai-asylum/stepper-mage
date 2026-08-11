@@ -31,14 +31,14 @@ played — check it before trusting it.
 | 9 | [Spell_Reach](Spell_Reach.md) | yes | shipped |
 | 10 | [Burning_Ground](Burning_Ground.md) | yes | shipped |
 | 11 | [Elemental_Spread](Elemental_Spread.md) | yes | shipped |
-| 12 | [Dungeon_Shape](Dungeon_Shape.md) | yes | in progress |
+| 12 | [Dungeon_Shape](Dungeon_Shape.md) | yes | shipped |
 | 13 | [First_Minutes](First_Minutes.md) | yes | shipped |
 | 14 | [Altar_Screen](Altar_Screen.md) | yes | shipped |
 | 15 | [Corpse_Raising_And_Golem_Persistence](Corpse_Raising_And_Golem_Persistence.md) | yes | paused |
 | 16 | [Guidance_And_Blessings](Guidance_And_Blessings.md) | yes | shipped |
 | 17 | [Deeper_Dungeon](Deeper_Dungeon.md) | yes | shipped |
 | 18 | [Descent_Unlocks](Descent_Unlocks.md) | yes | shipped |
-| 19 | [Polish_Pass](Polish_Pass.md) | yes | in progress |
+| 19 | [Polish_Pass](Polish_Pass.md) | yes | shipped |
 | 20 | [Ingredient_Belt](Ingredient_Belt.md) | yes | shipped, flagged off |
 | 21 | [Grid_Vocabulary](Grid_Vocabulary.md) | yes | shipped |
 | 22 | [Layout_Generators](Layout_Generators.md) | yes | shipped |

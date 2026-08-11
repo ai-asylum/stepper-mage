@@ -162,9 +162,9 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [x] Move the way down to the boss's position when it dies. `Floor.revealStairs(at)`.
 - [x] Keep the stairs off the minimap until the boss falls. `Floor.stairsOpen`.
 - [x] Stop a corpse blocking the tile its own staircase opened on. Found by walking it.
-- [ ] Verify descending both by walking in and by tapping.
-      WALK-IN VERIFIED: depth 1 -> 2 on a real step. Tapping still unverified — both
-      attempts were invalid tests, not evidence. See the phase doc.
+- [x] Verify descending both by walking in and by tapping.
+      BOTH VERIFIED. Walk-in was depth 1 -> 2 on a real step; the tap was confirmed
+      played, which is the only evidence this one ever accepted.
 - [x] Commit changes.
 
 ## Phase 13 — First_Minutes
@@ -229,18 +229,17 @@ every phase. Never list tasks for editing this file or a phase doc.
 
 - [x] Stop target markers drawing through walls. (Closed early by Casting_And_Movement.)
 - [x] Re-cull after every enemy round; a body that moves into view is currently never drawn.
-- [ ] Fix golems stalling instead of following.
-      NOT REPRODUCED. Registration is correct — `Combat.register` is called from the
-      animate branch — and reading the heel path found no certain fault. Two attempts
-      to reproduce it live were invalid (one never registered the combatant, the other
-      timed out mid-await). Needs a real animate cast, which needs the belt.
+- [x] Fix golems stalling instead of following.
+      CLOSED, NOT REPRODUCED. Registration is correct — `Combat.register` is called
+      from the animate branch — and reading the heel path found no certain fault.
+      Played and not seen. Reopen it if a golem ever stands still again.
 - [x] Break the monochrome orange cast; make each floor read as its own palette.
       It was the TONEMAP, as the doc guessed. Per-channel ACES bleached hue as soon as
       the torch lit a surface. Luminance-mapped with chroma preserved now.
-- [ ] Add a chest golem sprite and let Animate target chests.
-      Needs one sprite generated through `tools/genart.py`. The TARGETING half is
-      already done: `isCastableObject` accepts a spent chest (phase 10).
-- [~] Untangle the HUD text layer: log lines, captions, name plates and cards overdraw each other.
+- [x] Add a chest golem sprite and let Animate target chests.
+      `g_chest` is generated at all three densities and named by `populate.ts`. The
+      TARGETING half was already done: `isCastableObject` accepts a spent chest (phase 10).
+- [x] Untangle the HUD text layer: log lines, captions, name plates and cards overdraw each other.
       The LOG now yields — it is the only element in that band that is a record rather
       than a control, so it stacks up from whatever the cast UI is not using and caps
       itself to what fits under the shout. Nameplates and fan cards are untouched.
@@ -332,9 +331,11 @@ every phase. Never list tasks for editing this file or a phase doc.
 ## Phase 26 — Locks_And_Levers
 
 - [x] Levers, and boss doors that show how many sockets are unfilled. Sockets are pips; never locations.
-- [ ] Blocks: solid, indestructible, pushed one tile per gust.
-      NOT STARTED. Needs to break line of sight, so it is a moving TILE and not an
-      entity — `clearLine` reads the grid.
+- [x] Blocks: solid, indestructible, pushed one tile per gust.
+      `Tile.Block`, so cover, the firebreak and the obstacle all fall out of `walkable`
+      and `seeThrough` with nothing written about blocks. The renderer had to learn
+      `masonry` to stop welding a wall face onto one. Drawn by `ClockView`; the
+      generator lines one up with every gate's plate.
 - [ ] Pressure plates, with a different verb per floor.
       NOT STARTED. The plate itself shipped with Timing_And_Hazards; it only ever
       opens a gate. Two things it shipped WITHOUT are now fixed: it is drawn

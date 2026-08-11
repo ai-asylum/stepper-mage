@@ -68,6 +68,7 @@ export function generate(opts: GenOpts): Grid {
     raise(g, rng, opts.depth);
     wind(g, rng, opts.depth);
     lock(g, rng, opts.depth);
+    strew(g, rng, opts.depth);
   }
   placeLights(g, rng);
   bakeLight(g);
@@ -912,6 +913,103 @@ function lock(g: Grid, rng: Rng, depth: number): void {
   restore();
 }
 
+/**
+ * The blocks: stone you cannot break, cannot climb and can only shove.
+ *
+ * Two placements, and they are different objects wearing the same tile. One is the
+ * ANSWER TO A PLATE — a block lined up with a gate's plate, two or three tiles out,
+ * with a clear run between them and somewhere to stand behind it. That turns the
+ * plate from a problem with no solution into a problem with one: the thing that holds
+ * the gate up cannot be you, so it has to be this. Without it a lone player never
+ * passes a timed gate at all, which is why `placeGate` has to keep everything behind
+ * one optional.
+ *
+ * The rest are LOOSE, in rooms, and they are there for the other two jobs a block
+ * does for free by being a tile: cover that breaks line of sight, and a firebreak.
+ * They go where a body has room — three open neighbours — so one never starts life
+ * standing in a doorway.
+ *
+ * NOTHING IS PLACED THAT COSTS THE FLOOR A ROUTE. Every candidate is written in,
+ * flooded, and taken back out again if a single tile that was reachable stopped
+ * being reachable. It is the same check `lock` makes about its door and it is here
+ * for the same reason: a block is the one piece of furniture that can wall a floor
+ * off, and the push has its own half of this rule (see `Combat.pushBlock`).
+ */
+function strew(g: Grid, rng: Rng, depth: number): void {
+  if (depth < 3) return;
+
+  const sacred = new Set<number>([g.idx(g.start.x, g.start.y)]);
+  if (g.stairs) sacred.add(g.idx(g.stairs.x, g.stairs.y));
+  // Room centres carry the altar, the boss and the stairs — `populate` puts them
+  // there without asking whether the tile is free.
+  for (const r of g.rooms) sacred.add(g.idx(r.cx, r.cy));
+  for (const h of g.hazards) sacred.add(g.idx(h.x, h.y));
+  for (const d of g.doors) { sacred.add(d.i); sacred.add(d.plate); }
+  if (g.bossDoor) {
+    sacred.add(g.bossDoor.i);
+    for (const j of g.bossDoor.levers) sacred.add(j);
+  }
+
+  /** A tile a block may be laid on: ordinary, empty, standing floor. */
+  const bare = (i: number): boolean => {
+    const x = i % g.w, y = (i / g.w) | 0;
+    return g.at(x, y) === Tile.Floor && g.surface[i] === Surface.Plain && !sacred.has(i);
+  };
+
+  /** Write one in, and take it straight back out if it cost anybody a route. */
+  const put = (i: number): boolean => {
+    const before = reachable(g);
+    if (!before[i]) return false;
+    g.tiles[i] = Tile.Block;
+    const after = reachable(g);
+    for (let j = 0; j < before.length; j++) {
+      if (before[j] && !after[j] && j !== i) { g.tiles[i] = Tile.Floor; return false; }
+    }
+    return true;
+  };
+
+  for (const d of g.doors) {
+    const px = d.plate % g.w, py = (d.plate / g.w) | 0;
+    const level = g.heightAt(px, py);
+    const spots: number[] = [];
+    for (const [dx, dy] of DIR_VEC) {
+      for (let k = 2; k <= 3; k++) {
+        const bx = px + dx * k, by = py + dy * k;
+        // Somewhere to stand and push FROM, one further out along the same line.
+        if (!g.walkable(bx + dx, by + dy)) continue;
+        if (!g.inside(bx, by) || !bare(g.idx(bx, by))) continue;
+        // The whole run, block to plate, has to be clear and dead level: a shove
+        // stops at the first thing in the way and will not go uphill.
+        let clear = g.heightAt(bx, by) === level && g.heightAt(bx + dx, by + dy) === level;
+        for (let s = 1; s < k && clear; s++) {
+          const sx = px + dx * s, sy = py + dy * s;
+          clear = g.walkable(sx, sy) && g.heightAt(sx, sy) === level
+            && g.surface[g.idx(sx, sy)] === Surface.Plain;
+        }
+        if (clear) spots.push(g.idx(bx, by));
+      }
+    }
+    for (const i of rng.shuffle(spots)) if (put(i)) break;
+  }
+
+  const loose: number[] = [];
+  for (const r of g.rooms) {
+    if (r.kind === 'boss') continue;
+    for (const [x, y] of r.tiles) {
+      const i = g.idx(x, y);
+      if (!bare(i)) continue;
+      let open = 0;
+      for (const [dx, dy] of DIR_VEC) if (g.walkable(x + dx, y + dy)) open++;
+      if (open >= 3) loose.push(i);
+    }
+  }
+  let wanted = 1 + (depth >= 7 ? 1 : 0) + (rng.chance(0.5) ? 1 : 0);
+  for (const i of rng.shuffle(loose)) {
+    if (wanted <= 0) break;
+    if (put(i)) wanted--;
+  }
+}
+
 /** Which walkable tiles the start can reach right now, doors as they currently stand. */
 function reachable(g: Grid): Uint8Array {
   const seen = new Uint8Array(g.w * g.h);
@@ -1033,7 +1131,8 @@ function placeLights(g: Grid, rng: Rng): void {
       for (let f = 0; f < 4; f++) {
         const [dx, dy] = DIR_VEC[f];
         // a sconce needs a WALL to hang on, not merely something you cannot walk into
-        if (g.seeThrough(x + dx, y + dy)) continue;
+        // or see past — a torch bolted to a block would travel with the block
+        if (!g.masonry(x + dx, y + dy)) continue;
         cands.push({ x, y, h: WALL_H * 0.49, reach: 4.4, strength: 0.85, face: f });
       }
     }
@@ -1075,7 +1174,7 @@ function placeLights(g: Grid, rng: Rng): void {
       if (!rng.chance(0.55)) continue;
       for (let f = 0; f < 4; f++) {
         const [dx, dy] = DIR_VEC[f];
-        if (g.seeThrough(x + dx, y + dy)) continue;
+        if (!g.masonry(x + dx, y + dy)) continue;
         g.lights.push({ x, y, h: WALL_H * 0.49, reach: 3.8, strength: 0.7, face: f });
         break;
       }

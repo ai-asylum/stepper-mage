@@ -360,6 +360,18 @@ export class Floor {
   }
 
   /**
+   * A block left one tile and arrived at another.
+   *
+   * The GRID has already changed — it changed the instant the gust landed, because
+   * everything that asks where the walls are has to get the new answer immediately.
+   * This is only the picture catching up: the view is told where the stone came from
+   * so it can slide out of that tile instead of appearing in the next one.
+   */
+  slideBlock(from: number, to: number): void {
+    this.clockView.slideBlock(this.grid, from, to);
+  }
+
+  /**
    * Swap a lever's sprite to its thrown form.
    *
    * The sprite is the whole of the feedback that this lever is done — the player will

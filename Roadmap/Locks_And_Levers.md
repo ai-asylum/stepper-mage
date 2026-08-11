@@ -1,7 +1,7 @@
 # Locks And Levers
 
 **Player-facing:** yes
-**Status:** part shipped — levers, the boss door and the cut. Four items open.
+**Status:** part shipped — levers, the boss door, the cut and the blocks. Three open.
 **Started:** 2026-08-10
 
 A reason to walk the map that does not make you stronger.
@@ -70,16 +70,19 @@ and reused for every lever. `Engine` has no concept of a scripted move; the chea
 version is a fixed look-at with a short ease, and it must return control exactly where
 it took it.
 
-**Gust already shoves** (`Combat.shove`), and it stops at anything solid. A block is a
-prop that does not die and does not animate — most of what it needs already exists on
-`Entity`.
+**Gust already shoves** (`Combat.shove`), and it stops at anything solid. This section
+used to guess that a block would therefore be "a prop that does not die and does not
+animate", reusing `Entity`, and that guess was wrong: a block has to break line of
+sight, and every question about sight, footing and fire is asked of the GRID. It is a
+tile, it has its own shove (`Combat.pushBlock`), and it shares nothing with the one on
+`Entity` but the word.
 
 **A secret wall is a tile that draws wrong and answers `clearLine` as a wall.** The
 temptation is to make finding it clever; the decision above is that it is not.
 
 ### What shipped, and what did not
 
-SHIPPED: levers, the boss door with its sockets, and the camera cut.
+SHIPPED: levers, the boss door with its sockets, the camera cut, and the blocks.
 
 - **The lever is a tile you stand on**, with a sprite standing on it that does not
   block — you throw it by walking onto it, so a lever that blocked its own tile would
@@ -108,10 +111,39 @@ SHIPPED: levers, the boss door with its sockets, and the camera cut.
   A recessed slab with a gutter round it and a pressed boss in the middle, at the same
   bar as every other surface: identifiable at a glance, with no legend.
 
-NOT SHIPPED, and none of them are started: **blocks** pushed by gust, **pressure plates
-with a different verb per floor**, **secret walls**, and **vines**. The two that the
-acceptance list needs are blocks and secret walls; the phase is not finished without
-them.
+- **A BLOCK IS A TILE**, and that is the whole of why it was cheap. `Tile.Block`
+  answers `walkable` like a wall and `seeThrough` like a wall, so it is a puzzle piece,
+  cover that breaks line of sight, and a firebreak from two lines — `clearLine` reads
+  the grid, `fill` walks the grid, `flood` walks the grid, and not one of them needed a
+  word about blocks. As an entity it would have been three special cases in three
+  files that have to keep agreeing.
+- **The renderer had to learn a third question.** It decided where to build wall faces
+  by asking `seeThrough`, which was the same question as "is this masonry" for exactly
+  as long as a wall was the only opaque thing on a floor. A block is opaque and is not
+  the building, so a face built against one would have been welded into a mesh that is
+  built once — the stone slides east and leaves a four-sided shell behind it. `masonry`
+  is now the question the renderer and the light bake ask, and the baked light
+  deliberately passes straight through a block for the same reason: an honest shadow
+  under a thing that moves is a dark patch of floor that outlives it.
+- **NOTHING CAN BE SEALED OFF.** A sokoban deadlock is a genre when the level was
+  designed for it and a bug when it was not. Both halves of the rule check it rather
+  than reason about it: the generator writes a candidate in, floods, and takes it back
+  out if one reachable tile stopped being reachable, and the push asks the same
+  question of the player's own tile before every single tile of travel.
+- **SQUARE-ON OR NOTHING.** A body takes a diagonal shove because a body stands on a
+  tile; a block IS the tile, and half a tile of stone is not a position. Standing at a
+  corner gets a refusal in words instead of a lurch nobody could have predicted.
+- **The generator lines one up with every gate's plate**, two or three tiles out, with
+  a clear level run between them and somewhere to stand and blow. That is the point of
+  the object: a plate holds its gate up only while something is on it, so the thing
+  that opens it cannot be the thing that goes through it. Without a block, a lone
+  player never passes a timed gate at all — which is why `placeGate` has to keep
+  everything behind one optional, and why the block is what makes that space worth
+  putting anything in.
+
+NOT SHIPPED, and none of them are started: **pressure plates with a different verb per
+floor**, **secret walls**, and **vines**. Secret walls is the one the acceptance list
+still needs; the phase is not finished without it.
 
 ## Acceptance
 
@@ -143,7 +175,15 @@ because a cathedral's apse and a ring's bulges open onto their neighbours too wi
 any single tile to gate them. A floor with no lock is simply a floor without this
 mechanic, which is correct behaviour and thin coverage.
 
-**Not checked: any of it in a frame.** The lever sprites were inspected as PNGs and look
-right; nothing has been seen standing in a room, no socket pip has been seen on a door,
-and the camera cut has never been watched. The same boot-chooser crash that blocked
-Timing_And_Hazards' art is still in the way.
+**The blocks were played, on depth 6.** A block was aimed at, gusted one tile, gusted
+again onto its gate's plate, and the gate went up: `doorLift` 0 to 1, and the cut fired
+with the door's own index. Sight and fire were asked afterwards and both stop at it — a
+ray north returns the two tiles in front of the stone and nothing past it, and a
+nine-tile fill pours around it and never onto its tile. It was looked at in the frame:
+a banded, chamfered cube standing a head above the eye with floor showing all the way
+round its base, which reads as something somebody left there rather than as part of the
+room.
+
+**Not checked in a frame: the levers.** The sprites were inspected as PNGs and look
+right; nothing has been seen standing in a room and no socket pip has been seen on a
+door.

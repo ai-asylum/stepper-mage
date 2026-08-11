@@ -313,8 +313,11 @@ export class DungeonView {
       for (let dx = -1; dx <= 0; dx++) {
         const x = cx + dx, y = cy + dy;
         // Open air counts, walls do not: a gap carries baked light, so the lip of a
-        // chasm is lit by the far side the way the room it sits in is.
-        if (!g.seeThrough(x, y)) continue;
+        // chasm is lit by the far side the way the room it sits in is. A block's own
+        // tile counts too — it is floor with something standing on it, and dropping it
+        // out of the average would darken four corners of masonry permanently for a
+        // thing that is going to move.
+        if (g.masonry(x, y)) continue;
         sum += g.lightAt(x, y);
         n++;
       }
@@ -334,7 +337,7 @@ export class DungeonView {
     for (let dy = -1; dy <= 0; dy++) {
       for (let dx = -1; dx <= 0; dx++) {
         const x = cx + dx, y = cy + dy;
-        if (!g.seeThrough(x, y)) continue;
+        if (g.masonry(x, y)) continue;
         sum += g.surfaceAt(x, y) === Surface.Fog ? 1 : 0;
         n++;
       }
@@ -542,7 +545,12 @@ export class DungeonView {
           for (let f = 0; f < 4; f++) {
             const [dx, dy] = DIR_VEC[f];
             const nx = x + dx, ny = y + dy;
-            if (!g.walkable(nx, ny)) continue;
+            // Anything with a FLOOR next to the hole gets a face, which is not the
+            // same as anything you can walk onto: a shut door and a block both have
+            // ground under them, and both move, so a face skipped for either would be
+            // a strip of void that opens up the moment they do.
+            const nt = g.at(nx, ny);
+            if (nt === Tile.Wall || nt === Tile.Gap) continue;
             const ne = g.heightAt(nx, ny) * STEP_H;
             const wb = pitB[0];
             wb.fog = [0, 0, 0, 0];
@@ -634,7 +642,7 @@ export class DungeonView {
         for (let f = 0; f < 4; f++) {
           const [dx, dy] = DIR_VEC[f];
           const nx = x + dx, ny = y + dy;
-          if (!g.seeThrough(nx, ny)) continue;      // a wall face covers that edge
+          if (g.masonry(nx, ny)) continue;          // a wall face covers that edge
           const ne = g.heightAt(nx, ny) * STEP_H;
           if (ne >= e) continue;                    // the low side never draws it
 
@@ -668,11 +676,19 @@ export class DungeonView {
           );
         }
 
-        // walls: one quad per solid neighbour, facing inward
+        /**
+         * Walls: one quad per MASONRY neighbour, facing inward.
+         *
+         * Masonry and not "anything I cannot see through", which is what it used to
+         * ask and what it could afford to ask while a wall was the only opaque thing
+         * on a floor. A block is opaque and is not a wall, and building a wall face
+         * against one would weld it into a mesh that is built once per floor — the
+         * block would slide away and leave a four-sided stone shell behind it.
+         */
         for (let f = 0; f < 4; f++) {
           const [dx, dy] = DIR_VEC[f];
           const nx = x + dx, ny = y + dy;
-          if (g.seeThrough(nx, ny)) continue;
+          if (!g.masonry(nx, ny)) continue;
 
           const wb = wallB[(v + f * 3) % wallB.length];
           // A wall bounding a fogged tile is in the bank too, or the murk would stop

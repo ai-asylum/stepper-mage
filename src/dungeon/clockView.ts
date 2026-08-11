@@ -82,6 +82,27 @@ const PLATE_GAP_V0 = 8 / 96, PLATE_GAP_V1 = 13 / 96;
  */
 const PLATE_H = 0.03;
 
+/**
+ * THE BLOCK: a cube of stone, a hair inside its tile and well over your eyes.
+ *
+ * Both numbers are doing a job. The WIDTH leaves a finger of floor showing all the
+ * way round, which is the only thing separating "an object standing on the flagstones"
+ * from "a piece of the building" — masonry runs corner to corner and this must not.
+ * The HEIGHT has to beat `EYE_H` (0.525, half a wall) or the rule and the picture
+ * disagree: the grid says a block stops sight, and a player who can see over the top
+ * of one will believe their eyes every time. It stops short of the ceiling so there is
+ * daylight above it, which is the other half of reading it as furniture.
+ */
+const BLOCK_W = 0.94;
+/** Exported because the reticle has to be drawn where the block actually is. */
+export const BLOCK_H = 0.86;
+/**
+ * How fast a shoved block slides, per frame. Slower than the clock's own ease,
+ * because a ton of stone that snapped between tiles would read as a teleport and the
+ * whole point of the object is that moving it is work.
+ */
+const BLOCK_EASE = 0.11;
+
 /** How deep an open trapdoor is drawn. Not how far you FALL — see `hazardBites`. */
 const SHAFT_D = 3.2;
 /** How far a ladder's stiles stand proud of the lip they lean on. */
@@ -183,6 +204,61 @@ function socketTile(n: number): Pix {
   return p;
 }
 
+/**
+ * ONE FACE OF A BLOCK, and the same face serves all five.
+ *
+ * The whole job of this drawing is to say MOVABLE at a glance, because a cube of the
+ * room's own masonry standing in the room is a pillar, and nobody pushes a pillar.
+ * Three things say it, in the order the eye takes them:
+ *
+ *  - IRON. Two bands with rivets down the face. Stone does not come banded; a thing
+ *    somebody bound so it would survive being dragged does.
+ *  - A CHAMFER on every edge — bright along the top and left, dark along the bottom
+ *    and right — so the face reads as one side of a solid rather than as a square
+ *    painted on the air. It is also what makes the five quads look like one object
+ *    from a camera that only ever sees two of them at once.
+ *  - THE COURSES ARE MISSING. Every wall in the dungeon is coursed and this is not,
+ *    which is the same trick `pitFace` uses in the opposite direction: the absence of
+ *    a bond is the fastest way to say "not architecture".
+ */
+function blockPix(n: number, seed: string): Pix {
+  const p = new Pix(n, n);
+  let r = 2166136261 >>> 0;
+  for (let i = 0; i < seed.length; i++) r = Math.imul(r ^ seed.charCodeAt(i), 16777619) >>> 0;
+  const rnd = (): number => ((r = (r * 1664525 + 1013904223) >>> 0) / 4294967296);
+
+  const base = rgba(104, 98, 88);
+  const grit = [rgba(94, 88, 79), rgba(114, 107, 96), rgba(86, 81, 74)];
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) p.set(x, y, base);
+  }
+  // pitting, in clumps rather than per-pixel: hewn stone, not noise
+  for (let k = 0; k < n * 3; k++) {
+    const c = grit[Math.floor(rnd() * grit.length)];
+    const w = 1 + Math.floor(rnd() * Math.max(1, n * 0.08));
+    p.rect(Math.floor(rnd() * n), Math.floor(rnd() * n), w, 1 + Math.floor(rnd() * 2), c);
+  }
+
+  // the chamfer: two texels of it at the middle step, scaled with the density
+  const c = Math.max(1, Math.round(n * 0.03));
+  p.rect(0, 0, n, c, rgba(146, 138, 124));
+  p.rect(0, 0, c, n, rgba(132, 125, 112));
+  p.rect(0, n - c, n, c, rgba(48, 45, 42));
+  p.rect(n - c, 0, c, n, rgba(58, 54, 50));
+
+  // the bands, with a rivet at each end and one in the middle
+  const iron = rgba(62, 58, 62), sheen = rgba(96, 92, 96), rivet = rgba(138, 132, 124);
+  const bw = Math.max(2, Math.round(n * 0.09));
+  for (const bx of [Math.round(n * 0.2), Math.round(n * 0.8) - bw]) {
+    p.rect(bx, 0, bw, n, iron);
+    p.rect(bx, 0, 1, n, sheen);
+    for (const ry of [n * 0.12, n * 0.5, n * 0.88]) {
+      p.ellipse(bx + bw / 2, ry, Math.max(1, bw * 0.3), Math.max(1, bw * 0.3), rivet);
+    }
+  }
+  return p;
+}
+
 /** The blade's mark on the floor: a soft dark smear along the line of the sweep. */
 function bladeShadow(n: number): Pix {
   const p = new Pix(n, n);
@@ -234,6 +310,22 @@ export class ClockView {
   /** This sync's plate quads, and where each sits relative to the slab's top face. */
   private pressing: {
     i: number; base: number; target: number; parts: { m: THREE.Mesh; dy: number }[];
+  }[] = [];
+  private blockTopGeo: THREE.PlaneGeometry;
+  private blockSideGeo: THREE.PlaneGeometry;
+  /**
+   * How far each block still has to travel to reach the tile it is already ON, in
+   * tiles, keyed by that tile.
+   *
+   * Keyed by the DESTINATION and not by the block, because a block has no identity —
+   * it is a tile, and the tile it is is the tile it moved to. The offset is where it
+   * came FROM, eased down to nothing, which means a `sync` in the middle of a slide
+   * picks the animation back up instead of snapping the stone into place.
+   */
+  private slid = new Map<number, [number, number]>();
+  /** This sync's block quads, and where each sits relative to the block's centre. */
+  private standing: {
+    i: number; x: number; y: number; parts: { m: THREE.Mesh; dx: number; dz: number }[];
   }[] = [];
   private shaftGeo: THREE.PlaneGeometry;
   /**
@@ -324,6 +416,11 @@ export class ClockView {
       }
       uv.needsUpdate = true;
     }
+    // the block: a lid and four walls, the walls standing on the floor plane
+    this.blockTopGeo = new THREE.PlaneGeometry(BLOCK_W, BLOCK_W);
+    this.blockTopGeo.rotateX(-Math.PI / 2);
+    this.blockSideGeo = new THREE.PlaneGeometry(BLOCK_W, BLOCK_H);
+    this.blockSideGeo.translate(0, BLOCK_H / 2, 0);
     // the trapdoor's shaft: as wide as the hole in `trapTile`, hung from its lip
     this.shaftGeo = new THREE.PlaneGeometry(0.8, SHAFT_D);
     this.shaftGeo.translate(0, -SHAFT_D / 2, 0);
@@ -349,6 +446,7 @@ export class ClockView {
      */
     this.frames.set('sockets', socketTile(n).toTexture());
     this.frames.set('shaft', shaftPix(n).toTexture());
+    this.frames.set('block', blockPix(n, 'block').toTexture());
     this.shadow = bladeShadow(n).toTexture();
     void this.loadArt();
   }
@@ -535,6 +633,87 @@ export class ClockView {
     this.placePlate(this.pressing[this.pressing.length - 1], this.press.get(d.plate) ?? target);
   }
 
+  /**
+   * ONE BLOCK: a lid and four walls, standing on its tile.
+   *
+   * Five quads and no box geometry, because the pool is a pool of quads and a sixth
+   * face nobody can see from a camera that never looks up is a sixth face nobody
+   * needs. The walls face outward — a block is only ever looked at from outside it —
+   * and the two you cannot see are backface-culled for free.
+   */
+  private drawBlock(g: Grid, i: number): void {
+    const x = i % g.w, y = (i / g.w) | 0;
+    const e = g.heightAt(x, y) * STEP_H;
+    const parts: { m: THREE.Mesh; dx: number; dz: number }[] = [];
+
+    const top = this.take();
+    const tmat = top.material as THREE.MeshBasicMaterial;
+    tmat.map = this.frames.get('block') ?? null;
+    tmat.opacity = 1;
+    tmat.needsUpdate = true;
+    top.geometry = this.blockTopGeo;
+    top.rotation.set(0, 0, 0);
+    top.scale.set(1, 1, 1);
+    top.position.y = e + BLOCK_H;
+    this.lit(top, g, x, y);
+    parts.push({ m: top, dx: 0, dz: 0 });
+
+    for (let f = 0; f < 4; f++) {
+      const [dx, dy] = DIR_VEC[f];
+      const m = this.take();
+      const mat = m.material as THREE.MeshBasicMaterial;
+      mat.map = this.frames.get('block') ?? null;
+      mat.opacity = 1;
+      mat.needsUpdate = true;
+      m.geometry = this.blockSideGeo;
+      m.rotation.set(0, Math.atan2(dx, dy), 0);
+      m.scale.set(1, 1, 1);
+      m.position.y = e;
+      /**
+       * The two faces along one axis are a shade darker than the two along the other.
+       * There is no directional light in this game to give a cube a lit side and a
+       * shaded one, and without that difference the four walls are the same flat tone
+       * and the block reads as a cylinder. A fixed bias by axis is the cheapest lie
+       * that makes a corner visible.
+       */
+      this.lit(m, g, x, y, dx !== 0 ? 0.82 : 1);
+      parts.push({ m, dx: dx * (BLOCK_W / 2), dz: dy * (BLOCK_W / 2) });
+    }
+
+    this.standing.push({ i, x, y, parts });
+    // Placed once here as well as per frame, so a block is never drawn a tile out for
+    // the one frame between a sync and the next update.
+    this.placeBlock(this.standing[this.standing.length - 1]);
+  }
+
+  /** Put a block's five quads where its slide currently has it. */
+  private placeBlock(b: {
+    i: number; x: number; y: number; parts: { m: THREE.Mesh; dx: number; dz: number }[];
+  }): void {
+    const off = this.slid.get(b.i);
+    const ox = off ? off[0] : 0, oz = off ? off[1] : 0;
+    for (const q of b.parts) {
+      q.m.position.x = b.x + ox + q.dx;
+      q.m.position.z = b.y + oz + q.dz;
+    }
+  }
+
+  /**
+   * A block was shoved from one tile to another. The grid already agrees; this is the
+   * drawing being told where to slide FROM.
+   *
+   * Any travel still owed on the tile it left is carried over rather than dropped, so
+   * a two-tile shove is one continuous slide instead of a slide and a jump.
+   */
+  slideBlock(g: Grid, from: number, to: number): void {
+    const owed = this.slid.get(from) ?? [0, 0];
+    this.slid.delete(from);
+    this.slid.set(to, [
+      (from % g.w) - (to % g.w) + owed[0],
+      ((from / g.w) | 0) - ((to / g.w) | 0) + owed[1],
+    ]);
+  }
+
   /** Put a plate's six quads at a given press, 0 proud and 1 flush with the socket. */
   private placePlate(
     p: { base: number; parts: { m: THREE.Mesh; dy: number }[] }, at: number,
@@ -706,6 +885,16 @@ export class ClockView {
      */
     this.moving.length = 0;
     this.pressing.length = 0;
+    this.standing.length = 0;
+    /**
+     * THE BLOCKS FIRST, before anything on a beat.
+     *
+     * Only because they are the one fixture on this floor that is not a mechanism and
+     * has nothing to do with the clock — putting them at the top keeps the hazard loop
+     * below reading as one thing. They live in this class rather than in the floor mesh
+     * for the reason everything here does: they move, and the floor is built once.
+     */
+    for (const i of g.blocks()) this.drawBlock(g, i);
     for (const h of g.hazards) {
       const state = hazardState(h);
       const e = g.heightAt(h.x, h.y) * STEP_H;
@@ -956,6 +1145,19 @@ export class ClockView {
       this.press.set(p.i, Math.abs(p.target - next) < 0.001 ? p.target : next);
       this.placePlate(p, next);
     }
+    /**
+     * The blocks, sliding home. Same shape as the plates: the rule moved the instant
+     * the gust landed and this is the picture walking there.
+     */
+    for (const b of this.standing) {
+      const off = this.slid.get(b.i);
+      if (off) {
+        off[0] -= off[0] * BLOCK_EASE;
+        off[1] -= off[1] * BLOCK_EASE;
+        if (Math.abs(off[0]) + Math.abs(off[1]) < 0.004) this.slid.delete(b.i);
+      }
+      this.placeBlock(b);
+    }
     for (const m of this.moving) {
       m.at += (m.target - m.at) * EASE;
       if (m.kind === 'spikes') {
@@ -1001,6 +1203,8 @@ export class ClockView {
     this.plateRimGeo.dispose();
     for (const gg of this.barsGeo.values()) gg.dispose();
     this.barsGeo.clear();
+    this.blockTopGeo.dispose();
+    this.blockSideGeo.dispose();
     this.shaftGeo.dispose();
     this.spikeGeo.dispose();
     this.bladeGeo.dispose();

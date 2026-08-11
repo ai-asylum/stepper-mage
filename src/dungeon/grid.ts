@@ -45,6 +45,23 @@ export const enum Tile {
    * cannot see past is a wall with a story.
    */
   Door = 4,
+  /**
+   * A block of stone standing on the floor. Solid to your feet and to your eyes,
+   * and it MOVES — one tile per gust.
+   *
+   * A `Tile` and not an entity, and that is the decision the whole thing hangs on.
+   * Everything that asks the floor a question asks it here: `clearLine` reads the
+   * grid, `fill` walks the grid, `flood` walks the grid — so a block is cover, a
+   * firebreak and an obstacle from this one line, and none of those three needed a
+   * word written about blocks. As an entity it would have been the opposite: three
+   * separate special cases, in three files, that have to keep agreeing.
+   *
+   * The price is that a moving tile cannot be part of the static floor mesh. It is
+   * drawn by `ClockView` with the rest of the fixtures that move, and the renderer
+   * has to be careful to ask `masonry` rather than `seeThrough` wherever it is
+   * deciding what the BUILDING looks like — see below.
+   */
+  Block = 5,
 }
 
 /**
@@ -353,7 +370,7 @@ export class Grid {
    */
   walkable(x: number, y: number): boolean {
     const t = this.at(x, y);
-    if (t === Tile.Wall || t === Tile.Gap) return false;
+    if (t === Tile.Wall || t === Tile.Gap || t === Tile.Block) return false;
     // A shut portcullis is as solid as the wall it hangs in — to the flood, to the
     // volume, to every body's pathing and to the player's feet, all from this line.
     if (t === Tile.Door) return this.doorOpen[this.idx(x, y)] === 1;
@@ -363,11 +380,40 @@ export class Grid {
   /**
    * May sight — and anything that travels along sight — cross this tile?
    *
-   * The other seam. A wall is the only thing that stops it; a gap does not, which
-   * is the entire point of a gap.
+   * The other seam. A wall stops it and so does a block; a gap does not, which is
+   * the entire point of a gap.
    */
   seeThrough(x: number, y: number): boolean {
-    return this.at(x, y) !== Tile.Wall;
+    const t = this.at(x, y);
+    return t !== Tile.Wall && t !== Tile.Block;
+  }
+
+  /**
+   * Is this tile part of the BUILDING, as opposed to something standing in it?
+   *
+   * The third question, and it exists because a block answers `seeThrough` like a
+   * wall and must not be DRAWN like one. The renderer and the light bake both used
+   * "can I see through it" as their test for masonry, which was the same question
+   * while a wall was the only thing that stopped sight — and the moment a block did
+   * too, every tile beside one grew a permanent wall face and a permanent shadow,
+   * baked into a mesh that is built once. The block then slid a tile east and left
+   * both behind it.
+   *
+   * So anything that is deciding what the ARCHITECTURE looks like asks this, and
+   * anything deciding what can be seen or walked asks the other two. A block is
+   * furniture: it occludes, it obstructs, and it is not the room.
+   */
+  masonry(x: number, y: number): boolean {
+    return this.at(x, y) === Tile.Wall;
+  }
+
+  /** Every block standing on this floor, as tile indices. */
+  blocks(): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < this.tiles.length; i++) {
+      if (this.tiles[i] === Tile.Block) out.push(i);
+    }
+    return out;
   }
 
   /**
@@ -643,7 +689,13 @@ export function bakeLight(g: Grid): void {
         // Light crosses a gap. It is open air, not an obstacle — a brazier on one
         // side of a chasm has to light the far lip, or half the room goes black for
         // a reason the player can see straight through.
-        if (!g.seeThrough(nx, ny)) continue;
+        //
+        // AND IT CROSSES A BLOCK, which is a lie told on purpose. A block genuinely
+        // stops light; this pass runs once, at generation, and a block is the one
+        // solid thing on the floor that moves — so an honest shadow here would be a
+        // dark patch of floor left standing where a block USED to be, for the rest of
+        // the descent. The torch is per-fragment and does the honest half.
+        if (g.masonry(nx, ny)) continue;
         const ni = g.idx(nx, ny);
         if (level[ni] >= next) continue;
         level[ni] = next;

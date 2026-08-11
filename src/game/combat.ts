@@ -26,7 +26,7 @@
  */
 import { Rng } from '../core/rng';
 import {
-  DIR_VEC, FOG_SIGHT, Surface, conducts, hazardState, type Grid, type Hazard,
+  DIR_VEC, FOG_SIGHT, Surface, Tile, conducts, hazardState, type Grid, type Hazard,
 } from '../dungeon/grid';
 import { faceToward, type Entity, type Floor } from './floor';
 import { groundUse, type GroundUse, type Substance } from './ground';
@@ -290,6 +290,17 @@ export class Combat {
    * means.
    */
   onPitfall: () => void = () => {};
+  /**
+   * A door moved because of something the player did with a CAST, not with a step.
+   *
+   * There is exactly one of those — a block shoved onto a plate — and it needs the
+   * same cut every other actuation gets: the camera swings out, you watch the gate
+   * answer, and control comes back where it was. The step path snapshots the lifts
+   * itself (`onArrive` in main); a cast cannot, because the enemy round runs inside
+   * it and a body wandering onto a plate mid-round would fire a cut for a door
+   * nobody asked about.
+   */
+  onDoorMoved: (i: number, from: number, to: number) => void = () => {};
   /**
    * What the player has learned this run, by sprite id.
    *
@@ -641,6 +652,17 @@ export class Combat {
     }
 
     /**
+     * AND THE STONE MOVES, if the thing you aimed at was a block.
+     *
+     * After the bodies, because a cast is aimed at one thing and the block is that
+     * thing — anything standing near it has already taken what the blast was worth
+     * before the tile it is standing beside changes. Read off `cast.shove` and not off
+     * the element, so the rule is "whatever shoves a body shoves a block" and gust
+     * gets it for the same reason Whirlwind gets two tiles of it.
+     */
+    if (tile && cast.shove) this.pushBlock(tile.x, tile.y, cast.shove);
+
+    /**
      * WHAT THE CAST LEAVES ON THE FLOOR, and whether it catches the caster.
      *
      * Two separate questions that used to be one. Every element that leaves ground
@@ -745,6 +767,10 @@ export class Combat {
         });
       } else if (leaves === 'fire') {
         this.floor.ground.ignite(filled);
+      } else if (leaves === 'plant') {
+        // Plant is the second element whose name is not its substance: it sows
+        // BRAMBLE, on the seed's own clock rather than a puddle's.
+        this.floor.ground.sow(filled);
       } else {
         // Frost is the one element whose name is not its substance: it leaves ICE.
         this.floor.ground.spill(filled, leaves === 'frost' ? 'ice' : leaves as 'oil' | 'water');
@@ -1184,6 +1210,100 @@ export class Combat {
       });
       this.damage(t, dmg, 0xc9b590);
     }
+  }
+
+  /**
+   * A BLOCK, SHOVED. One tile per tile of shove, and it grinds to a halt at the
+   * first thing that will not have it.
+   *
+   * SQUARE-ON OR NOTHING. A body takes a diagonal shove because a body is a thing
+   * standing on a tile and can be pushed off it in any direction; a block is the tile,
+   * and half a tile of stone is not a position. So the rule the player learns is the
+   * simplest one there is — get in line with it, then blow — and standing at a corner
+   * gets a refusal in words rather than a lurch nobody could have predicted.
+   *
+   * What stops it: a wall, a chasm, a doorway, another block, anything alive, and a
+   * step UP, which is `canClimb`'s rule asked of stone for the same reason it is asked
+   * of a body that did not choose to move. A drop it takes, and lands a level lower.
+   */
+  private pushBlock(x: number, y: number, tiles: number): void {
+    const g = this.floor.grid;
+    if (g.at(x, y) !== Tile.Block) return;
+
+    const ax = x - this.playerTile.x, ay = y - this.playerTile.y;
+    if (ax !== 0 && ay !== 0) {
+      this.onEvent({ kind: 'deny', text: 'The gust glances off the block.' });
+      return;
+    }
+    const dx = Math.sign(ax), dy = Math.sign(ay);
+
+    const lifts = g.doors.map((d) => g.doorLift[d.i]);
+    let cx = x, cy = y, moved = 0;
+    for (let k = 0; k < tiles; k++) {
+      const nx = cx + dx, ny = cy + dy;
+      // A doorway is refused rather than allowed and then regretted: a portcullis
+      // that came down through a block would be a gate with stone in its teeth, and
+      // the block would be holding open the one thing it is meant to be solving.
+      if (!g.walkable(nx, ny) || g.at(nx, ny) === Tile.Door) break;
+      if (this.floor.entityAt(nx, ny)) break;
+      if (!g.canClimb(cx, cy, nx, ny)) break;
+      if (this.seals(g.idx(cx, cy), g.idx(nx, ny))) break;
+      g.tiles[g.idx(cx, cy)] = Tile.Floor;
+      g.tiles[g.idx(nx, ny)] = Tile.Block;
+      this.floor.slideBlock(g.idx(cx, cy), g.idx(nx, ny));
+      cx = nx; cy = ny;
+      moved++;
+    }
+
+    if (!moved) {
+      this.onEvent({ kind: 'deny', text: 'The block does not budge.' });
+      return;
+    }
+    this.onEvent({ kind: 'status', text: 'THE BLOCK GRINDS!', colour: 0xa89880 });
+
+    /**
+     * ITS WEIGHT COUNTS, and that is the whole reason the mechanic exists: a plate
+     * held by a block is a gate you can walk through, which is the one thing a plate
+     * held by your own boots can never be.
+     *
+     * The cut fires from here rather than from the cast's caller because this is the
+     * only actuation a cast can perform — see `onDoorMoved`.
+     */
+    // The block is somewhere new, so what you can see from here is too. Both are the
+    // reason to redraw: the fixture moved, and so did the cover.
+    this.floor.cull(this.playerTile.x, this.playerTile.y);
+    if (!this.refreshPlates()) { this.floor.syncClock(); return; }
+    const k = g.doors.findIndex((d, j) => g.doorLift[d.i] !== lifts[j]);
+    if (k >= 0) this.onDoorMoved(g.doors[k].i, lifts[k], g.doorLift[g.doors[k].i]);
+  }
+
+  /**
+   * Would moving a block from one tile to the next cut somebody off?
+   *
+   * The push's half of the rule the generator keeps when it lays them (`strew`), and
+   * the reason a block can never soft-lock a floor: a sokoban deadlock is a puzzle
+   * genre when the level was designed for it and a bug when the level was not, and
+   * nothing here is designing one. Asked as reachability from where the player is
+   * STANDING, so it is exactly the question that matters — did I just wall myself in,
+   * or wall off somewhere I still need.
+   *
+   * The destination itself is allowed to become unreachable. That is what a block
+   * standing on a tile means.
+   */
+  private seals(from: number, to: number): boolean {
+    const g = this.floor.grid;
+    const all = g.w * g.h;
+    const before = g.flood(this.playerTile.x, this.playerTile.y, all);
+    const wasFrom = g.tiles[from], wasTo = g.tiles[to];
+    g.tiles[from] = Tile.Floor;
+    g.tiles[to] = Tile.Block;
+    const after = g.flood(this.playerTile.x, this.playerTile.y, all);
+    g.tiles[from] = wasFrom;
+    g.tiles[to] = wasTo;
+    for (let j = 0; j < before.length; j++) {
+      if (before[j] !== -1 && after[j] === -1 && j !== to) return true;
+    }
+    return false;
   }
 
   /**
@@ -1854,8 +1974,14 @@ export class Combat {
     let moved = false;
     for (const d of g.doors) {
       const px = d.plate % g.w, py = (d.plate / g.w) | 0;
+      /**
+       * WEIGHT IS WEIGHT. Your boots, a creature's, or a block of stone somebody
+       * shoved onto it — the plate cannot tell and must not try, because the block is
+       * the only one of the three that can hold the gate up and let you through it.
+       */
       const held = (this.playerTile.x === px && this.playerTile.y === py)
-        || !!this.floor.entityAt(px, py);
+        || !!this.floor.entityAt(px, py)
+        || g.at(px, py) === Tile.Block;
       const want = held ? 1 : 0;
       if (g.doorLift[d.i] === want) continue;
       g.setDoorLift(d.i, want);
@@ -1981,6 +2107,26 @@ export function targetsInView(
    * creature is, which is what stops this being a second targeting system.
    */
   for (const i of floor.ground.fires()) {
+    const tx = i % grid.w, ty = (i / grid.w) | 0;
+    const dx = tx - x, dy = ty - y;
+    const ahead = dx * fx + dy * fy;
+    const side = Math.abs(dx * rx + dy * ry);
+    if (ahead < 1 || side > ahead) continue;
+    if (Math.abs(dx) + Math.abs(dy) > reach) continue;
+    if (!clearLine(grid, x, y, tx, ty)) continue;
+    out.push({ tile: true, x: tx, y: ty });
+  }
+
+  /**
+   * AND A BLOCK, which is the second tile worth aiming at and the first one that is
+   * an OBJECT rather than a patch of ground.
+   *
+   * It has to come through the same door burning ground does — same cone, same reach,
+   * same wall test — because a block is a tile and a tile is only ever targeted one
+   * way in this game. What makes it worth aiming at is `cast.shove`: the reticle is
+   * how you say WHICH block, and being square-on to it is how you say which way.
+   */
+  for (const i of grid.blocks()) {
     const tx = i % grid.w, ty = (i / grid.w) | 0;
     const dx = tx - x, dy = ty - y;
     const ahead = dx * fx + dy * fy;
