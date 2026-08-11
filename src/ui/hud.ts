@@ -3026,9 +3026,23 @@ export class Hud {
     const t = this.engine.time;
     const chest = e.kind === 'chest';
     const lever = e.kind === 'lever';
-    // A lever says what it will DO, because unlike an altar it can be undone and the
-    // player has to know which way they are about to throw it.
-    const label = lever ? (e.spriteId === 'lever_pulled' ? 'TAP TO RELEASE' : 'TAP TO THROW')
+    /**
+     * A lever says what it will DO, because unlike an altar it can be undone and the
+     * player has to know which way they are about to move it.
+     *
+     * PULL and PUSH BACK, not THROW and RELEASE. "Throw" is the correct word for a
+     * switch and the wrong word for THIS game: you throw a spell here, by tearing a
+     * page out and hurling it, and that verb is the first one the player is taught.
+     * A prompt reading TAP TO THROW next to a lever is a prompt that has to be
+     * disambiguated by context every single time it appears. The two words that are
+     * left are the physical ones, they name opposite directions of the same gesture,
+     * and neither of them means anything else in this dungeon — which is the entire
+     * requirement for a two-word label on a button.
+     *
+     * They also match what everything under the UI already calls it: `pullLever`,
+     * `BossDoor.pulled`, and the sprite is `lever_pulled`.
+     */
+    const label = lever ? (e.spriteId === 'lever_pulled' ? 'TAP TO PUSH BACK' : 'TAP TO PULL')
       : chest ? 'TAP TO OPEN' : 'TAP THE ALTAR';
     ctx.font = 'bold 11px ui-monospace, monospace';
     const tw = ctx.measureText(label).width + 40;

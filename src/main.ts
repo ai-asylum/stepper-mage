@@ -906,6 +906,22 @@ async function boot(): Promise<void> {
   const cineEye = new THREE.Vector3();
   const cineFrom = new THREE.Vector3();
   /**
+   * WHERE THE PLAYER WAS LOOKING when the cut started, and where it is looking now.
+   *
+   * The eye's POSITION was interpolated and its ORIENTATION was not: `lookAt` was
+   * applied at full strength from the first frame, so the camera snapped to face the
+   * door and then slid toward it. Which threw away the one thing the cut is for —
+   * knowing WHICH WAY the thing that just moved is. A swing tells you it is off to
+   * your left; a cut to it tells you only that it exists. The same pop happened in
+   * reverse at the end, with the eye sliding home while still facing the door and
+   * then snapping back to the corridor.
+   *
+   * Slerped on the same eased `k` the position uses, so the look leaves and returns
+   * with the move rather than beside it.
+   */
+  const cineFromQ = new THREE.Quaternion();
+  const cineToQ = new THREE.Quaternion();
+  /**
    * Look at what you just opened.
    *
    * Only ever called when the player threw the last lever, so the cut is always a
@@ -929,6 +945,9 @@ async function boot(): Promise<void> {
      * and the eye barely left the player.
      */
     cineFrom.copy(engine.camera.position);
+    // The player's own facing, captured before anything moves. They cannot turn
+    // during a cut, so this is still true when the shot swings back onto it.
+    cineFromQ.copy(engine.camera.quaternion);
     const dx = cineFrom.x - cineAt.x, dz = cineFrom.z - cineAt.z;
     const len = Math.max(0.001, Math.hypot(dx, dz));
     cineEye.set(
@@ -3089,12 +3108,25 @@ async function boot(): Promise<void> {
           engine.camera.position.x += Math.sin(engine.time * 43) * 0.018 * rumble;
           engine.camera.position.y += Math.sin(engine.time * 57 + 1.1) * 0.022 * rumble;
         }
+        /**
+         * The look SWINGS, on the same curve as the move.
+         *
+         * `lookAt` writes the orientation that faces the subject; the slerp then puts
+         * the camera a fraction of the way there, so at k=0 it is still looking
+         * exactly where the player is looking and at k=1 it is on the door. Taking
+         * the target from the real camera rather than from a probe object is
+         * deliberate: `Object3D.lookAt` points +Z at the subject and a CAMERA's points
+         * -Z, so a stand-in would have come out backwards.
+         */
         engine.camera.lookAt(cineAt);
+        cineToQ.copy(engine.camera.quaternion);
+        engine.camera.quaternion.slerpQuaternions(cineFromQ, cineToQ, k);
         if (rumble > 0) engine.camera.rotation.z += Math.sin(engine.time * 31) * 0.007 * rumble;
         // The world still has to tick — a frozen room behind a moving camera reads as
         // a screenshot, and the door the cut exists to show is opening right now.
         floor.update(wdt, engine.time, engine.camera.position);
         fx.update(dt, engine.camera.quaternion);
+        stunView.update(dt, stunned(), engine.camera.quaternion);
         return;
       }
     }
