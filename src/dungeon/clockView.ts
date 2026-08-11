@@ -493,6 +493,19 @@ export class ClockView {
     top.geometry = this.plateTopGeo;
     top.rotation.set(0, 0, 0);
     top.scale.set(1, 1, 1);
+    /**
+     * X AND Z EXPLICITLY, because `take()` hands back a POOLED mesh.
+     *
+     * This one only ever had its height written — `placePlate` sets y and nothing set
+     * the rest — so the slab's top face sat wherever the previous user of that pool
+     * slot had left it. The pool is filled in draw order and the draw order changes
+     * with what is currently visible, so the offset moved every time the cull did:
+     * the plate appeared to slide around its own socket depending on which direction
+     * it was looked at from. Every other quad in this file sets a full position, and
+     * the two that set components must set all of them.
+     */
+    top.position.x = px;
+    top.position.z = py;
     this.lit(top, g, px, py);
     parts.push({ m: top, dy: 0 });
 
