@@ -726,6 +726,7 @@ export class DungeonView {
     addAll(waterB, tiles.water);
     addAll(rubbleB, tiles.rubble);
     addAll(fogB, tiles.fog);
+    addAll(plateB, tiles.plate);
     addAll(portalB, tiles.portal);
     addAll(pitB, pitPix);
 

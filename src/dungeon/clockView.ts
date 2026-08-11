@@ -345,8 +345,21 @@ export class ClockView {
     l.scale.set(1, 1, 1);
     this.lit(l, g, x, y);
 
-    if (k >= 0.995) { this.barMesh.delete(i); return; }
-
+    /**
+     * THE BARS ARE ALWAYS BUILT, even fully retracted, and that is what lets a door
+     * come back DOWN.
+     *
+     * A fully open gate used to drop its mesh here and return, on the reasonable
+     * theory that a gate nobody can see is a quad nobody needs. But the closing
+     * animation is `setLift` cropping an EXISTING mesh, and a door that had reached
+     * the top no longer had one — so the cut played, the yaw swung out to a doorway
+     * with nothing in it, and the gate the player had been sent to watch fall stayed
+     * exactly where it was. It came back only on the next `sync` that happened to
+     * move some other door.
+     *
+     * Cropped at 1 the quad is zero-height and draws nothing, which is the same
+     * saving without the hole in the state machine.
+     */
     const m = this.take();
     const mat = m.material as THREE.MeshBasicMaterial;
     mat.map = this.art.gate ?? null;
