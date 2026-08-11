@@ -2497,21 +2497,38 @@ async function boot(): Promise<void> {
       let y = 2;
       while (y < g.h - 2 && !g.walkable(spine, y)) y++;
       /**
-       * QUIET IT DOWN. Twelve bays is twelve rooms, and `populate` gives every room
-       * its bodies — twenty-five of them, which is a fight, not a gallery. Two are
-       * kept so a creature can be seen standing on a plate or shoved off a ledge;
-       * the rest are removed here rather than in `populate`, which has no business
-       * knowing that one of its floors is a debug room.
+       * NOTHING IN HERE FIGHTS BACK. Not two bodies, not one — none.
+       *
+       * Twelve bays is twelve rooms and `populate` gives every room its bodies, which
+       * is twenty-five of them plus a boss in the vault: a fight, not a gallery. Two
+       * were kept so a creature could be seen standing on a plate or shoved off a
+       * ledge, and that was the wrong trade. The spine is ONE room down its whole
+       * length, so a hostile anywhere on it is in the same room as the player wherever
+       * they stand — `enemyRound` engages it every single turn — and the walk past the
+       * bays this floor exists for is a running fight from the first step. You cannot
+       * look at a blade while something is hitting you.
+       *
+       * A body is the one thing here that can be put back on demand: `putEntity` in
+       * the debug harness drops one wherever it is wanted, which is a better way to see
+       * a creature on a plate than having two of them hunt you the whole time.
+       *
+       * Removed here rather than in `populate`, which has no business knowing that one
+       * of its floors is a debug room.
        */
-      let kept = 0;
       for (let i = floor.entities.length - 1; i >= 0; i--) {
         const e = floor.entities[i];
-        if (e.kind !== 'enemy') continue;
-        if (kept < 2) { kept++; continue; }
+        if (e.kind !== 'enemy' && e.kind !== 'boss') continue;
         e.alive = false;
         e.sprite.group.visible = false;
         floor.entities.splice(i, 1);
       }
+      /**
+       * The way down, which the boss was holding. Stairs are generated hidden and
+       * revealed where the boss falls, so removing it without this leaves the gallery
+       * with no staircase in it — one of the things worth looking at, and the one that
+       * would otherwise be missing for a reason nobody could see.
+       */
+      floor.revealStairs();
 
       stepper.place(spine, y, 2);
       combat.playerTile = { x: spine, y };
