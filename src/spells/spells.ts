@@ -35,7 +35,22 @@
  */
 export type SpellRole = 'bolt' | 'modifier' | 'animate' | 'raise' | 'tempo';
 export type StatusId =
-  | 'burning' | 'frozen' | 'soaked' | 'shocked' | 'decay' | 'stagger' | 'oiled';
+  | 'burning' | 'frozen' | 'soaked' | 'shocked' | 'decay' | 'stagger' | 'oiled'
+  /**
+   * ROOTED — held where it stands. Costs the MOVE and never the action.
+   *
+   * Plant had no status at all: it dealt 4 and left terrain, on the argument that
+   * everything it is worth is on the floor. That argument only holds if the floor
+   * does something the round you cast it, and it did not — the seed took three
+   * rounds to harden, so casting Seed at a body meant watching that body walk away
+   * and reach you before its own spell existed. A cast has to do its job on the turn
+   * you spend it; the growth is what it leaves behind afterwards.
+   *
+   * Not in `DENIAL_STATUSES`, deliberately. A rooted body still swings at whatever is
+   * beside it — being held is not being helpless, and a status that took the action
+   * as well would be Frozen wearing leaves.
+   */
+  | 'rooted';
 export type Element =
   | 'fire' | 'frost' | 'spark' | 'gust' | 'rot' | 'plant'
   | 'stone' | 'water' | 'oil' | 'starlight'
@@ -68,7 +83,16 @@ export const VOLUME_ELEMENTS: ReadonlySet<Element> = new Set<Element>(['fire', '
  * NOT the same size as fire, because a fireball and a frost patch doing the same
  * thing at different temperatures is two pages doing one job.
  */
-const SMALL_VOLUME: ReadonlySet<Element> = new Set<Element>(['frost']);
+/**
+ * Plant is small for a harder reason than frost: it is the one volume that GROWS
+ * after it lands. Every tile a seed cast fills is its own seed and creeps a ring of
+ * its own, so the cast's footprint is not what the room ends up holding — it is the
+ * seed of what the room ends up holding, and at 25 tiles that compounded into most
+ * of a dungeon in about three casts. The other lever is `Ground.sow`, which now
+ * spends most of the growth budget up front; this is the one that stops the budget
+ * being multiplied by an area in the first place.
+ */
+const SMALL_VOLUME: ReadonlySet<Element> = new Set<Element>(['frost', 'plant']);
 
 /**
  * The elements that LEAVE SOMETHING ON THE FLOOR, in the order a cast holding
@@ -1299,6 +1323,10 @@ export const STATUS_META: Record<StatusId, { name: string; colour: number; turns
   // Four to match soaked, and for the same reason: both are setup statuses whose
   // payoff is the NEXT cast, so both have to outlive the turn spent assembling it.
   oiled: { name: 'Oiled', colour: 0xc79a3a, turns: 4 },
+  // Two, which is the same length as Frozen. It denies less than Frozen does — the
+  // move only — and the whole reason to cast it is that the thing cannot close on
+  // you, so one turn would be a body that pauses rather than a body that is caught.
+  rooted: { name: 'Rooted', colour: 0x4fbf7a, turns: 2 },
 };
 
 /**

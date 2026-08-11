@@ -2,11 +2,15 @@
  * The ad chrome that wraps the game inside a playable: the store CTA, the
  * wordmark, and the AppLovin analytics grid.
  *
- * The CTA is an IN-WORLD interruption, not a screen change. On a cadence it
- * takes over the grimoire's half of the screen — the place the player's thumb
- * already lives — puts the logo up in the world above it, and offers a dismiss
- * exactly where the spellbook tab sits. Everything stays on one screen, and the
- * game keeps running behind it.
+ * On a cadence the offer TAKES THE SCREEN: the HUD canvas is hidden, the room
+ * dims to a backdrop, and the wordmark and two buttons are all that is left.
+ *
+ * It used to be an in-world panel over the grimoire's half of the frame with
+ * the game live behind it. That failed on both halves of the promise — the
+ * wordmark landed on top of whatever the HUD was drawing (the altar's three
+ * cards, most visibly), and because the game binds its pointer handlers to
+ * `#stage`, every tap on the offer ALSO reached the dungeon underneath. The
+ * player kept playing a game they could not see.
  *
  * The shell reads the game through the debug handle `src/main.ts` already
  * publishes on `window.__game` rather than hooking the loop, and it writes
@@ -14,12 +18,11 @@
  * restores it afterwards. That is the same flag the game's own spellbook tab
  * toggles, so the ad drives the game only through a control the player already
  * has — never through anything that could make the demo behave differently from
- * the shipped build.
+ * the shipped build. Input is stopped the same way: by swallowing events on the
+ * way to the game's own listeners, never by disabling them.
  */
 import { THEMES } from '../art/theme';
-import {
-  BUTTON_SCALE, buildCtaPlate, buildDismissPlate, buildLogo, fitScale,
-} from './art';
+import { buildCtaPlate, buildDismissPlate, buildLogo, fitScale } from './art';
 
 /**
  * The real Play listing, injected by `scripts/build-playable.mjs`.
@@ -43,7 +46,7 @@ interface AdContainer {
   __game?: {
     state: { hp: number; depth: number };
     combat?: { bossDead?: boolean; turns?: number };
-    hud?: { bookClosed?: boolean; bookTop?: number };
+    hud?: { bookClosed?: boolean };
     book?: { closed: boolean };
     engine?: { sw: number; sh: number };
   };
@@ -70,10 +73,6 @@ const TIME_GRID: ReadonlyArray<[seconds: number, event: string]> = [
 /** The CTA re-offers itself on whichever of these comes first. */
 const NAG_SECONDS = 15;
 const NAG_ACTIONS = 15;
-
-/** Geometry of the grimoire tab, mirrored from `Hud.drawBookToggle`. */
-const TAB_H = 26;
-const TAB_GAP = 8;
 
 /**
  * The object only exists inside AppLovin, and there is no guarantee it is
@@ -124,9 +123,14 @@ function openStore(): void {
   }
 }
 
-/** Paint a generated plate onto a button at an exact integer upscale. */
-function plate(el: HTMLElement, art: HTMLCanvasElement, scale: number): void {
-  el.style.backgroundImage = `url(${art.toDataURL()})`;
+/**
+ * Size a generated plate at an exact integer upscale of its own art.
+ *
+ * Separate from painting it: the data URL is built once, but the size is
+ * recomputed on every layout, and re-encoding a canvas eight times a second to
+ * change a width would be an absurd way to spend an ad's frame budget.
+ */
+function size(el: HTMLElement, art: HTMLCanvasElement, scale: number): void {
   el.style.width = `${art.width * scale}px`;
   el.style.height = `${art.height * scale}px`;
 }
@@ -134,6 +138,7 @@ function plate(el: HTMLElement, art: HTMLCanvasElement, scale: number): void {
 export function installShell(): void {
   track('LOADED');
 
+  const stage = document.getElementById('stage') as HTMLElement;
   const zone = document.getElementById('cta-zone') as HTMLElement;
   const ctaBtn = document.getElementById('cta') as HTMLButtonElement;
   const dismissBtn = document.getElementById('cta-dismiss') as HTMLButtonElement;
@@ -143,9 +148,11 @@ export function installShell(): void {
   const again = document.getElementById('ec-again') as HTMLButtonElement;
 
   // ---- pixel art -------------------------------------------------------
-  plate(ctaBtn, buildCtaPlate(58, 15), BUTTON_SCALE);
-  plate(dismissBtn, buildDismissPlate(42, 8), BUTTON_SCALE);
+  const ctaArt = buildCtaPlate(58, 15);
+  const dismissArt = buildDismissPlate(42, 8);
   const mark = buildLogo(TITLE, SUBTITLE);
+  ctaBtn.style.backgroundImage = `url(${ctaArt.toDataURL()})`;
+  dismissBtn.style.backgroundImage = `url(${dismissArt.toDataURL()})`;
   logo.style.backgroundImage = `url(${mark.toDataURL()})`;
 
   ctaBtn.addEventListener('click', openStore);
@@ -167,26 +174,19 @@ export function installShell(): void {
   const actions = (): number => w.__game?.combat?.turns ?? 0;
 
   /**
-   * Park the CTA over the grimoire's footprint and the dismiss over its tab.
+   * Size the three plates to the stage.
    *
-   * `hud.bookTop` moves with the book, and when the book is shut it collapses
-   * to almost nothing — so the offer is clamped to a minimum height. Otherwise
-   * closing the spellbook, which is exactly when we most want to show the CTA,
-   * would be when it had the least room to exist in.
+   * The column itself is centred by CSS — there is nothing left to chase now
+   * that the offer owns the screen instead of borrowing the grimoire's corner
+   * of it. Each plate takes the largest WHOLE upscale of its art that still
+   * fits: the store button is allowed to go bigger than the art's authored 4x,
+   * because on a phone it is the only thing on screen that must be hit.
    */
   function layout(): void {
-    const g = w.__game;
-    const h = g?.engine?.sh ?? window.innerHeight;
-    const sw = g?.engine?.sw ?? window.innerWidth;
-    const tabTop = h - TAB_H - TAB_GAP;
-    const bookTop = g?.hud?.bookTop ?? Math.round(h * 0.62);
-    zone.style.top = `${Math.min(bookTop, tabTop - 150)}px`;
-    zone.style.bottom = `${TAB_H + TAB_GAP + 6}px`;
-    dismissBtn.style.bottom = `${TAB_GAP}px`;
-
-    const scale = fitScale(mark.width, sw);
-    logo.style.width = `${mark.width * scale}px`;
-    logo.style.height = `${mark.height * scale}px`;
+    const sw = w.__game?.engine?.sw ?? window.innerWidth;
+    size(logo, mark, fitScale(mark.width, sw));
+    size(ctaBtn, ctaArt, fitScale(ctaArt.width, sw, 6));
+    size(dismissBtn, dismissArt, fitScale(dismissArt.width, sw, 5));
   }
 
   /**
@@ -206,12 +206,15 @@ export function installShell(): void {
   function showOffer(): void {
     if (offering) return;
     offering = true;
-    // Shut the grimoire rather than covering it: the offer wants the bottom of
-    // the screen, and a CTA sitting on top of an open book reads as a misplaced
-    // dialog instead of the game handing the space over.
+    // Shut the grimoire on the way in so the player is handed back a closed
+    // book, not a half-cast spell they had already forgotten choosing.
     bookWasOpen = !w.__game?.book?.closed;
     setBookClosed(true);
     layout();
+    // `offering` on the stage is what hides the HUD canvas. The world keeps
+    // rendering underneath, dimmed by the zone's scrim — a still frame behind
+    // the wordmark is the point, an empty black rectangle is not.
+    stage.classList.add('offering');
     zone.classList.add('show');
     logo.classList.add('show');
     dismissBtn.classList.add('show');
@@ -223,6 +226,7 @@ export function installShell(): void {
     cadenceFrom = Date.now();
     actionBase = actions();
     if (bookWasOpen) setBookClosed(false);
+    stage.classList.remove('offering');
     zone.classList.remove('show');
     logo.classList.remove('show');
     dismissBtn.classList.remove('show');
@@ -252,6 +256,12 @@ export function installShell(): void {
   // ---- end card (terminal states only) ---------------------------------
   let shown = false;
   let pending = false;
+  /**
+   * Whether the card is on screen RIGHT NOW, which is not the same as `shown`:
+   * `shown` latches forever so the card is offered once per session, and
+   * blocking the keyboard on it would leave the game deaf after "keep playing".
+   */
+  let cardUp = false;
 
   /**
    * `resumable` is false once the run is truly over — there is nothing behind
@@ -264,6 +274,7 @@ export function installShell(): void {
     window.setTimeout(() => {
       pending = false;
       shown = true;
+      cardUp = true;
       hideOffer();
       track(outcome);
       verdict.textContent = line;
@@ -282,9 +293,39 @@ export function installShell(): void {
 
   again.addEventListener('click', () => {
     track('CHALLENGE_RETRY');
+    cardUp = false;
     card.classList.remove('show');
     window.setTimeout(() => { card.style.display = 'none'; }, 400);
   });
+
+  // ---- the offer owns the input while it is up --------------------------
+  //
+  // The game binds pointer/wheel to `#stage` and keys to `window`, and both the
+  // zone and the card are children of `#stage` — so without this, every tap on
+  // the offer landed in the dungeon as well. Two shields, because there are two
+  // targets to shield from:
+  //
+  //   - Bubble-phase on the overlays. A button's own handler runs at the target
+  //     first, so Play Free and Keep Playing still work; everything above them
+  //     stops here and never reaches #stage.
+  //   - Capture-phase on window for keys, which no element can stand in front
+  //     of. Capture runs before the game's bubble-phase listener, so this is the
+  //     only place they CAN be stopped.
+  const swallow = (e: Event): void => { e.stopPropagation(); };
+  for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'wheel', 'click'] as const) {
+    zone.addEventListener(type, swallow);
+    card.addEventListener(type, swallow);
+  }
+  window.addEventListener('keydown', (e) => {
+    if (!offering && !cardUp) return;
+    // Except for the offer's own buttons: a focused Play Free still has to take
+    // Enter and Space, and blanket-preventing keys would swallow exactly the two
+    // presses the offer exists to receive.
+    const target = e.target as Node | null;
+    if (target && (zone.contains(target) || card.contains(target))) return;
+    e.stopPropagation();
+    e.preventDefault();
+  }, { capture: true });
 
   // ---- the tick ---------------------------------------------------------
   let wasBookClosed = false;

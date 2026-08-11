@@ -50,6 +50,11 @@ export interface Entity {
   facing: Dir;
   /** Set once an altar has given up its page. */
   spent: boolean;
+  /**
+   * Does this body fly? A flyer is over the ground terrain — rubble and briar cost it
+   * nothing — and pays for everything else exactly as a walker does.
+   */
+  flies: boolean;
 }
 
 /** Kinds that physically occupy their tile. Stairs are walk-on by design. */
@@ -183,17 +188,6 @@ export class Floor {
     this.ground.refuses = (i, what) =>
       what === 'fire' && this.grid.surface[i] === Surface.Water;
     /**
-     * Briar IS rubble — the same surface the generator lays and the same surface gust
-     * sweeps, so a thicket the player grew and a collapse they walked into obey one
-     * rule and there is no second kind of difficult ground to learn.
-     */
-    this.ground.onMature = (i) => {
-      if (this.grid.surface[i] !== Surface.Plain) return;
-      this.grid.surface[i] = Surface.Rubble;
-      this.resurface();
-      this.syncGrowth();
-    };
-    /**
      * Bramble creeps only where a body could walk. Growth inside a wall is growth the
      * player can neither see nor clamber over, so it would read as the patch simply
      * refusing to spread in that direction — which is exactly what this makes true.
@@ -252,7 +246,7 @@ export class Floor {
       : 20;
 
     const e: Entity = {
-      sprite, kind: p.kind, spriteId: p.sprite, golemId: p.golem,
+      sprite, kind: p.kind, spriteId: p.sprite, golemId: p.golem, flies: !!p.flies,
       hp, maxHp: hp, alive: true, roomId: p.roomId, animated: false, hostile,
       spent: false,
       // Spawned facing an arbitrary but STABLE direction, derived from the tile so
@@ -327,12 +321,12 @@ export class Floor {
    * it happens at most a handful of times in a run.
    */
   /**
-   * Re-place every standing clump: rubble from the GRID, briar from the GROUND.
+   * Re-place every standing clump: rubble from the GRID, plants from the GROUND.
    *
-   * Two sources on purpose. Rubble is a surface — the generator lays it, gust sweeps
-   * it, and a matured thicket becomes it, so it outlives whatever put it there.
-   * Brambles are a live patch on a clock, and they are drawn as the same object at a
-   * smaller size so the player can see a thicket coming before it sets.
+   * Two sources because they are two different things and not two stages. Rubble is
+   * part of the building — the generator lays it and a gust sweeps it. Plants are
+   * something a cast put there, so they live in `Ground` with everything else a spell
+   * left behind, which is also what lets fire catch them.
    */
   syncGrowth(): void {
     const out: { i: number; kind: GrowthKind }[] = [];
@@ -341,6 +335,7 @@ export class Floor {
     }
     for (const p of this.ground.patches()) {
       if (p.what === 'bramble') out.push({ i: p.i, kind: 'plant' });
+      else if (p.what === 'briar') out.push({ i: p.i, kind: 'briar' });
     }
     this.growthView.sync(this.grid, out);
   }

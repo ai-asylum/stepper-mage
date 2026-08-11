@@ -76,6 +76,17 @@ export interface Combatant {
    * against a player who only gets one action per round.
    */
   braced: number;
+  /**
+   * Has this body already spent a round tearing free of the briar it is standing in?
+   *
+   * The player crosses a thicket in two halves with a round of the room in between
+   * (`Stepper.holdAt`); this is the same beat, paid by everything else. It is set the
+   * round a body first tries to move OUT of briar and cleared the moment it actually
+   * moves, so every briar tile costs exactly one extra round — never two, and never
+   * forever. A tile that stopped a body permanently would be a wall the player can
+   * plant, which is a different and much worse spell.
+   */
+  tangled: boolean;
 }
 
 /** A page can be upgraded twice; past that a duplicate draw pays out a star. */
@@ -346,7 +357,7 @@ export class Combat {
   private register(e: Entity): void {
     if (!['enemy', 'boss'].includes(e.kind) && !e.animated) return;
     this.combatants.set(e, {
-      e, statuses: [], infuse: [], braced: 0, alerted: false,
+      e, statuses: [], infuse: [], braced: 0, alerted: false, tangled: false,
       damage: e.kind === 'boss' ? bossDamage(this.state.depth) : enemyDamage(this.state.depth),
     });
   }
@@ -725,6 +736,10 @@ export class Combat {
          * spend, and it gives gust — which until now only ever took things away — a
          * use that leaves the room better than it found it. Only rubble; a gust does
          * not blow a plate of iron off the floor.
+         *
+         * Plants need no line here. They are patches, and the `extinguish` above
+         * already cleared every patch this gust reached — which is the point of them
+         * being patches rather than a second kind of surface.
          */
         let swept = 0;
         for (const { i } of filled) {
@@ -759,10 +774,24 @@ export class Combat {
          * visibly bigger every time you feed it.
          */
         const grown = g.fill(centre.x, centre.y, cast.volume + GROW_RING, away);
-        this.floor.ground.feed(grown, groundWas);
+        /**
+         * PLANT INTO GRASS THICKENS IT INTO BRIAR, rather than making more grass.
+         *
+         * Feeding it like a pool did the wrong thing twice over: aiming a Seed at a
+         * body already standing in undergrowth produced a wider lawn and left the body
+         * free to walk out of it, and the only way to get briar under something was to
+         * land the very first cast on its exact tile. `sow` already puts briar at the
+         * centre and grass around it, so growth here is the same shape as the first
+         * cast — which also makes a second Seed the deliberate way to harden ground you
+         * have already seeded.
+         */
+        if (groundWas === 'bramble' || groundWas === 'briar') this.floor.ground.sow(grown);
+        else this.floor.ground.feed(grown, groundWas);
         this.onEvent({
           kind: 'status',
-          text: groundWas === 'fire' ? 'THE FIRE SPREADS!' : 'THE POOL SPREADS!',
+          text: groundWas === 'fire' ? 'THE FIRE SPREADS!'
+            : groundWas === 'bramble' || groundWas === 'briar' ? 'THE BRIAR THICKENS!'
+            : 'THE POOL SPREADS!',
           colour: cast.colour,
         });
       } else if (leaves === 'fire') {
@@ -1690,6 +1719,41 @@ export class Combat {
     const sx = e.sprite.tx, sy = e.sprite.ty;
     if (sx === tx && sy === ty) return;
 
+    /**
+     * BRIAR ENTANGLES, and it entangles the ROOM.
+     *
+     * This is the whole reason to plant one. A thicket that only slowed the caster
+     * would be a spell cast on yourself, and one the room walked through freely would
+     * be scenery — so a body standing in briar spends a round tearing loose before it
+     * takes a step, which is exactly the beat `Stepper.holdAt` charges the player for
+     * the same tile. One rule, both sides of the fight.
+     *
+     * It costs the MOVE and not the round: a thing already next to you still swings.
+     * Being tangled beside a body is a bad place to have chosen to stand, not a free
+     * hit — and `enemyRound` attacks after this returns, which is what makes that
+     * true.
+     */
+    const c = this.combatants.get(e);
+
+    /**
+     * ROOTED DOES NOT MOVE. Not slowed, not delayed — held, for as long as it lasts.
+     *
+     * This is what a cast BUYS, and the terrain rule below is what the cast LEAVES.
+     * The distinction is the whole fix: a spell whose only effect was the floor it
+     * grew meant seeding a body and watching it stroll out of the patch before the
+     * patch was even a patch. Now the body is caught the moment the cast lands, and
+     * the thicket is the reason it is still caught two rounds later.
+     *
+     * Still no early return past the attack — `enemyRound` swings after this — because
+     * a rooted body beside you is a body you chose to stand next to.
+     */
+    if (c?.statuses.some((s) => s.id === 'rooted')) {
+      e.sprite.play('walk');
+      faceToward(e, tx, ty);
+      return;
+    }
+
+
     const free = (x: number, y: number): boolean => {
       if (!g.walkable(x, y)) return false;
       if (x === this.playerTile.x && y === this.playerTile.y) return false;
@@ -1753,12 +1817,85 @@ export class Combat {
     }
     if (!best) return;
 
+    /**
+     * DIFFICULT GROUND COSTS THE ROOM A BEAT, exactly as it costs the player one, and
+     * it charges on the EDGE rather than on the tile.
+     *
+     * Rubble and briar, which are the two tiles `Stepper.holdAt` stops the player
+     * halfway across. Before this, neither cost a body anything at all: the generator
+     * laid rubble in the corridors precisely because it is expensive, and then the
+     * only thing that ever paid was you. Terrain that taxes one side of a fight is not
+     * terrain, it is a handicap.
+     *
+     * In and out, never within: a body already standing in a thicket walks from one
+     * tile of it to the next at full speed, and pays again on the way out. Charging
+     * per tile would make a wide patch cost its own area.
+     *
+     * Not the bramble around a briar — that is undergrowth, and a cast whose whole
+     * volume held bodies would be a wall you can plant. FLYERS ARE OVER ALL OF IT: a
+     * wasp does not clamber over a rock. Fire is deliberately not in the list, because
+     * heat is not an obstacle and still catches everything (`scorchStanders`).
+     *
+     * Decided AFTER the step is chosen, because "which edge" is a question about two
+     * tiles and the destination is not known until here.
+     */
+    const hard = (x: number, y: number): boolean =>
+      g.surfaceAt(x, y) === Surface.Rubble || this.floor.ground.at(g.idx(x, y)) === 'briar';
+    if (c && !e.flies && !c.tangled && hard(sx, sy) !== hard(best[0], best[1])) {
+      c.tangled = true;
+      // The WALK animation, on a body that does not leave its tile. It reads as
+      // straining against something, which is what is happening; the flinch would
+      // have read as "you hit it", and being held is not being hurt.
+      e.sprite.play('walk');
+      faceToward(e, best[0], best[1]);
+      return;
+    }
+
     // Face the step BEFORE taking it, while the old tile is still the origin.
     faceToward(e, best[0], best[1]);
+    // Free of whatever it was in. Cleared on the MOVE rather than on leaving the tile,
+    // so stepping from one briar into the next is charged again — difficult ground is
+    // slow to cross, not merely slow to enter.
+    if (c) c.tangled = false;
     e.sprite.tx = best[0]; e.sprite.ty = best[1];
+    /**
+     * AND THE ICE CARRIES IT ON, the same way it carries the player.
+     *
+     * `Stepper` has had this rule since frost shipped and nothing else did, so a
+     * frozen floor was a thing that happened only to you: you slid past the body you
+     * were retreating from while it walked the ice like flagstones. One rule, both
+     * sides. Refused by exactly what refuses a step — a wall, a ledge, a body — and
+     * capped at the same 8 tiles, because a slide is not a licence to cross a floor.
+     *
+     * A flyer is not on the ice at all.
+     */
+    if (!e.flies) this.slideOn(e, best[0] - sx, best[1] - sy, free);
     e.sprite.setTileLight(g.lightAt(best[0], best[1]));
     e.sprite.play('walk');
     this.takePortal(e);
+  }
+
+  /**
+   * Carry a body along the ice it just stepped onto. See the call in `stepToward`.
+   *
+   * Its own method rather than a loop inline, because the portal check has to run on
+   * where the body ENDS UP: a slide that finishes on a mouth is a slide into it, which
+   * is the same thing the player's arrival does.
+   */
+  private slideOn(
+    e: Entity, dx: number, dy: number, free: (x: number, y: number) => boolean,
+  ): void {
+    const g = this.floor.grid;
+    const ground = this.floor.ground;
+    let slid = 0;
+    while (ground.at(g.idx(e.sprite.tx, e.sprite.ty)) === 'ice' && slid < 8) {
+      const nx = e.sprite.tx + dx, ny = e.sprite.ty + dy;
+      if (!free(nx, ny) || !g.canClimb(e.sprite.tx, e.sprite.ty, nx, ny)) break;
+      if (g.dropFrom(e.sprite.tx, e.sprite.ty, nx, ny) > 0) break;
+      e.sprite.tx = nx; e.sprite.ty = ny;
+      slid++;
+    }
+    if (slid) e.sprite.setTileLight(g.lightAt(e.sprite.tx, e.sprite.ty));
   }
 
   /**
@@ -2129,6 +2266,30 @@ export function targetsInView(
    */
   for (const i of floor.ground.fires()) {
     const tx = i % grid.w, ty = (i / grid.w) | 0;
+    const dx = tx - x, dy = ty - y;
+    const ahead = dx * fx + dy * fy;
+    const side = Math.abs(dx * rx + dy * ry);
+    if (ahead < 1 || side > ahead) continue;
+    if (Math.abs(dx) + Math.abs(dy) > reach) continue;
+    if (!clearLine(grid, x, y, tx, ty)) continue;
+    out.push({ tile: true, x: tx, y: ty });
+  }
+
+  /**
+   * AND THE PLANTS, which are the tiles you most often want to aim at ON PURPOSE.
+   *
+   * Fire got in here because it is a component you can pick up. Grass and briar are
+   * the other half of that trade: they are what fire EATS, so "put a Flame on the
+   * near end of the thicket" is the whole reason the spread rule exists — and until
+   * now there was no way to say which tile, because a plant is not an entity and the
+   * reticle only ever knew about entities, fire and blocks.
+   *
+   * Same cone, same reach, same wall test, through the same door. A tile is a target
+   * on exactly the terms a creature is.
+   */
+  for (const p of floor.ground.patches()) {
+    if (p.what !== 'bramble' && p.what !== 'briar') continue;
+    const tx = p.i % grid.w, ty = (p.i / grid.w) | 0;
     const dx = tx - x, dy = ty - y;
     const ahead = dx * fx + dy * fy;
     const side = Math.abs(dx * rx + dy * ry);

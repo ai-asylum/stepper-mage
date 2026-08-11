@@ -58,9 +58,12 @@
   }
 
   /* ---- ad chrome (playable only) -------------------------------------
-     The CTA is an in-world interruption, never a screen change: it takes the
-     grimoire's half of the frame, the logo lights up in the world above it,
-     and the game keeps rendering behind both. */
+     The offer takes the screen. It used to be an in-world panel over the
+     bottom half with the game live behind it, and that read as broken: the
+     wordmark landed on top of the altar's cards, and taps meant for the room
+     went through to a game the player could no longer see. So while the offer
+     is up the HUD canvas is hidden, the room is dimmed to a backdrop, and the
+     two buttons are the only live targets on the stage. */
 
   /* Every generated plate is drawn at art resolution and upscaled by an exact
      integer factor, so it must never be resampled off-grid. */
@@ -69,18 +72,28 @@
     image-rendering: pixelated; image-rendering: crisp-edges;
   }
 
-  /* No scrim: the plate carries its own contrast, and darkening the room behind
-     it was the thing that made an in-world offer start to feel like a screen. */
+  /* One column — wordmark, store CTA, dismiss — centred a little above the
+     middle, where a thumb reaches without covering the wordmark. The scrim is
+     what makes the offer legible AND what makes it obvious the game is paused;
+     `pointer-events: auto` on the whole inset is what stops taps reaching the
+     dungeon, since the game's handlers sit on #stage above us. */
   #cta-zone {
-    position: absolute; left: 0; right: 0; z-index: 30;
-    display: flex; align-items: center; justify-content: center;
+    position: absolute; inset: 0; z-index: 30;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 34px;
+    padding: 24px 16px 0;
+    background: radial-gradient(120% 90% at 50% 42%, rgba(22,10,32,.84), rgba(4,3,8,.95) 76%);
     opacity: 0; pointer-events: none; transition: opacity .32s ease;
   }
   #cta-zone.show { opacity: 1; pointer-events: auto; }
 
+  /* The HUD is a canvas of its own, so the offer can take the whole screen
+     without the game having to know it happened. */
+  #stage.offering #ui { visibility: hidden; }
+
   #cta {
     border: 0; background-color: transparent; padding: 0; cursor: pointer;
-    color: #2a1606; font: 700 13px/1 ui-monospace, Menlo, monospace;
+    color: #2a1606; font: 700 17px/1 ui-monospace, Menlo, monospace;
     letter-spacing: .18em; text-transform: uppercase; white-space: nowrap;
     text-shadow: 0 1px 0 rgba(255,246,224,.55);
     filter: drop-shadow(0 6px 14px rgba(0,0,0,.7));
@@ -90,28 +103,22 @@
   #cta:active { transform: translateY(3px); filter: none; }
   @keyframes ctaPulse { 0%,88%,100% { filter: drop-shadow(0 6px 14px rgba(0,0,0,.7)); } 94% { filter: drop-shadow(0 6px 14px rgba(0,0,0,.7)) brightness(1.22); } }
 
-  /* Sits exactly on the grimoire tab, so dismissing and re-opening the book are
-     the same target in the same place. */
   #cta-dismiss {
-    position: absolute; left: 50%; z-index: 31; bottom: 8px;
-    transform: translateX(-50%); border: 0; background-color: transparent;
-    padding: 0; cursor: pointer;
-    color: #f0d9b5; font: 700 9px/1 ui-monospace, Menlo, monospace;
+    border: 0; background-color: transparent; padding: 0; cursor: pointer;
+    color: #f0d9b5; font: 700 13px/1 ui-monospace, Menlo, monospace;
     letter-spacing: .2em; text-transform: uppercase; white-space: nowrap;
     opacity: 0; pointer-events: none; transition: opacity .32s ease;
   }
   #cta-dismiss.show { opacity: 1; pointer-events: auto; }
-  #cta-dismiss:active { transform: translateX(-50%) translateY(2px); }
+  #cta-dismiss:active { transform: translateY(2px); }
 
-  /* The wordmark lands in the world itself — the room stays visible behind it. */
   #logo {
-    position: absolute; left: 50%; top: 17%; z-index: 29;
-    transform: translate(-50%, -14px) scale(.94); transform-origin: 50% 50%;
     opacity: 0; pointer-events: none;
+    transform: translateY(-14px) scale(.94); transform-origin: 50% 50%;
     filter: drop-shadow(0 8px 18px rgba(0,0,0,.75));
     transition: opacity .38s ease, transform .38s cubic-bezier(.2,1.3,.4,1);
   }
-  #logo.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  #logo.show { opacity: 1; transform: translateY(0) scale(1); }
 
   #endcard {
     position: absolute; inset: 0; z-index: 40; display: none;
@@ -150,9 +157,11 @@
     <canvas id="ui"></canvas>
     <div id="boot">lighting the torches</div>
     <pre id="err"></pre>
-    <div id="logo"></div>
-    <div id="cta-zone"><button id="cta" type="button">Play Free</button></div>
-    <button id="cta-dismiss" type="button">Keep Playing</button>
+    <div id="cta-zone">
+      <div id="logo"></div>
+      <button id="cta" type="button">Play Free</button>
+      <button id="cta-dismiss" type="button">Keep Playing</button>
+    </div>
     <div id="endcard">
       <div class="verdict" id="ec-verdict">The dungeon keeps its pages</div>
       <h1>Spelltorn Deep</h1>

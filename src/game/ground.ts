@@ -20,7 +20,7 @@
  */
 import type { FillTile } from '../dungeon/grid';
 import type { Element } from '../spells/spells';
-import { FIRE_TURNS, SPILL_TURNS, BRAMBLE_GENERATIONS, BRAMBLE_TURNS } from './tuning';
+import { FIRE_TURNS, SPILL_TURNS, PLANT_TURNS } from './tuning';
 
 /**
  * Rounds of life a tile loses per step out from the middle of the spill, and the
@@ -32,7 +32,7 @@ const FALLOFF = 2;
 const MIN_TURNS = 2;
 
 /** What is lying on a tile. One per tile — see the header. */
-export type Substance = 'fire' | 'oil' | 'water' | 'ice' | 'bramble';
+export type Substance = 'fire' | 'oil' | 'water' | 'ice' | 'bramble' | 'briar';
 
 /**
  * What happens when a substance arrives on a tile that already holds another.
@@ -54,7 +54,7 @@ export type Substance = 'fire' | 'oil' | 'water' | 'ice' | 'bramble';
  */
 function react(
   had: Substance, got: Substance,
-): { left: Substance | null; full: boolean; ripe?: boolean } {
+): { left: Substance | null; full: boolean } {
   if (had === 'oil' && got === 'fire') return { left: 'fire', full: true };
   if (had === 'fire' && got === 'oil') return { left: 'fire', full: true };
   if (had === 'water' && got === 'fire') return { left: null, full: false };
@@ -73,25 +73,51 @@ function react(
   if (had === 'fire' && got === 'ice') return { left: null, full: false };
 
   /**
-   * BRAMBLE, the fifth row, and the only substance that is a CLOCK rather than a
-   * hazard: left alone it creeps outward and then hardens into briar.
+   * THE PLANTS, and they are the only substances that do not expire: a cast lays
+   * them and they stay until something takes them away.
    *
-   *  - **bramble meets water: they take, immediately.** Watered ground does not wait
-   *    out the growth — it is briar the moment it lands, which is the one way the
-   *    player gets terrain THIS turn instead of in three. The pair reads on sight,
-   *    and it is what makes a puddle worth remembering.
-   *  - **bramble meets fire: they burn off.** Fire beats a seed. The tile is left
-   *    burning, and a thicket you regret is a Flame away from gone.
-   *  - **bramble onto ice or oil: the newcomer wins**, via the fallback. Nothing
-   *    grows out of either, so there is no third thing worth authoring.
+   *  - **plant meets fire: it burns.** The tile is left burning from full, and that
+   *    fire then runs along whatever else is growing beside it — see `age`. A thicket
+   *    you regret is one Flame away from gone, and a thicket between you and a body
+   *    with a torch is a mistake.
+   *  - **plant meets water: nothing happens to it.** Water does not kill a plant; it
+   *    is the one liquid that leaves the tile as it found it.
+   *  - **plant onto ice or oil: the newcomer wins**, via the fallback. Nothing grows
+   *    out of either, so there is no third thing worth authoring.
    */
-  if (had === 'water' && got === 'bramble') return { left: 'bramble', full: true, ripe: true };
-  if (had === 'bramble' && got === 'water') return { left: 'bramble', full: true, ripe: true };
+  if (had === 'water' && got === 'bramble') return { left: 'bramble', full: true };
+  if (had === 'bramble' && got === 'water') return { left: 'bramble', full: true };
   if (had === 'bramble' && got === 'fire') return { left: 'fire', full: true };
   if (had === 'fire' && got === 'bramble') return { left: 'fire', full: false };
+  // Briar answers fire and water exactly as the undergrowth does. It is the same
+  // plant, thicker — a rule that held for one and not the other would be two plants.
+  if (had === 'water' && got === 'briar') return { left: 'briar', full: true };
+  if (had === 'briar' && got === 'water') return { left: 'briar', full: true };
+  if (had === 'briar' && got === 'fire') return { left: 'fire', full: true };
+  if (had === 'fire' && got === 'briar') return { left: 'fire', full: false };
+  /**
+   * GRASS NEVER OVERWRITES BRIAR. The thicket is the grown thing; the undergrowth a
+   * cast throws around itself must not mow it back down.
+   *
+   * Without this the fallback applied — newcomer wins — so a second Seed landing
+   * beside an existing thicket erased it with its own surrounding grass, and the
+   * player watched terrain they had spent a cast on get downgraded by the cast meant
+   * to extend it. The other direction is already right through the fallback: grass
+   * that takes a briar becomes briar.
+   */
+  if (had === 'briar' && got === 'bramble') return { left: 'briar', full: true };
 
   return { left: got, full: false };
 }
+
+/**
+ * What FIRE SPREADS INTO — the fuels, and nothing else.
+ *
+ * Not a property of the substance list but a list of its own, because "burns" is a
+ * smaller claim than "reacts with fire": ice reacts with fire and is not fuel, and a
+ * fire that spread into ice would melt a frozen lake from one stray ember.
+ */
+const FLAMMABLE: ReadonlySet<Substance> = new Set<Substance>(['oil', 'bramble', 'briar']);
 
 /**
  * What a cast DOES to the ground it is aimed at.
@@ -123,6 +149,11 @@ const FEEDS: Record<Substance, readonly Element[]> = {
   // Only itself. Water does not feed bramble, it RIPENS it, which is a reaction —
   // the same distinction frost and water already make one line above.
   bramble: ['plant'],
+  // Plant feeds BOTH of its own substances, and the grow path answers with `sow` —
+  // briar at the centre, grass around it. It must not be a mismatch: a Seed aimed at
+  // a body standing in briar would then be SPENT on the thicket, eating the terrain
+  // the player had just made in order to power the cast that was meant to reinforce it.
+  briar: ['plant'],
 };
 
 /**
@@ -141,16 +172,16 @@ export function groundUse(what: Substance, elements: readonly Element[]): Ground
 }
 
 /**
- * `gen` is how many times this patch is descended from the cast that made it, and
- * it exists to stop bramble eating the dungeon.
+ * PLANTS DO NOT GROW OVER TIME. There is no clock on them and no generation count.
  *
- * Measured without it: a single seed went 1, 5, 13, 24, 37, 53 tiles over five
- * rounds, because every bramble tile seeded all four of its neighbours every round —
- * a flood fill wearing a plant costume. Growth has to be something the player watches
- * creep toward them and can walk around, not a floor-filling algorithm, so a patch
- * spreads only as it MATURES and only for `BRAMBLE_GENERATIONS` rings out.
+ * A cast lays what it lays — briar where it was aimed, bramble around it — and that
+ * is the end of it. The version before this one had the plant arrive as a seedling,
+ * creep a ring per maturation and harden three rounds later into a grid surface,
+ * which meant a spell that did nothing on the turn you spent it and terrain fire
+ * could not touch once it set. Both were the same mistake: putting the plant's
+ * strength in a clock instead of on the floor.
  */
-interface Patch { what: Substance; turns: number; gen?: number }
+interface Patch { what: Substance; turns: number }
 
 export class Ground {
   /** Tile index -> what is on it and how long it lasts. */
@@ -170,16 +201,6 @@ export class Ground {
    * be invented to say so.
    */
   refuses: (i: number, what: Substance) => boolean = () => false;
-
-  /**
-   * A bramble tile has finished growing and is briar now.
-   *
-   * A hook for the same reason `refuses` is one: what briar IS — `Surface.Rubble`,
-   * the thing you clamber over and gust sweeps away — is a fact about the GRID, and
-   * this module knows nothing about tiles beyond their index. `Floor` owns both and
-   * wires the two together.
-   */
-  onMature: (i: number) => void = () => {};
 
   /**
    * The neighbours of a tile, for spreading. Set by `Floor`, which knows the width
@@ -239,29 +260,12 @@ export class Ground {
         this.patch.set(i, { what, turns: Math.max(had?.turns ?? 0, life) });
         continue;
       }
-      const { left, full, ripe } = react(had.what, what);
+      const { left, full } = react(had.what, what);
       if (!left) { this.patch.delete(i); continue; }
       // A reaction burns from FULL rather than from what is left of either input —
       // oil going up is a new fire, not the remainder of an old one.
       this.patch.set(i, { what: left, turns: full ? FIRE_TURNS : life });
-      // Watered seed does not wait out its clock. This is the whole of "seed into
-      // water is briar NOW", and it is the one terrain the player gets this turn.
-      if (ripe) this.ripen(i);
     }
-  }
-
-  /**
-   * A bramble tile becomes briar: off the substance map, onto the floor.
-   *
-   * Deleted rather than left as a spent patch, because what it turns into is a
-   * SURFACE and a tile holds one substance. The growth is over; what is there now is
-   * part of the room, and gust sweeps it exactly as it sweeps the rubble the
-   * generator laid.
-   */
-  private ripen(i: number): void {
-    if (this.patch.get(i)?.what !== 'bramble') return;
-    this.patch.delete(i);
-    this.onMature(i);
   }
 
   /** Set tiles alight. The common case, kept as its own name for readability. */
@@ -272,6 +276,27 @@ export class Ground {
   /** Spill a container's contents. */
   spill(tiles: readonly FillTile[], what: Substance): void {
     this.pour(tiles, what, SPILL_TURNS);
+  }
+
+  /**
+   * Plant. BRIAR ON THE TILE IT WAS AIMED AT, bramble on everything around it.
+   *
+   * The gradient is SPATIAL, not temporal. What the cast catches is the thing you
+   * aimed the cast at — one tile of standing thicket, which is difficult ground and
+   * holds a body — and what it leaves around that is undergrowth: something to see,
+   * something that burns, and nothing that entangles. A cast whose whole volume held
+   * bodies would be a wall you can plant.
+   *
+   * `d` is the fill's distance from the centre, which the volume already carries, so
+   * the target tile costs nothing to identify.
+   *
+   * Its own name rather than a `spill`, because a spill is a liquid running out and
+   * this is two substances laid in one shape.
+   */
+  sow(tiles: readonly FillTile[]): void {
+    for (const t of tiles) {
+      this.pour([t], t.d === 0 ? 'briar' : 'bramble', PLANT_TURNS);
+    }
   }
 
   /**
@@ -299,7 +324,9 @@ export class Ground {
   level(i: number): 1 | 2 | 3 {
     const p = this.patch.get(i);
     if (!p) return 1;
-    const full = p.what === 'fire' ? FIRE_TURNS : p.what === 'bramble' ? BRAMBLE_TURNS : SPILL_TURNS;
+    // A plant has no remaining life to draw, so it is always drawn whole.
+    if (p.what === 'bramble' || p.what === 'briar') return 3;
+    const full = p.what === 'fire' ? FIRE_TURNS : SPILL_TURNS;
     if (p.turns > full * 0.6) return 3;
     if (p.turns > full * 0.25) return 2;
     return 1;
@@ -315,7 +342,7 @@ export class Ground {
    */
   feed(tiles: readonly FillTile[], what: Substance): number {
     let grown = 0;
-    const full = what === 'fire' ? FIRE_TURNS : what === 'bramble' ? BRAMBLE_TURNS : SPILL_TURNS;
+    const full = what === 'fire' ? FIRE_TURNS : SPILL_TURNS;
     for (const { i } of tiles) {
       if (this.refuses(i, what)) continue;
       const had = this.patch.get(i);
@@ -342,34 +369,40 @@ export class Ground {
    */
   age(): void {
     /**
-     * A patch seeds ON THE ROUND IT HARDENS, and never after.
+     * FIRE TRAVELS ON FUEL, and this is the whole rule.
      *
-     * Spreading from every live tile every round is a flood fill; spreading as the
-     * plant goes over is a ring that steps outward once per `BRAMBLE_TURNS` and stops
-     * at `BRAMBLE_GENERATIONS`. That is the difference between terrain and weather.
+     * A burning tile sets light to any neighbour holding oil or plant. It needs no
+     * generation cap the way the old bramble creep did, because the FUEL is the cap:
+     * fire walks the length of a slick or a thicket and stops dead where that runs
+     * out. Nothing catches bare ground, so a room does not burn down.
+     *
+     * Collected before anything is written, so a tile lit this round does not also
+     * spread this round — otherwise a slick goes up end to end on the first tick
+     * instead of running along itself a tile at a time, which is the part worth
+     * watching and the part you can outrun.
      */
-    const sown: { i: number; gen: number }[] = [];
+    const caught: number[] = [];
     for (const [i, p] of this.patch) {
-      if (p.what !== 'bramble' || p.turns > 1) continue;
-      const gen = (p.gen ?? 0) + 1;
-      if (gen > BRAMBLE_GENERATIONS) continue;
+      if (p.what !== 'fire') continue;
       for (const n of this.neighbours(i)) {
-        if (this.patch.has(n) || this.refuses(n, 'bramble')) continue;
-        sown.push({ i: n, gen });
+        const fuel = this.patch.get(n);
+        if (!fuel || !FLAMMABLE.has(fuel.what)) continue;
+        if (this.refuses(n, 'fire')) continue;
+        caught.push(n);
       }
     }
 
     for (const [i, p] of [...this.patch]) {
+      // Plants are not on a clock. They sit there until fire takes them or a gust
+      // tears them out, which is what makes them terrain rather than weather.
+      if (p.what === 'bramble' || p.what === 'briar') continue;
       if (p.turns > 1) { p.turns--; continue; }
-      if (p.what === 'bramble') this.ripen(i);
-      else this.patch.delete(i);
+      this.patch.delete(i);
     }
 
-    // Sown AFTER the ageing pass, so a tile seeded this round starts on a full
-    // clock rather than being aged on the turn it appeared.
-    for (const { i, gen } of sown) {
-      if (!this.patch.has(i)) this.patch.set(i, { what: 'bramble', turns: BRAMBLE_TURNS, gen });
-    }
+    // Lit AFTER the ageing pass, so a tile that just caught burns from full rather
+    // than being aged on the turn it went up.
+    for (const i of caught) this.patch.set(i, { what: 'fire', turns: FIRE_TURNS });
   }
 
   clear(): void { this.patch.clear(); }

@@ -175,6 +175,15 @@ export class Stepper {
    */
   slippery: (x: number, y: number) => boolean = () => false;
   /**
+   * Is this tile SNAGGED — is there briar growing on it?
+   *
+   * A hook for the same reason `slippery` is one: a plant is a patch in `Ground`, not
+   * a surface in the grid, and the stepper knows nothing about `Ground`. Briar only,
+   * never the bramble around it: one tile of a plant cast is difficult ground and the
+   * rest is undergrowth, or every cast would be a wall.
+   */
+  snagged: (x: number, y: number) => boolean = () => false;
+  /**
    * Fired when the step just taken was into a bottomless gap.
    *
    * The one move the grid says no to that the PLAYER is allowed to make anyway. A
@@ -201,9 +210,25 @@ export class Stepper {
   /** How far back from the tile centre the eye sits. See `PULLBACK`. */
   pullback = PULLBACK;
 
+  /**
+   * How far along the step we are, eased.
+   *
+   * A held step is TWO STEPS, and each half is eased from rest to rest, so the
+   * player sees a footfall into the obstacle and a second one out of it. Easing the
+   * whole crossing as one curve and pausing partway through it — which is what this
+   * did — reads as a frame hitch, not as difficult ground.
+   */
+  private travel(): number {
+    const t = Math.min(1, this.moveT);
+    if (this.holdAt >= 1) return easeStep(t);
+    return t <= this.holdAt
+      ? easeStep(t / this.holdAt) * this.holdAt
+      : this.holdAt + easeStep((t - this.holdAt) / (1 - this.holdAt)) * (1 - this.holdAt);
+  }
+
   /** Where the camera should be right now, in world space. */
   eye(out: THREE.Vector3, time: number): void {
-    const p = easeStep(Math.min(1, this.moveT));
+    const p = this.travel();
     const x = this.fromX + (this.x - this.fromX) * p;
     const z = this.fromY + (this.y - this.fromY) * p;
 
@@ -380,9 +405,31 @@ export class Stepper {
      */
     const rise = Math.max(0, this.grid.heightAt(this.x, this.y) - this.grid.heightAt(this.fromX, this.fromY));
     this.moveScale = slid ? 1 + slid * 0.35 : 1 + rise * 0.85;
-    // A tile of rubble is crossed in two halves, with a round of the room in between.
-    this.holdAt = this.onHalfway && !slid && this.grid.surfaceAt(nx, ny) === Surface.Rubble
+    /**
+     * THE COST IS THE EDGE, not the tile.
+     *
+     * Getting INTO rubble or briar costs the double move, and so does getting OUT of
+     * it — but moving from one briar tile to the next does not, because you are
+     * already in it and there is no second edge to fight through. Charging per tile
+     * instead made a wide patch cost its own area, which turns a thicket into a wall
+     * the moment it is more than one tile across; charging on the boundary makes it
+     * a thing with an inside, which is what terrain is.
+     */
+    const hard = (x: number, y: number): boolean =>
+      this.grid.surfaceAt(x, y) === Surface.Rubble || this.snagged(x, y);
+    this.holdAt = this.onHalfway && !slid && hard(this.fromX, this.fromY) !== hard(nx, ny)
       ? 0.5 : 1;
+    /**
+     * AND IT TAKES TWICE AS LONG TO WATCH.
+     *
+     * The crossing already cost two rounds — one handed over at the hold, one on
+     * arrival — and read as none of it: the whole thing played inside a single
+     * step's worth of time, as one glide with a hitch in the middle, so the player
+     * paid a turn they could not see. Doubling the duration is what makes the price
+     * legible, and `eye` eases the two halves separately so each one lands as its
+     * own footfall rather than as a stutter in one motion.
+     */
+    if (this.holdAt < 1) this.moveScale *= 2;
     this.holding = false;
     this.onDepart?.(this.fromX, this.fromY, nx, ny);
     // The turn rides along with the step — one action, one round. See `MoveInput`.

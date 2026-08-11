@@ -1036,6 +1036,22 @@
       "keyline": false,
       "prompt": "A STONE PRESSURE PLATE set into a dungeon floor, viewed from DIRECTLY ABOVE looking straight down: one thick square slab of grey stone banded with dark iron along its four edges, sitting inside a square rebate cut into the flagstones with a narrow black gap all the way around it, and a heavy round iron boss in the middle of the slab worn smooth and bright by boots. Chipped stone, pitted iron, old grime down in the gap. Flat top-down plan view, no perspective, no side walls visible.",
       "extra": "CRITICAL: a strict top-down bird's eye view of one flat square slab in the floor. Square, filling the frame, with the black gap visible on all four sides. No perspective, no walls, no room, no side of anything, no lever, no chain, no keyhole, no spikes."
+    },
+    {
+      "id": "terrain_grass",
+      "kind": "prop",
+      "height": 44,
+      "colors": 12,
+      "seed": 7411,
+      "prompt": "LOW GREEN GRASS: a small sparse tuft of ankle-height grass. BRIGHT GREEN and MOSS GREEN blades, vivid and alive, clearly green. Thin blades splayed LOW and WIDE and drooping outward, no upright stems, no woody parts, no thorns, no flowers, no dirt, no rock. Just a low spray of green grass blades. WIDER THAN IT IS TALL, flat and unremarkable."
+    },
+    {
+      "id": "terrain_briar",
+      "kind": "prop",
+      "height": 96,
+      "colors": 24,
+      "seed": 9104,
+      "prompt": "A CLUSTER OF THORN SPIKES: sparse, tall, spear-straight woody stalks driven up out of the stone at angles, each one a rigid yellow spine tipped with a hard point, very few leaves. Open and see-through between the stalks, more a bed of spikes than a bush. Ochre and pale gold, hard and dry. Reads as a trap you would not step into. Knee-to-waist high, standing on bare dungeon stone. Dark shadowed gaps deep inside it so it reads as a volume and not a flat panel. NOT woven, NOT a basket, NOT a lattice, NOT a fence, no repeating pattern, no border."
     }
   ]
 }

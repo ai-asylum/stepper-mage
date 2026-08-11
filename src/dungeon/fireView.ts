@@ -27,7 +27,18 @@ import { Pix, rgba } from '../art/pixel';
 import { ppu } from '../art/steps';
 import type { Substance } from '../game/ground';
 
-const SUBSTANCES: readonly Substance[] = ['fire', 'oil', 'water', 'ice', 'bramble'];
+/**
+ * The substances this view draws — the LIQUIDS and fire, and not the plants.
+ *
+ * A plant is drawn by `GrowthView` as clumps standing up out of the tile, which is
+ * the whole reason that view exists. Giving it a floor decal as well put an animated
+ * green pool under every thicket: two drawings of one thing, the lower one shimmering
+ * on a four-frame cycle because that is what a decal here does. The plants are enough.
+ */
+const SUBSTANCES = ['fire', 'oil', 'water', 'ice'] as const;
+
+/** Drawn by `GrowthView` instead, and by nothing here. */
+const DRAWN_ELSEWHERE: ReadonlySet<Substance> = new Set<Substance>(['bramble', 'briar']);
 
 const FRAMES = 4;
 
@@ -72,13 +83,11 @@ const PALETTE = {
   // Ice reads by being PALER and harder-edged than the water it froze from — the
   // player has to be able to tell at a glance which puddle will carry them.
   ice: { core: rgba(236, 250, 255), mid: rgba(168, 214, 232), crust: rgba(96, 146, 176) },
-  // Bramble reads GREEN and matte where every other substance is wet or bright — a
-  // patch you can tell from a puddle at a glance, because one of them slows you
-  // down for the rest of the floor and the other does not.
-  bramble: { core: rgba(146, 220, 138), mid: rgba(72, 148, 88), crust: rgba(34, 76, 48) },
 } as const;
 
-function emberTile(n: number, frame: number, what: Substance): Pix {
+type Decalled = keyof typeof PALETTE;
+
+function emberTile(n: number, frame: number, what: Decalled): Pix {
   const p = new Pix(n, n);
   const rnd = (x: number, y: number): number => {
     const s = Math.sin((x * 12.9898 + y * 78.233 + frame * 37.719)) * 43758.5453;
@@ -208,6 +217,7 @@ export class FireView {
   ): void {
     let i = 0;
     for (const { i: t, what, level } of patches) {
+      if (DRAWN_ELSEWHERE.has(what)) continue;
       const x = t % gridW, y = (t / gridW) | 0;
       this.take(i).position.set(x, LIFT, y);
       this.pool[i].visible = true;

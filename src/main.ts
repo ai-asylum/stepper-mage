@@ -2482,6 +2482,14 @@ async function boot(): Promise<void> {
     // Frost on standing water is a floor you keep going on. See `Stepper.slippery`.
     stepper.slippery = (x, y) => floor.ground.at(floor.grid.idx(x, y)) === 'ice';
     /**
+     * BRIAR COSTS YOU A BEAT, the same one rubble costs. See `Stepper.snagged`.
+     *
+     * Briar only — the bramble a cast throws around it is undergrowth, and a plant
+     * cast whose whole volume was difficult ground would be a wall the player can
+     * lay across a room.
+     */
+    stepper.snagged = (x, y) => floor.ground.at(floor.grid.idx(x, y)) === 'briar';
+    /**
      * The tile the current step started on, for the arrival to measure the drop
      * against. `onArrive` is only told where you landed, and by then the stepper's
      * own `fromX/fromY` have been reused by whatever was queued next.
@@ -2516,7 +2524,15 @@ async function boot(): Promise<void> {
      */
     stepper.onHalfway = async (fromX, fromY) => {
       busy = true;
-      hud.addLog('You clamber into the rubble.', 0xa89880);
+      // Named for what is actually underfoot. The obstacle is the tile being ENTERED
+      // — `fromX,fromY` is the near side the player is still counted as standing on —
+      // and `stepper` already holds the destination, committed at the start of the
+      // step.
+      const rock = floor.grid.surfaceAt(stepper.x, stepper.y) === Surface.Rubble;
+      hud.addLog(
+        rock ? 'You clamber into the rubble.' : 'You tear into the briar.',
+        rock ? 0xa89880 : 0x8fd07a,
+      );
       try {
         await combat.playerStepped(fromX, fromY);
       } finally {

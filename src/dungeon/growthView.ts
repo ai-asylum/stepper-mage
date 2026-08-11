@@ -19,19 +19,42 @@
 import * as THREE from 'three';
 import { Pix, rgba } from '../art/pixel';
 import { ppu } from '../art/steps';
+import { loadSprite } from './sprites';
 import type { Grid } from './grid';
 
-/** What a clump is made of. */
-export type GrowthKind = 'rubble' | 'plant';
+/**
+ * THE PLANTS ARE DRAWN ART, not code.
+ *
+ * Rubble stays procedural — it is broken masonry, it wants to match the wall it fell
+ * off, and four `Pix` chunks do that better than a drawing would. The plants do not:
+ * grass and briar have to be told apart INSTANTLY across a lit room, because one of
+ * them costs a turn to cross and the other is scenery, and hand-plotted tapers made
+ * two green tufts that differed only in height. These come through `art/manifest.json`
+ * and `tools/genart.py` like every other sprite in the game.
+ */
+const PLANT_ART: Partial<Record<GrowthKind, string>> = {
+  plant: 'terrain_grass',
+  briar: 'terrain_briar',
+};
 
 /**
- * Clumps per tile, per axis. THREE for briar, TWO for rubble.
+ * What a clump is made of.
+ *
+ * `plant` is the undergrowth a cast throws around itself and `briar` is the thicket
+ * on the tile it was aimed at. Two things at once, never two stages of one thing:
+ * the briar is what holds a body, the plant is what carries fire to it, and the
+ * player has to be able to see which tile is which from across the room.
+ */
+export type GrowthKind = 'rubble' | 'plant' | 'briar';
+
+/**
+ * Clumps per tile, per axis. THREE for green things, TWO for rubble.
  *
  * Briar is many thin things and wants to look dense; rubble is a few heavy things and
  * a 3x3 of boulders reads as gravel rather than as a collapse. The difference is the
  * whole reason this is per-kind and not one constant.
  */
-const GRID: Record<GrowthKind, number> = { rubble: 2, plant: 3 };
+const GRID: Record<GrowthKind, number> = { rubble: 2, plant: 3, briar: 2 };
 
 /**
  * How tall a clump stands, in world units. A tile is 1.
@@ -42,7 +65,7 @@ const GRID: Record<GrowthKind, number> = { rubble: 2, plant: 3 };
  * blindfold. Low enough to see over, tall enough to occlude a body's feet and throw
  * parallax as you walk past, which is all the read needs.
  */
-const HEIGHT: Record<GrowthKind, number> = { rubble: 0.3, plant: 0.38 };
+const HEIGHT: Record<GrowthKind, number> = { rubble: 0.3, plant: 0.13, briar: 0.5 };
 
 /**
  * A broken slab, drawn as two or three angular chunks with a lit top face.
@@ -84,57 +107,11 @@ function rubblePix(n: number, seed: number): Pix {
   return p;
 }
 
-/**
- * A briar tuft: a few blades fanning off a common root, with a thorn or two.
- *
- * Drawn as tapers from a single base point so the clump reads as one plant rather
- * than as three separate weeds standing in a row. The dark rim does the same job it
- * does on the flame card — it is the one value the brown room never produces, and it
- * is what keeps green legible against a wall lit by torchlight.
- */
-function plantPix(n: number, seed: number): Pix {
-  const p = new Pix(n, n);
-  const rnd = (k: number): number => {
-    const s = Math.sin(seed * 45.164 + k * 91.377) * 27183.311;
-    return s - Math.floor(s);
-  };
-  const deep = rgba(34, 76, 48);
-  const leaf = rgba(72, 148, 88);
-  const bright = rgba(146, 220, 138);
-  const rim = rgba(16, 32, 22);
-
-  const baseX = 0.5 * n, baseY = n - 1;
-  const blades = 5;
-  for (let i = 0; i < blades; i++) {
-    const t = i / (blades - 1);
-    // fan from left to right, tallest through the middle
-    const lean = (t - 0.5) * 0.78;
-    const h = (0.55 + Math.sin(t * Math.PI) * 0.42) * (0.82 + rnd(i) * 0.3);
-    const tipX = baseX + lean * n * 0.9;
-    const tipY = n - h * n;
-    const col = i % 2 === 0 ? leaf : deep;
-    p.taper(baseX + (t - 0.5) * n * 0.16, baseY, tipX, tipY, n * 0.11, 0.5, col);
-    // a highlight up the spine of every other blade, so the clump has depth
-    if (i % 2 === 0) {
-      p.taper(baseX + (t - 0.5) * n * 0.16, baseY - n * 0.08, tipX, tipY + n * 0.2,
-        n * 0.05, 0.4, bright);
-    }
-  }
-  // thorns: single texels off the outer blades, which is all a thorn needs to be
-  for (let i = 0; i < 3; i++) {
-    const x = Math.round((0.22 + rnd(10 + i) * 0.56) * n);
-    const y = Math.round((0.30 + rnd(20 + i) * 0.45) * n);
-    p.set(x, y, bright);
-  }
-  p.outline(rim, false, true);
-  return p;
-}
-
 interface Clump { mesh: THREE.Mesh; kind: GrowthKind }
 
 export class GrowthView {
   readonly group = new THREE.Group();
-  private tex: Record<GrowthKind, THREE.Texture[]> = { rubble: [], plant: [] };
+  private tex: Record<GrowthKind, THREE.Texture[]> = { rubble: [], plant: [], briar: [] };
   private geo: Record<GrowthKind, THREE.PlaneGeometry>;
   private pool: Clump[] = [];
   private live = 0;
@@ -143,48 +120,95 @@ export class GrowthView {
     this.geo = {
       rubble: this.makeGeo('rubble'),
       plant: this.makeGeo('plant'),
+      briar: this.makeGeo('briar'),
     };
     this.build();
   }
 
-  /** A quad standing ON the floor: pivot at the bottom edge, not the middle. */
-  private makeGeo(kind: GrowthKind): THREE.PlaneGeometry {
+  /**
+   * A quad standing ON the floor: pivot at the bottom edge, not the middle.
+   *
+   * `aspect` is width over height. Rubble is drawn square because it is authored
+   * square; the plant sprites are not — the grass is four times wider than it is
+   * tall, and forcing that into a square quad would stand it up like a hedge, which
+   * is the exact read the low sprite exists to avoid.
+   */
+  private makeGeo(kind: GrowthKind, aspect = 1): THREE.PlaneGeometry {
     const h = HEIGHT[kind];
-    const g = new THREE.PlaneGeometry(h, h);
+    const g = new THREE.PlaneGeometry(h * aspect, h);
     g.translate(0, h / 2, 0);
     return g;
   }
 
   private build(): void {
-    const n = Math.max(8, Math.round(ppu() * HEIGHT.plant));
-    // FOUR variants each, picked by tile so a patch is not the same rock repeated.
-    // Four rather than one because a repeated silhouette is the single loudest tell
-    // that a floor was generated, and rather than sixteen because nobody counts past
-    // about three and every extra one is a texture.
-    for (let i = 0; i < 4; i++) {
-      this.tex.rubble.push(rubblePix(n, i + 1).toTexture());
-      this.tex.plant.push(plantPix(n, i + 1).toTexture());
+    const n = Math.max(8, Math.round(ppu() * HEIGHT.rubble));
+    // FOUR variants, picked by tile so a patch is not the same rock repeated. Four
+    // rather than one because a repeated silhouette is the single loudest tell that a
+    // floor was generated, and rather than sixteen because nobody counts past about
+    // three and every extra one is a texture.
+    for (let i = 0; i < 4; i++) this.tex.rubble.push(rubblePix(n, i + 1).toTexture());
+    void this.loadPlants();
+  }
+
+  /**
+   * Bind the two plant sprites, and size their quads to the art.
+   *
+   * Async and unawaited: a clump with no texture yet is invisible for a frame or two
+   * and then appears, which is what every other sprite in this game already does, and
+   * the alternative is making floor construction wait on a texture fetch.
+   */
+  private async loadPlants(): Promise<void> {
+    for (const kind of ['plant', 'briar'] as const) {
+      const tex = await loadSprite(PLANT_ART[kind]!);
+      const img = tex.image as { width: number; height: number };
+      this.geo[kind].dispose();
+      this.geo[kind] = this.makeGeo(kind, img.width / img.height);
+      this.tex[kind] = [tex];
+      /**
+       * Rebind what is ALREADY on screen, not just the geometry.
+       *
+       * A floor is built and synced before this resolves, so those clumps were made
+       * with no map at all and drew as white slabs — and `sync` only rebinds a slot
+       * when it reuses it, which for a static patch of briar is never.
+       */
+      for (const c of this.pool) {
+        if (c.kind !== kind) continue;
+        c.mesh.geometry = this.geo[kind];
+        const mat = c.mesh.material as THREE.MeshBasicMaterial;
+        mat.map = tex;
+        mat.needsUpdate = true;
+      }
     }
   }
 
-  /** Re-author at a new texel density. See `DungeonView.restep`. */
+  /**
+   * Re-author at a new texel density. See `DungeonView.restep`.
+   *
+   * Rubble only. The plant sprites are art files and `loadSprite` already picks the
+   * right one for the step, so re-plotting them here would only throw away textures
+   * the cache is holding for everyone else.
+   */
   restep(): void {
-    for (const k of ['rubble', 'plant'] as const) {
-      for (const t of this.tex[k]) t.dispose();
-      this.tex[k] = [];
-    }
+    for (const t of this.tex.rubble) t.dispose();
+    this.tex.rubble = [];
     this.build();
   }
 
   private take(kind: GrowthKind, variant: number): THREE.Mesh {
     const existing = this.pool[this.live];
-    const tex = this.tex[kind][variant % this.tex[kind].length];
+    // Null until the art lands — see `loadPlants`, which rebinds every slot when it
+    // does. A quad with no map draws as a white slab, so it must be `null` and not
+    // `undefined`: three.js treats the first as "no texture" and the second as "keep
+    // whatever was there".
+    const set = this.tex[kind];
+    const tex = set.length ? set[variant % set.length] : null;
     if (existing) {
       existing.kind = kind;
       existing.mesh.geometry = this.geo[kind];
       const mat = existing.mesh.material as THREE.MeshBasicMaterial;
       mat.map = tex;
       mat.needsUpdate = true;
+      existing.mesh.visible = !!tex;
       existing.mesh.visible = true;
       this.live++;
       return existing.mesh;
@@ -194,6 +218,7 @@ export class GrowthView {
       side: THREE.DoubleSide,
     });
     const mesh = new THREE.Mesh(this.geo[kind], mat);
+    mesh.visible = !!tex;
     mesh.frustumCulled = false;
     this.group.add(mesh);
     this.pool.push({ mesh, kind });
@@ -248,10 +273,10 @@ export class GrowthView {
 
   dispose(): void {
     for (const { mesh } of this.pool) (mesh.material as THREE.MeshBasicMaterial).dispose();
-    for (const k of ['rubble', 'plant'] as const) {
-      for (const t of this.tex[k]) t.dispose();
-      this.geo[k].dispose();
-    }
+    // The plant textures belong to the shared sprite cache and are NOT disposed here —
+    // another floor will want them, and `loadSprite` hands out the same object.
+    for (const t of this.tex.rubble) t.dispose();
+    for (const k of ['rubble', 'plant', 'briar'] as const) this.geo[k].dispose();
     this.group.clear();
     this.pool.length = 0;
   }

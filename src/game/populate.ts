@@ -26,6 +26,14 @@ export interface Placed {
   ox: number;
   oz: number;
   hover: number;
+  /**
+   * Does this thing fly? Ground terrain does not apply to it.
+   *
+   * Recorded rather than derived from `hover`, which is a DRAWING — the depth-1 boss
+   * floats a little for effect and walks like everything else — so reading the float
+   * back as "flies" would exempt it from the floor by accident.
+   */
+  flies?: boolean;
   roomId: number;
 }
 
@@ -164,6 +172,7 @@ export function populate(grid: Grid, theme: Theme, seed: string, depth: number):
         kind: 'enemy', sprite, x, y,
         ox: rng.range(-0.12, 0.12), oz: rng.range(-0.12, 0.12),
         hover: flies ? rng.range(0.16, 0.3) : 0,
+        flies,
         roomId: room.id,
       });
       claim(x, y);
