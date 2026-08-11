@@ -3,9 +3,10 @@ import { Engine } from './core/engine';
 import { Floor, isCastableObject, type Entity } from './game/floor';
 import { Stepper, PITCH } from './game/stepper';
 import {
-  Combat, targetsInView, MAX_RANK, type PlayerState,
+  Combat, DENIAL_STATUSES, targetsInView, MAX_RANK, type PlayerState,
 } from './game/combat';
 import { CastFx } from './spells/vfx';
+import { StunView } from './dungeon/stunView';
 import {
   Hud, isTileTarget, sameTarget,
   type AimTarget, type AltarOffer, type HandCard,
@@ -356,6 +357,31 @@ async function boot(): Promise<void> {
 
   const fx = new CastFx();
   engine.scene.add(fx.group);
+  /**
+   * Circling stars over anything that will lose its round. The tint and the "SKIPS"
+   * floater both say it too late or too quietly — see `stunView.ts`.
+   */
+  const stunView = new StunView();
+  engine.scene.add(stunView.group);
+
+  /**
+   * Every body that is currently denied, as a point to hang a ring over.
+   *
+   * Read fresh each frame rather than cached on a status change, because a stunned
+   * body can still be SHOVED — a ring that lagged a tile behind the thing it belongs
+   * to would be worse than no ring at all.
+   */
+  const stunned = function* (): Iterable<{ x: number; y: number; top: number }> {
+    for (const e of floor.entities) {
+      if (!e.alive || !e.hostile) continue;
+      if (!DENIAL_STATUSES.some((id) => combat.has(e, id))) continue;
+      yield {
+        x: e.sprite.tx + e.sprite.ox,
+        y: e.sprite.ty + e.sprite.oz,
+        top: e.sprite.hover + e.sprite.h,
+      };
+    }
+  };
 
   // ---- the grimoire ------------------------------------------------------
   // Rendered in its own scene at full resolution over the pixelated dungeon.
@@ -863,6 +889,26 @@ async function boot(): Promise<void> {
    */
   const CINE_OUT = 1.15;
   const CINE_BACK = 0.55;
+  /**
+   * HOW LONG THE LOOK TAKES, which is NOT how long the move takes.
+   *
+   * Turning across the whole flight is the same mistake as not turning at all, one
+   * step further on. The eye ends up rotating a degree or two per frame for a second
+   * and a bit, which is slow enough that at no point does it read as a turn — it
+   * reads as the world drifting, and you still arrive without having been told which
+   * way you went.
+   *
+   * A turn is a thing you do FIRST and then stop doing. So the look leads: it swings
+   * over the front of the move and is finished well before the eye is, and the rest
+   * of the flight happens under a camera that is already pointed at the subject. Long
+   * enough to be watched — 0.45s for a right angle is a head turn, not a cut — and
+   * short enough to be over while the move is still going.
+   *
+   * The return is quicker because the whole return is quicker, and it keeps the same
+   * proportion: turn back to the corridor, then slide home facing it.
+   */
+  const CINE_LOOK_OUT = 0.45;
+  const CINE_LOOK_BACK = 0.26;
   /**
    * THE BEAT. The camera arrives and then NOTHING HAPPENS for most of a second.
    *
@@ -2276,6 +2322,20 @@ async function boot(): Promise<void> {
       });
       engine.setFlash(0.16, cast.colour);
     };
+
+    /**
+     * A chain jump: a bolt standing in the gap between two bodies, not a thing
+     * crossing it. Aimed at the upper body of both so it runs between chests rather
+     * than between two patches of floor, and answered with a small burst at the far
+     * end so the arrival lands as a hit and not just as light.
+     */
+    combat.onChainFx = (from, to, colour) => {
+      const a = entityPos(from, new THREE.Vector3());
+      const b = entityPos(to, new THREE.Vector3());
+      fx.chain(a, b, colour);
+      fx.burst(b, colour, 0.7);
+      engine.setFlash(0.1, 0xffe14a);
+    };
   };
 
   // ------------------------------------------------------------- floor loading
@@ -3052,10 +3112,17 @@ async function boot(): Promise<void> {
         (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
 
       let k = 1;
+      /**
+       * The LOOK's own progress, ahead of the move's. See `CINE_LOOK_OUT`: the turn
+       * is over the front of the flight and finished before it, never spread across
+       * the whole of it.
+       */
+      let kLook = 1;
       /** How hard the camera is trembling right now. Only the grind produces any. */
       let rumble = 0;
       if (cine.phase === 'out') {
         k = ease(Math.min(1, cine.t / CINE_OUT));
+        kLook = ease(Math.min(1, cine.t / CINE_LOOK_OUT));
         if (cine.t >= CINE_OUT) {
           cine = { phase: 'beat', t: 0, onArrive: cine.onArrive, onOpen: cine.onOpen };
         }
@@ -3093,6 +3160,7 @@ async function boot(): Promise<void> {
         }
       } else if (cine.phase === 'back') {
         k = 1 - ease(Math.min(1, cine.t / CINE_BACK));
+        kLook = 1 - ease(Math.min(1, cine.t / CINE_LOOK_BACK));
         if (cine.t >= CINE_BACK) { cine = null; hud.cinema = false; hud.cinePrompt = null; }
       }
 
@@ -3120,7 +3188,7 @@ async function boot(): Promise<void> {
          */
         engine.camera.lookAt(cineAt);
         cineToQ.copy(engine.camera.quaternion);
-        engine.camera.quaternion.slerpQuaternions(cineFromQ, cineToQ, k);
+        engine.camera.quaternion.slerpQuaternions(cineFromQ, cineToQ, kLook);
         if (rumble > 0) engine.camera.rotation.z += Math.sin(engine.time * 31) * 0.007 * rumble;
         // The world still has to tick — a frozen room behind a moving camera reads as
         // a screenshot, and the door the cut exists to show is opening right now.
@@ -3140,6 +3208,7 @@ async function boot(): Promise<void> {
 
     floor.update(wdt, engine.time, eye);
     fx.update(dt, engine.camera.quaternion);
+    stunView.update(dt, stunned(), engine.camera.quaternion);
     /**
      * The grimoire's visibility, applied. `Book.closed` is a plain field and the book
      * animates its own glide from it (`closeT`), so driving it from derived state gets
@@ -3915,6 +3984,12 @@ async function boot(): Promise<void> {
       return !!e;
     },
     castNow: () => doCast(),
+    /**
+     * The cast-effects rig itself, so a VFX change can be looked at without playing
+     * a turn to reach one. Spawning a chain takes a whole cast, a hand and something
+     * to cast at; the effect it draws is a function of two points and a colour.
+     */
+    fx: () => fx,
     /**
      * The run's seed, readable and settable.
      *

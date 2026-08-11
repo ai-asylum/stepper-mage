@@ -357,7 +357,6 @@ export class DungeonView {
      */
     const ironB = tiles.iron.map(() => new MeshBuild());
     const waterB = tiles.water.map(() => new MeshBuild());
-    const rubbleB = tiles.rubble.map(() => new MeshBuild());
     const fogB = tiles.fog.map(() => new MeshBuild());
     const portalB = tiles.portal.map(() => new MeshBuild());
     // the inside of a shaft, which is deliberately not masonry — see `pitFace`
@@ -366,13 +365,21 @@ export class DungeonView {
     const surfaceB: Record<number, MeshBuild[]> = {
       [Surface.Iron]: ironB,
       [Surface.Water]: waterB,
-      [Surface.Rubble]: rubbleB,
       [Surface.Fog]: fogB,
       /**
        * NOT the ladder. It used to be a floor texture, which drew a ladder lying flat
        * on the ground like a picture of one — a ladder is a thing you climb, so it
        * hangs on the face of the ledge it serves. `ClockView` puts it there; the tile
        * under it is ordinary floor.
+       */
+      /**
+       * NOT rubble either, and for exactly the same reason.
+       *
+       * A rubble TEXTURE is a differently-coloured flagstone: from a standing camera
+       * the eye files it with the moss and walks onto it. Rubble is difficult terrain
+       * — it costs a clamber, and briar grown from spores becomes it — so it has to
+       * read as an obstacle before any rule is read. `GrowthView` stands it up out of
+       * the floor as crossed cards; the tile underneath is ordinary floor.
        */
     };
 
@@ -717,7 +724,6 @@ export class DungeonView {
     addAll(ceilB, tiles.ceils);
     addAll(ironB, tiles.iron);
     addAll(waterB, tiles.water);
-    addAll(rubbleB, tiles.rubble);
     addAll(fogB, tiles.fog);
     addAll(portalB, tiles.portal);
     addAll(pitB, pitPix);

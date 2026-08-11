@@ -266,6 +266,15 @@ export class Combat {
   /** Fired so the renderer can throw a projectile / burst. */
   onCastFx: (cast: ResolvedCast, from: Entity | null, targets: Entity[]) => void = () => {};
   /**
+   * Fired for each JUMP of a chain, so lightning can draw as lightning.
+   *
+   * Its own hook rather than another `onCastFx` with a `from`, because a chain link
+   * is not a projectile: nothing travels, a bolt stands in the gap for four frames
+   * and snaps off. Overloading the projectile path would mean the renderer sniffing
+   * the cast's elements to decide which of two unrelated things to draw.
+   */
+  onChainFx: (from: Entity, to: Entity, colour: number) => void = () => {};
+  /**
    * Fired when an object goes off. Separate from `onCastFx` because the blast comes
    * from the OBJECT and not from the player's hands — which is the whole thing the
    * player has to read off it.
@@ -627,8 +636,8 @@ export class Combat {
 
     this.onCastFx(cast, null, targets);
 
-    for (const t of targets) {
-      await this.applyCast(cast, t);
+    for (let i = 0; i < targets.length; i++) {
+      await this.applyCast(cast, targets[i], i === 0, targets);
     }
 
     /**
@@ -673,7 +682,11 @@ export class Combat {
        * fire at all: the player who gets burnt made a positioning mistake and can see
        * which one. It can kill; the same rules as an enemy.
        */
-      if (leaves === 'fire' && caughtCaster) this.burnCaster(cast);
+      // Frost catches you too, and for the same reason it is a volume at all: an area
+      // you can lay ice over is an area you can be standing in. It is the smaller
+      // volume (`FROST_VOLUME_TILES`) precisely so this stays a mistake you can make
+      // rather than a tax on every cast.
+      if ((leaves === 'fire' || leaves === 'frost') && caughtCaster) this.burnCaster(cast);
 
       /**
        * Gust CLEARS rather than covers — the other half of the loop, and the reason
@@ -833,17 +846,32 @@ export class Combat {
    * bar. One jump every `CHAIN_JUMP_MS` is the same rhythm the enemy round already
    * moves at, so a long chain reads as a busy moment rather than as a hitch.
    */
-  private async chain(cast: ResolvedCast, from: Entity, damage: number, jumps: number): Promise<void> {
+  private async chain(
+    cast: ResolvedCast, from: Entity, damage: number, jumps: number,
+    already: readonly Entity[],
+  ): Promise<void> {
     const g = this.floor.grid;
-    const visited = new Set<Entity>([from]);
+    /**
+     * SEEDED WITH EVERY BODY THE CAST ALREADY HIT, not just the one the charge is
+     * leaving from.
+     *
+     * The copies and the chain are two different deliveries of the same cast, and
+     * with only the origin marked they overlapped: a rank-3 spark against two bodies
+     * put a copy on each and then let the chain jump onto the second one as well, so
+     * the body the player did NOT aim at took two hits and the one they did took one.
+     * The reach is the same either way — the chain still runs `jumps` links — it just
+     * has to spend them on things that have not been hit yet, which is also the only
+     * reading of "it travels" that means anything.
+     */
+    const visited = new Set<Entity>([from, ...already]);
     let node = from;
     for (let n = 0; n < jumps; n++) {
       const next = this.nextLink(node, visited);
       if (!next) break;
       visited.add(next);
-      // The bolt is thrown FROM the last link, which is what makes the path legible —
-      // see `onCastFx`, which draws from the entity when it is given one.
-      this.onCastFx(cast, node, [next]);
+      // Drawn FROM the last link, which is what makes the path legible: you watch the
+      // charge walk the room rather than watching numbers appear on four health bars.
+      this.onChainFx(node, next, cast.colour);
       await delay(CHAIN_JUMP_MS);
 
       /**
@@ -895,7 +923,9 @@ export class Combat {
    * Land one projectile on one entity, running the elemental interactions.
    * These are the plays worth learning — soak something, then shock it.
    */
-  private async applyCast(cast: ResolvedCast, t: Entity): Promise<void> {
+  private async applyCast(
+    cast: ResolvedCast, t: Entity, primary: boolean, targets: readonly Entity[],
+  ): Promise<void> {
     let damage = cast.damage;
     const c = this.combatants.get(t);
     let glow = cast.colour;
@@ -1033,12 +1063,16 @@ export class Combat {
      * so a link that died to the primary hit is a corpse the chain steps over rather
      * than a live target it counts.
      *
-     * `cast.count` jumps, which is copies, which is rank — no rule of its own. A
-     * rank-3 spark is three casts of three jumps, and nine is what it reaches when
-     * there are nine things to reach.
+     * ONCE PER CAST, NOT ONCE PER COPY — `primary` is the whole of that rule.
+     *
+     * `applyCast` runs once for each copy, so chaining here unguarded made reach the
+     * PRODUCT of copies and jumps rather than the sum: a rank-3 spark was three
+     * copies of a three-jump chain, twelve full-damage hits, 144 against an Inferno's
+     * 39. Rank still buys both — `cast.count` copies land on `cast.count` bodies and
+     * the one chain runs `cast.count` jumps — but they add now instead of multiply.
      */
-    if (cast.statuses.some((s) => s.id === 'shocked')) {
-      await this.chain(cast, t, damage, cast.count);
+    if (primary && cast.statuses.some((s) => s.id === 'shocked')) {
+      await this.chain(cast, t, damage, cast.count, targets);
     }
   }
 
@@ -1668,6 +1702,9 @@ export class Combat {
   /** Push the ground layer at the thing that draws it. One truth, one direction. */
   private syncGround(): void {
     this.floor.fireView.sync(this.floor.ground.patches(), this.floor.grid.w);
+    // Briar stands up rather than lying on the floor, so it is a separate view with
+    // a separate sync — see `growthView.ts`.
+    this.floor.syncGrowth();
   }
 
   /**

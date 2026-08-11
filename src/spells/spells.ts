@@ -37,7 +37,7 @@ export type SpellRole = 'bolt' | 'modifier' | 'animate' | 'raise' | 'tempo';
 export type StatusId =
   | 'burning' | 'frozen' | 'soaked' | 'shocked' | 'decay' | 'stagger' | 'oiled';
 export type Element =
-  | 'fire' | 'frost' | 'spark' | 'gust' | 'rot'
+  | 'fire' | 'frost' | 'spark' | 'gust' | 'rot' | 'plant'
   | 'stone' | 'water' | 'oil' | 'starlight'
   | 'none';
 
@@ -58,7 +58,17 @@ export type Element =
  * Everything else is a radius, and deliberately: if everything wrapped there would
  * be no distinction worth having.
  */
-export const VOLUME_ELEMENTS: ReadonlySet<Element> = new Set<Element>(['fire', 'gust']);
+export const VOLUME_ELEMENTS: ReadonlySet<Element> = new Set<Element>(['fire', 'gust', 'frost', 'plant']);
+
+/**
+ * Volume elements that fill LESS than the rest — see `FROST_VOLUME_TILES`.
+ *
+ * Frost is a volume so that a cast lays ice over an area rather than one tile, which
+ * is what makes freezing a burning room into a floor you can use a real play. It is
+ * NOT the same size as fire, because a fireball and a frost patch doing the same
+ * thing at different temperatures is two pages doing one job.
+ */
+const SMALL_VOLUME: ReadonlySet<Element> = new Set<Element>(['frost']);
 
 /**
  * The elements that LEAVE SOMETHING ON THE FLOOR, in the order a cast holding
@@ -69,7 +79,9 @@ export const VOLUME_ELEMENTS: ReadonlySet<Element> = new Set<Element>(['fire', '
  * holds one substance, so a cast has to leave one thing, and this list is where that
  * is decided rather than in whichever `if` happened to be written first.
  */
-export const GROUND_ELEMENTS: readonly Element[] = ['fire', 'gust', 'oil', 'water', 'frost'];
+// Plant last: anything that burns, blows or pours beats a seed, so a cast holding
+// both leaves the louder thing and the spores never quietly override a fire.
+export const GROUND_ELEMENTS: readonly Element[] = ['fire', 'gust', 'oil', 'water', 'frost', 'plant'];
 
 /** Does this cast fill space, rather than reach a distance? */
 export function isVolume(elements: readonly Element[]): boolean {
@@ -89,6 +101,26 @@ export function isVolume(elements: readonly Element[]): boolean {
  * the first cast. The volume has to be small before it is allowed to be dangerous.
  */
 export const VOLUME_TILES = [1, 9, 25] as const;
+
+/**
+ * The same ladder, one rung short, for the small volumes.
+ *
+ * Frost tops out where fire STARTS being frightening. A frost patch is terrain the
+ * player wants to stand near — it is the floor they made to walk on, or to conduct
+ * through — so it must not routinely swallow the tile they are standing on the way
+ * a late Inferno is supposed to.
+ */
+export const FROST_VOLUME_TILES = [1, 5, 9] as const;
+
+/** Which tile budget this set of elements spends. */
+function volumeTiles(elements: readonly Element[], step: number): number {
+  // A cast holding fire OR gust is a full volume even if it also holds frost: the
+  // bigger of the two shapes wins, so a Whiteout covers ground and not a doormat.
+  const small = elements.some((e) => SMALL_VOLUME.has(e))
+    && !elements.some((e) => VOLUME_ELEMENTS.has(e) && !SMALL_VOLUME.has(e));
+  const table = small ? FROST_VOLUME_TILES : VOLUME_TILES;
+  return table[Math.min(step, table.length - 1)];
+}
 
 /** A non-volume cast fills the tile it lands on and no more. */
 export const POINT_VOLUME = 1;
@@ -190,6 +222,25 @@ export const SPELLS: SpellDef[] = [
     ladder: ['Decay', 'Blight', 'Plague'],
     colour: 0x9de06a, effect: 'Rot that eats away over several turns.',
     flavor: '"Patience, rendered as a spell."',
+  },
+  /**
+   * PLANT, and the reason it is not Decay wearing leaves.
+   *
+   * Rot is what happens TO A BODY and nothing else — the slowest damage in the book,
+   * carried on the thing you cast it at. Plant is what happens to THE FLOOR: it is
+   * the only substance that gets bigger without being fed, creeping a tile a round
+   * toward whatever is nearby, and what it finally leaves behind is rubble you have
+   * to clamber over. The two share a colour family and nothing else.
+   *
+   * Its damage is Gust's, and for the same reason: this is a page you cast at a
+   * ROOM, not at a body. What it is worth is what the floor looks like three rounds
+   * later, and a page that also killed things outright would never be cast for that.
+   */
+  {
+    id: 'plant', name: 'Spores', glyph: '🌿', role: 'bolt', kind: 'element', source: 'page', element: 'plant', cost: 2,
+    ladder: ['Spores', 'Thicket', 'Overgrowth'],
+    colour: 0x4fbf7a, effect: 'Seeds the ground. It spreads, then hardens into briar.',
+    flavor: '"Give it a room and a week. It will not need the week."',
   },
 
   /**
@@ -456,6 +507,16 @@ interface ComboDef {
   /** Knockback in tiles. */
   shove?: number;
   output?: CastOutput;
+  /**
+   * A floor of tiles this fusion covers, overriding the ladder.
+   *
+   * Volume otherwise grows only with DUPLICATE elements, because that is what rank
+   * is — so a two-element fusion sits at the bottom rung and covers a single tile no
+   * matter what it is made of. That is right for most of them: a Steam Burst is one
+   * violent event at one place. It is wrong for the pairs whose whole identity is
+   * AREA, where the fusion is the reason the player spent two pages instead of one.
+   */
+  volume?: number;
 }
 
 /** The key for a set of page ids: sorted, deduped, joined. */
@@ -477,7 +538,7 @@ export function setKey(ids: string[]): string {
  *  - `count > 1` is a SPREAD. Projectiles never double up on one body, so a
  *    3-count pair is worth three bodies' damage against a room and one body's
  *    against a boss. Measured against 19 × the bodies it reaches, which is why
- *    Blizzard's 13 on a lone target is not a failure — it is 39 across three, and
+ *    Whiteout's 13 on a lone target is not a failure — it is 39 across three, and
  *    these rows win on groups and lose badly on one thing.
  *  - `count: 1` is a FOCUS, measured against 19 on a single body, and it has to
  *    beat that by enough that the extra slot bought something real. Steam Burst is
@@ -510,7 +571,17 @@ export const COMBOS: Record<string, ComboDef> = {
    */
   fire: { name: 'Flame', colour: 0xff7a2b, damage: 10, statuses: [{ id: 'burning', power: 1 }] },
   frost: { name: 'Frost', colour: 0x7ad4ff, damage: 8, statuses: [{ id: 'frozen', power: 1 }] },
-  spark: { name: 'Spark', colour: 0xffe14a, damage: 9, statuses: [{ id: 'shocked', power: 1 }] },
+  /**
+   * PRICED PER HIT, and spark gets more hits than anything else in the book.
+   *
+   * 9 was a single-target bolt's number, from when a shock reached one body and
+   * occasionally arced to a second. A chain lands `copies + jumps` times, so the same
+   * 9 made a rank-3 Thunderstorm worth 144 against an Inferno's 39. Five puts each
+   * rung level with the fire page it is standing next to — 10, 24, 42 against fire's
+   * 10, 24, 39 — and leaves spark's edge where it belongs: it SPREADS that total
+   * over a room, and every body it touches loses a turn.
+   */
+  spark: { name: 'Spark', colour: 0xffe14a, damage: 5, statuses: [{ id: 'shocked', power: 1 }] },
   // Gust trades damage for a stagger and a shove — the page that moves a body
   // rather than the page that kills it. It is deliberately under the SHATTER
   // threshold, so gusting a frozen thing leaves it frozen.
@@ -518,6 +589,9 @@ export const COMBOS: Record<string, ComboDef> = {
   // Decay out-totals a Fireball (5 + five ticks of 3 = 20 against 19) and takes
   // five rounds to do it. Slowest payout, largest total: a trade, not a downgrade.
   rot: { name: 'Decay', colour: 0x9de06a, damage: 5, statuses: [{ id: 'decay', power: 1 }] },
+  // Gust's number, and no status at all. Everything plant is worth is on the floor
+  // it leaves — see the page. A body standing in it takes 4 and a room to walk out of.
+  plant: { name: 'Spores', colour: 0x4fbf7a, damage: 4 },
 
   /**
    * The harvested solos. Every one of them totals less on a body than a page does
@@ -567,8 +641,26 @@ export const COMBOS: Record<string, ComboDef> = {
     name: 'Aurora', colour: 0x9ee8ff, damage: 26,
     statuses: [{ id: 'frozen', power: 1 }, { id: 'shocked', power: 1 }],
   },
+  /**
+   * THE VOLUME FREEZE, and the reason frost alone does not have to be one.
+   *
+   * Frost on its own lays ice over a small patch and holds the body it was aimed at;
+   * this is the version that takes the room. Nine tiles rather than frost's own one
+   * at this rung — the gust is what carries it — and `count: 3` so the freeze lands
+   * on three bodies instead of one. Gust also means it SHOVES, so the group is held
+   * and moved at once, which is a different sentence from either page alone.
+   */
+  /**
+   * WHITEOUT, and not "Blizzard", which is the rank-3 rung of the frost page.
+   *
+   * Two different spells cannot share a name. A player who has deepened frost twice
+   * knows a Blizzard as the thing their own page becomes; handing the same word to a
+   * fusion they made out of two different pages says the ladder led here, and it did
+   * not. Whiteout is the same weather with the visibility taken away, which is what
+   * the gust adds to it.
+   */
   'frost+gust': {
-    name: 'Blizzard', colour: 0xd6f4ff, damage: 13, count: 3,
+    name: 'Whiteout', colour: 0xd6f4ff, damage: 13, count: 3, volume: 9, shove: 1,
     statuses: [{ id: 'frozen', power: 0.8 }],
   },
   'gust+spark': {
@@ -590,6 +682,42 @@ export const COMBOS: Record<string, ComboDef> = {
   'gust+rot': {
     name: 'Spore Wind', colour: 0xb8f090, damage: 13, count: 3,
     statuses: [{ id: 'decay', power: 0.6 }],
+  },
+
+  /**
+   * THE PLANT PAIRS. Each one answers "what does a room full of briar do about X",
+   * and none of them is a damage row wearing a plant hat.
+   */
+  // Briar burns, and burns well. The fusion is fire's number with plant's spread —
+  // and on the FLOOR the fire wins outright (`GROUND_ELEMENTS`), so this is also how
+  // you clear a thicket you regret. Highest single number of the five, and the price
+  // is that it destroys the terrain you spent a page making.
+  'fire+plant': {
+    name: 'Wildwood Blaze', colour: 0xffa04a, damage: 24,
+    statuses: [{ id: 'burning', power: 1.4 }],
+  },
+  // Frozen briar: the ice takes the tile, the thorns hold the body. Denial stacked
+  // twice, which is why the damage is the lowest of the five.
+  'frost+plant': {
+    name: 'Thornfrost', colour: 0x8fe0b8, damage: 15,
+    statuses: [{ id: 'frozen', power: 1.1 }],
+  },
+  // Green wood does not conduct — it holds the charge instead of passing it on. Wide
+  // and shallow, with the shock spread over a stand of bodies rather than chained.
+  'plant+spark': {
+    name: 'Greenwood Arc', colour: 0xa8e04a, damage: 11, count: 3,
+    statuses: [{ id: 'shocked', power: 1 }],
+  },
+  // The seeds go where the wind does. Volume is the whole row — this is how a briar
+  // gets laid across a room in one cast instead of a tile at a time.
+  'gust+plant': {
+    name: 'Seedstorm', colour: 0x8fd66a, damage: 10, count: 3, volume: 9, shove: 1,
+  },
+  // The two green pages together: what grows is already dying, and it spreads that
+  // to whatever walks through it. Plant's floor plus rot's slow, patient total.
+  'plant+rot': {
+    name: 'Creeping Blight', colour: 0x7fc85a, damage: 16,
+    statuses: [{ id: 'decay', power: 1.3 }],
   },
 
   /**
@@ -769,6 +897,9 @@ const INFUSE: Record<Element, { prefix: string; status: StatusId | null }> = {
   spark: { prefix: 'Charged', status: 'shocked' },
   gust: { prefix: 'Gale', status: 'stagger' },
   rot: { prefix: 'Rotting', status: 'decay' },
+  // No status: what plant does happens to the FLOOR, and a golem is not a floor.
+  // The prefix is all it has to give, which is the same bargain Stone makes.
+  plant: { prefix: 'Bramble', status: null },
   stone: { prefix: 'Granite', status: null },
   water: { prefix: 'Drowned', status: 'soaked' },
   oil: { prefix: 'Slick', status: 'oiled' },
@@ -966,9 +1097,7 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
     name: '', colour: 0xffffff, output: 'projectile',
     damage: 0, count: 1, statuses: [], shove: 0, cost,
     elements: [...new Set(elements)],
-    volume: isVolume(elements)
-      ? VOLUME_TILES[Math.min(extraBolt, VOLUME_TILES.length - 1)]
-      : POINT_VOLUME,
+    volume: isVolume(elements) ? volumeTiles(elements, extraBolt) : POINT_VOLUME,
     pierce: elements.includes('starlight'), infuse: [], authored: false,
   };
 
@@ -1143,6 +1272,9 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
   return {
     ...base,
     name, colour: combo.colour, damage, count, statuses, shove,
+    // An authored floor, never a ceiling: rank still grows the patch past it, so a
+    // deepened Whiteout is bigger than a plain one rather than pinned to the row.
+    volume: Math.max(base.volume, combo.volume ?? 0),
     output: 'projectile', authored: authored && tier === 0,
   };
 }

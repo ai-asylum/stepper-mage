@@ -6,7 +6,7 @@
  * list from here; nothing else needs to know how a floor is put together.
  */
 import * as THREE from 'three';
-import { Grid, Surface, visibleTiles, type Dir } from '../dungeon/grid';
+import { DIR_VEC, Grid, Surface, visibleTiles, type Dir } from '../dungeon/grid';
 import { generate } from '../dungeon/generate';
 import type { LayoutId } from '../dungeon/layouts';
 import { DungeonView } from '../dungeon/render';
@@ -18,6 +18,7 @@ import { themeForDepth, type Theme } from '../art/theme';
 import { bossHp, enemyHp } from './tuning';
 import { Ground } from './ground';
 import { FireView } from '../dungeon/fireView';
+import { GrowthView, type GrowthKind } from '../dungeon/growthView';
 import { ClockView } from '../dungeon/clockView';
 import { MurkView } from '../dungeon/murkView';
 
@@ -163,6 +164,12 @@ export class Floor {
    */
   readonly ground = new Ground();
   readonly fireView = new FireView();
+  /**
+   * Broken stone and briar, standing up out of the floor rather than painted on it.
+   * Both are difficult terrain and both have to READ as an obstacle from a standing
+   * camera, which a floor texture cannot do — see `growthView.ts`.
+   */
+  readonly growthView = new GrowthView();
   /** Blades, spikes, trapdoors and the countdown on a gate. */
   readonly clockView = new ClockView();
   /** The fog banks, as billboards hanging in the air rather than a tint. */
@@ -175,13 +182,41 @@ export class Floor {
     // tiles, so the one place holding both it and the grid is where the rule goes.
     this.ground.refuses = (i, what) =>
       what === 'fire' && this.grid.surface[i] === Surface.Water;
+    /**
+     * Briar IS rubble — the same surface the generator lays and the same surface gust
+     * sweeps, so a thicket the player grew and a collapse they walked into obey one
+     * rule and there is no second kind of difficult ground to learn.
+     */
+    this.ground.onMature = (i) => {
+      if (this.grid.surface[i] !== Surface.Plain) return;
+      this.grid.surface[i] = Surface.Rubble;
+      this.resurface();
+      this.syncGrowth();
+    };
+    /**
+     * Spores creep only where a body could walk. Growth inside a wall is growth the
+     * player can neither see nor clamber over, so it would read as the patch simply
+     * refusing to spread in that direction — which is exactly what this makes true.
+     */
+    this.ground.neighbours = (i) => {
+      const w = this.grid.w;
+      const x = i % w, y = (i / w) | 0;
+      const out: number[] = [];
+      for (const [dx, dy] of DIR_VEC) {
+        const nx = x + dx, ny = y + dy;
+        if (this.grid.walkable(nx, ny)) out.push(this.grid.idx(nx, ny));
+      }
+      return out;
+    };
     this.view = new DungeonView(this.grid, this.theme, seed);
     this.group.add(this.view.group);
     this.group.add(this.fireView.group);
+    this.group.add(this.growthView.group);
     this.group.add(this.clockView.group);
     this.group.add(this.murkView.group);
     this.clockView.sync(this.grid);
     this.murkView.sync(this.grid);
+    this.syncGrowth();
   }
 
   /** Build a floor, preloading every sprite it needs before returning. */
@@ -291,6 +326,25 @@ export class Floor {
    * but it is the one build path there is, it costs what entering a floor costs, and
    * it happens at most a handful of times in a run.
    */
+  /**
+   * Re-place every standing clump: rubble from the GRID, briar from the GROUND.
+   *
+   * Two sources on purpose. Rubble is a surface — the generator lays it, gust sweeps
+   * it, and a matured thicket becomes it, so it outlives whatever put it there.
+   * Spores are a live patch on a clock, and they are drawn as the same object at a
+   * smaller size so the player can see a thicket coming before it sets.
+   */
+  syncGrowth(): void {
+    const out: { i: number; kind: GrowthKind }[] = [];
+    for (let i = 0; i < this.grid.surface.length; i++) {
+      if (this.grid.surface[i] === Surface.Rubble) out.push({ i, kind: 'rubble' });
+    }
+    for (const p of this.ground.patches()) {
+      if (p.what === 'spores') out.push({ i: p.i, kind: 'plant' });
+    }
+    this.growthView.sync(this.grid, out);
+  }
+
   resurface(): void {
     this.view.restep();
   }
@@ -341,6 +395,8 @@ export class Floor {
   async restep(): Promise<void> {
     this.view.restep();
     this.fireView.restep();
+    this.growthView.restep();
+    this.syncGrowth();
     this.clockView.restep();
     this.clockView.sync(this.grid);
     this.murkView.restep();

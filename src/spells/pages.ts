@@ -58,10 +58,14 @@ const MAP: Record<string, { sigil: string; school: SpellSchool }> = {
   spark: { sigil: 'spark', school: 'elementalism' },
   gust: { sigil: 'gust', school: 'elementalism' },
   rot: { sigil: 'decay', school: 'animancy' },
+  // Reuses the authored `growth` sigil, which is a sprouting mark and exactly what
+  // this page is — it had no page of its own before, because Growth is a belt
+  // modifier and belt items carry no sheet.
+  plant: { sigil: 'growth', school: 'animancy' },
 };
 
 /** Page order — grouped by school so each chapter is one physical run. */
-const ORDER = ['fire', 'frost', 'spark', 'gust', 'rot'];
+const ORDER = ['fire', 'frost', 'spark', 'gust', 'rot', 'plant'];
 
 function hex(n: number): string {
   return '#' + (n & 0xffffff).toString(16).padStart(6, '0');
