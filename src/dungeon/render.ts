@@ -60,6 +60,21 @@ function pitFace(n: number, seed: string): Pix {
 
 const PIT_DEPTH = 6;
 
+/**
+ * How far a pressure plate stands out of its tile, and how much of the tile it is.
+ *
+ * The height is the whole argument for making it geometry at all, so it is picked to
+ * be the smallest thing that still breaks the floor line from the far end of a room —
+ * about a texel and a half at the coarsest step. Higher and it is a kerb you would
+ * expect to trip on; flat and it is a conductive panel painted on the masonry.
+ *
+ * The half-width leaves a band of the recess showing all the way round. Two thirds of
+ * the tile: enough that the slab is plainly a separate object, not so little that it
+ * reads as a coin dropped on the floor.
+ */
+const PLATE_H = 0.055;
+const PLATE_S = 0.34;
+
 const WORLD_VERT = /* glsl */ `
   attribute float alight;
   attribute float amurk;
@@ -359,6 +374,7 @@ export class DungeonView {
     const rubbleB = tiles.rubble.map(() => new MeshBuild());
     const fogB = tiles.fog.map(() => new MeshBuild());
     const plateB = tiles.plate.map(() => new MeshBuild());
+    const plateTopB = tiles.plateTop.map(() => new MeshBuild());
     const portalB = tiles.portal.map(() => new MeshBuild());
     // the inside of a shaft, which is deliberately not masonry — see `pitFace`
     const pitPix = [pitFace(Math.round(ppu()), seed)];
@@ -513,6 +529,52 @@ export class DungeonView {
             [x + 0.5, e, y - 0.5], [x - 0.5, e, y - 0.5],
             l01, l11, l10, l00,
           );
+
+          /**
+           * A PLATE IS A BLOCK, NOT A PICTURE OF ONE.
+           *
+           * Drawn flat it was a conductive panel set into the masonry — the same
+           * mistake the ladder made before it was taken off the floor and hung on the
+           * ledge face. Nothing at this camera height reads as pressable unless it
+           * stands proud of the thing around it, because the only cue the player has
+           * at a grazing angle is a silhouette breaking the floor line.
+           *
+           * Five quads: the top face and four rims, standing `PLATE_H` out of the
+           * recess `buildPlateWell` sinks into the tile. Batched with the static
+           * geometry rather than pooled in `ClockView`, because a plate never moves —
+           * you cannot see the tile under your own feet in first person, so a slab
+           * that sank when you stood on it would be an animation nobody is positioned
+           * to watch. What answers "did that do anything" is the gate, which is
+           * exactly what the cut exists to show you.
+           */
+          if (surf === Surface.Plate) {
+            const pb = plateTopB[v % plateTopB.length];
+            pb.fog = [m01, m11, m10, m00];
+            const lp = (l00 + l10 + l11 + l01) / 4;
+            pb.quad(
+              [x - PLATE_S, e + PLATE_H, y + PLATE_S], [x + PLATE_S, e + PLATE_H, y + PLATE_S],
+              [x + PLATE_S, e + PLATE_H, y - PLATE_S], [x - PLATE_S, e + PLATE_H, y - PLATE_S],
+              l01, l11, l10, l00,
+            );
+            /**
+             * The rims are wound like a RISER and not like a wall: both are looked at
+             * from outside the thing they belong to, and copying the wall's winding
+             * would point every normal into the middle of the slab and cull all four.
+             */
+            for (let f = 0; f < 4; f++) {
+              const [dx, dy] = DIR_VEC[f];
+              const hx = dx * PLATE_S, hz = dy * PLATE_S;
+              const ex = dy * PLATE_S, ez = -dx * PLATE_S;
+              const ax = x + hx + ex, az = y + hz + ez;
+              const bx = x + hx - ex, bz = y + hz - ez;
+              pb.quad(
+                [bx, e, bz], [ax, e, az],
+                [ax, e + PLATE_H, az], [bx, e + PLATE_H, bz],
+                lp * 0.66, lp * 0.66, lp, lp,
+                1, PLATE_H / WALL_H, true,
+              );
+            }
+          }
         }
 
         // Ceiling, normal -y (pointing down at the player).
@@ -727,6 +789,7 @@ export class DungeonView {
     addAll(rubbleB, tiles.rubble);
     addAll(fogB, tiles.fog);
     addAll(plateB, tiles.plate);
+    addAll(plateTopB, tiles.plateTop);
     addAll(portalB, tiles.portal);
     addAll(pitB, pitPix);
 

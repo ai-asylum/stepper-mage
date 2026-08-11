@@ -39,8 +39,8 @@ import {
 import { BOSS_INGREDIENTS, rollDropCount, rollIngredient, type BeltState } from '../spells/belt';
 import { BELT_ENABLED } from '../flags';
 import {
-  ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CONDUCTION_ARC_RANGE,
-  CONDUCTION_ARC_SHARE, CONDUCTION_MULT, DAMAGE_JITTER, DECAY_DOT, DEEP_FREEZE_MULT,
+  ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CHAIN_JUMP_MS,
+  CHAIN_RANGE, CONDUCTION_MULT, DAMAGE_JITTER, DECAY_DOT, DEEP_FREEZE_MULT,
   DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS,
   FIRE_DETOUR, GROUND_FIRE_DOT, GROW_RING, bodyStars, fallDamage, REACTION_REACH, SPILL_VOLUME, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
   bossDamage, enemyDamage,
@@ -628,7 +628,7 @@ export class Combat {
     this.onCastFx(cast, null, targets);
 
     for (const t of targets) {
-      this.applyCast(cast, t);
+      await this.applyCast(cast, t);
     }
 
     /**
@@ -767,53 +767,110 @@ export class Combat {
   }
 
   /**
-   * The charge jumps onward from a body it just shocked.
+   * Can the charge jump to this thing at all?
    *
-   * Two reaches in one function, because they are one rule asked of different
-   * geometry and the alternative is the arc drifting apart from itself:
-   *
-   *  - ON A CONDUCTIVE SURFACE, the reach is THE PLATE. Everything standing on the
-   *    same continuous run of iron or standing water takes the share — every body, and
-   *    THE PLAYER, who is standing on the floor like anyone else. That is the whole
-   *    point of drawing the plating as a shape: the circuit is readable before you
-   *    cast, and stepping off it is a real decision you can make in advance.
-   *  - OFF IT, the old behaviour, unchanged: one nearby body, within
-   *    `CONDUCTION_ARC_RANGE`, found by a flood so a charge never jumps through a wall
-   *    into the next room.
+   * Bodies and OBJECTS both, which is the half of the chain that makes it worth
+   * casting in a room with one enemy and a lot of furniture: a charge that reaches a
+   * water barrel sets the barrel off, and `water+spark` is already a row in
+   * `REACTIONS`. An object with no answer to spark is not a link — it is scenery, and
+   * routing the chain into it would end the chain on nothing.
    */
-  private arc(from: Entity, damage: number): void {
-    const g = this.floor.grid;
-    const share = Math.round(damage * CONDUCTION_ARC_SHARE);
-    const plate = g.conductive(from.sprite.tx, from.sprite.ty);
+  private chainable(o: Entity, from: Entity): boolean {
+    if (o === from || !o.alive) return false;
+    if (o.hostile) return true;
+    return !o.spent && !!reactionFor(o.spriteId, ['spark']);
+  }
 
-    if (plate.length > 1) {
-      const on = new Set(plate);
-      for (const o of this.floor.entities) {
-        if (o === from || !o.alive || !o.hostile) continue;
-        if (!on.has(g.idx(o.sprite.tx, o.sprite.ty))) continue;
-        this.damage(o, share, 0xffe14a);
-        this.addStatus(o, 'shocked', 1);
-      }
-      if (on.has(g.idx(this.playerTile.x, this.playerTile.y))) {
-        this.state.hp -= share;
-        this.onPlayerHurt(share, null);
+  /**
+   * The next link: the NEAREST thing the charge has not already been through.
+   *
+   * Nearest by PATH and never by straight line — the search is a flood, so a charge
+   * cannot jump through a wall into the next room, which is the one rule the old
+   * single-hop arc got right and is worth keeping exactly.
+   *
+   * A continuous plate of iron or standing water short-circuits the distance test
+   * entirely: everything standing on the same metal is equally close, because that is
+   * what a circuit means. It is why the plating is drawn as a readable shape — you can
+   * see the whole path the charge will take before you commit to it, and stepping off
+   * the metal is a decision you get to make in advance.
+   */
+  private nextLink(from: Entity, visited: Set<Entity>): Entity | null {
+    const g = this.floor.grid;
+    const plate = new Set(g.conductive(from.sprite.tx, from.sprite.ty));
+    if (plate.size > 1) {
+      const on = this.floor.entities.find(
+        (o) => !visited.has(o) && this.chainable(o, from)
+          && plate.has(g.idx(o.sprite.tx, o.sprite.ty)),
+      );
+      if (on) return on;
+    }
+    const reach = this.reachFrom(from.sprite.tx, from.sprite.ty, CHAIN_RANGE);
+    let best: Entity | null = null;
+    let bestD = Infinity;
+    for (const o of this.floor.entities) {
+      if (visited.has(o) || !this.chainable(o, from)) continue;
+      if (!this.reached(reach, o.sprite.tx, o.sprite.ty)) continue;
+      const d = reach[g.idx(o.sprite.tx, o.sprite.ty)];
+      if (d < bestD) { bestD = d; best = o; }
+    }
+    return best;
+  }
+
+  /**
+   * THE CHARGE TRAVELS. Spark's whole identity, and the reason it is worth a page.
+   *
+   * It walks from thing to thing, nearest first, never twice through the same one,
+   * until it runs out of jumps or runs out of room. What it is worth is therefore a
+   * question about the ROOM — how much is standing together, and how much metal is
+   * under it — rather than a number on the page, which is what makes it the one
+   * element you cast because of where things are standing.
+   *
+   * EVERY JUMP DOES THE SAME DAMAGE. No falloff and no ramp: a chain that decays is
+   * doing nothing by its fourth body and has spent half a second saying so, and a
+   * chain that grows makes the only correct play "find the longest one".
+   *
+   * PACED, because a chain that resolves instantly is a number appearing on a health
+   * bar. One jump every `CHAIN_JUMP_MS` is the same rhythm the enemy round already
+   * moves at, so a long chain reads as a busy moment rather than as a hitch.
+   */
+  private async chain(cast: ResolvedCast, from: Entity, damage: number, jumps: number): Promise<void> {
+    const g = this.floor.grid;
+    const visited = new Set<Entity>([from]);
+    let node = from;
+    for (let n = 0; n < jumps; n++) {
+      const next = this.nextLink(node, visited);
+      if (!next) break;
+      visited.add(next);
+      // The bolt is thrown FROM the last link, which is what makes the path legible —
+      // see `onCastFx`, which draws from the entity when it is given one.
+      this.onCastFx(cast, node, [next]);
+      await delay(CHAIN_JUMP_MS);
+
+      /**
+       * THE PLATE CATCHES YOU TOO. Tested on every jump rather than only the first,
+       * because a circuit does not care which end of it the charge is at — and a chain
+       * that went safe once it had left your tile would make the plating a free damage
+       * multiplier instead of a decision you make by standing somewhere.
+       */
+      if (g.conductive(next.sprite.tx, next.sprite.ty)
+        .includes(g.idx(this.playerTile.x, this.playerTile.y))) {
+        this.state.hp -= damage;
+        this.onPlayerHurt(damage, null);
         this.onEvent({
-          kind: 'hit', text: `The plating carries the charge into you for ${share}.`,
+          kind: 'hit', text: `The plating carries the charge into you for ${damage}.`,
           colour: 0xffe14a,
         });
       }
-      return;
-    }
 
-    // The arc walks the grid like everything else. A charge does not jump through a
-    // wall to a body in the next room.
-    const reach = this.reachFrom(from.sprite.tx, from.sprite.ty, CONDUCTION_ARC_RANGE);
-    const other = this.floor.entities.find(
-      (o) => o !== from && o.alive && o.hostile && this.reached(reach, o.sprite.tx, o.sprite.ty),
-    );
-    if (other) {
-      this.damage(other, share, 0xffe14a);
-      this.addStatus(other, 'shocked', 1);
+      // An object answers with its OWN reaction and not with shock damage — a barrel
+      // has no hit points, it has a thing it does when a charge finds it.
+      if (next.hostile) {
+        this.damage(next, damage, 0xffe14a);
+        this.addStatus(next, 'shocked', 1);
+      } else {
+        this.react(['spark'], next);
+      }
+      node = next;
     }
   }
 
@@ -838,7 +895,7 @@ export class Combat {
    * Land one projectile on one entity, running the elemental interactions.
    * These are the plays worth learning — soak something, then shock it.
    */
-  private applyCast(cast: ResolvedCast, t: Entity): void {
+  private async applyCast(cast: ResolvedCast, t: Entity): Promise<void> {
     let damage = cast.damage;
     const c = this.combatants.get(t);
     let glow = cast.colour;
@@ -846,27 +903,29 @@ export class Combat {
     const brings = (id: StatusId) => cast.statuses.some((s) => s.id === id);
 
     if (c) {
-      // CONDUCTION: shock on a soaked body hits harder and arcs onward.
-      if (brings('shocked') && this.has(t, 'soaked')) {
-        damage = Math.round(damage * CONDUCTION_MULT);
-        glow = 0xffe14a;
-        this.onEvent({ kind: 'status', text: 'CONDUCTION!', colour: 0xffe14a });
-        this.arc(t, damage);
-      }
       /**
-       * THE PLATE CONDUCTS EVEN IF THE BODY IS DRY.
+       * SHOCK TRAVELS. Always, not only off a soaked body or a plate of iron.
        *
-       * Soaking something to make it arc is a two-cast setup the player builds; iron
-       * and standing water are the same play already lying on the floor, and the
-       * difference is that the floor is VISIBLE before you commit. You do not get the
-       * damage multiplier for it — the plate is reach, not power, and stacking it on
-       * top of soaked would make one tile worth more than a whole combo.
+       * This used to be the exception rather than the rule, and it made spark a
+       * slightly wider bolt that occasionally did something interesting when the floor
+       * happened to cooperate — while the setup it needed came from Water, which is a
+       * fixture and not a page, so a book could not build it. Chaining unconditionally
+       * is what makes travel the PAGE's identity instead of the floor's favour.
+       *
+       * Soak and metal did not stop mattering; they stopped being the price of
+       * admission. Soak is POWER — the charge hits harder all the way down the chain.
+       * Metal is REACH — `nextLink` treats a continuous plate as one tile, so the
+       * charge crosses the whole circuit for free instead of paying distance for it.
        */
-      if (brings('shocked') && !this.has(t, 'soaked')
-          && conducts(this.floor.grid.surfaceAt(t.sprite.tx, t.sprite.ty))) {
+      if (brings('shocked')) {
+        const soaked = this.has(t, 'soaked');
+        if (soaked) {
+          damage = Math.round(damage * CONDUCTION_MULT);
+          this.onEvent({ kind: 'status', text: 'CONDUCTION!', colour: 0xffe14a });
+        } else if (conducts(this.floor.grid.surfaceAt(t.sprite.tx, t.sprite.ty))) {
+          this.onEvent({ kind: 'status', text: 'THE PLATE CARRIES IT!', colour: 0xffe14a });
+        }
         glow = 0xffe14a;
-        this.onEvent({ kind: 'status', text: 'THE PLATE CARRIES IT!', colour: 0xffe14a });
-        this.arc(t, damage);
       }
       // STEAM: fire on a soaked body boils the water off instead of burning it.
       if (brings('burning') && this.has(t, 'soaked')) {
@@ -963,7 +1022,24 @@ export class Combat {
 
     // Last, so the object has already taken the hit it was aimed at: the primary
     // damage is the player's, and what follows is the room's.
-    this.react(cast, t);
+    this.react(cast.elements, t);
+
+    /**
+     * THE CHARGE TRAVELS ON, after the body it was aimed at has resolved completely.
+     *
+     * Last for the same reason the reaction is: the hit the player aimed is the
+     * player's, and everything the room does about it comes after. It also means the
+     * chain leaves from a body whose damage, statuses and death have already landed,
+     * so a link that died to the primary hit is a corpse the chain steps over rather
+     * than a live target it counts.
+     *
+     * `cast.count` jumps, which is copies, which is rank — no rule of its own. A
+     * rank-3 spark is three casts of three jumps, and nine is what it reaches when
+     * there are nine things to reach.
+     */
+    if (cast.statuses.some((s) => s.id === 'shocked')) {
+      await this.chain(cast, t, damage, cast.count);
+    }
   }
 
   /**
@@ -975,9 +1051,9 @@ export class Combat {
    * as ordinary floaters over the bodies beside it, which is the same sentence said
    * spatially.
    */
-  private react(cast: ResolvedCast, t: Entity): void {
+  private react(elements: readonly Element[], t: Entity): void {
     if (t.kind !== 'prop' || t.animated || !t.alive) return;
-    const r = reactionFor(t.spriteId, cast.elements);
+    const r = reactionFor(t.spriteId, [...elements]);
     if (!r) return;
 
     // A reaction obeys the same bound as the cast that set it off: the shape says

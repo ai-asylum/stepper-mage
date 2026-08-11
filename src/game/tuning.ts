@@ -282,10 +282,28 @@ export function fallDamage(levels: number): number {
 
 // ------------------------------------------------- elemental interactions
 
-/** CONDUCTION: shock on a soaked body, and the share that arcs onward. */
+/** CONDUCTION: shock on a soaked body hits harder before the charge travels on. */
 export const CONDUCTION_MULT = 1.5;
-export const CONDUCTION_ARC_SHARE = 0.5;
-export const CONDUCTION_ARC_RANGE = 3;
+
+/**
+ * How far the charge looks for the next thing to jump to, as path distance.
+ *
+ * Generous, because REACH IS WHAT SPARK IS. The old arc capped at 3 and stopped after
+ * one hop, which made it a slightly wider bolt; a chain that gives up at three tiles
+ * is the same page with more code behind it. Walls still stop it — the search is a
+ * flood, so a charge never crosses one — and a continuous plate of iron or standing
+ * water ignores this number entirely, which is the whole point of standing on metal.
+ */
+export const CHAIN_RANGE = 9;
+
+/**
+ * Milliseconds between jumps.
+ *
+ * The chain has to be WATCHED, not totalled. Sized against `ACT_PACE_MS`, which is
+ * what a body acting already costs, so a long chain reads in the same rhythm as a
+ * busy enemy round rather than as the game hanging.
+ */
+export const CHAIN_JUMP_MS = 110;
 
 /**
  * SHATTER: a hit this heavy on a frozen body breaks the shell open.

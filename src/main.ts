@@ -2208,15 +2208,24 @@ async function boot(): Promise<void> {
       engine.setFlash(0.24, r.colour);
     };
 
-    combat.onCastFx = (cast, _from, targets) => {
+    combat.onCastFx = (cast, from, targets) => {
       if (cast.output === 'golem') {
         const t = targets[0];
         if (t) { entityPos(t, tmp); tmp.y = 0.05; fx.rise(tmp, cast.colour); }
         return;
       }
+      /**
+       * A bolt leaves the player's hands unless the cast names something else to
+       * leave FROM — which is how a chain draws. Each jump is thrown from the link it
+       * just came off, so the path the charge took is a thing the player watches
+       * happen rather than a set of numbers appearing at once.
+       */
+      const origin = from
+        ? entityPos(from, new THREE.Vector3())
+        : muzzle(new THREE.Vector3());
       targets.forEach((t, i) => {
         const to = entityPos(t, new THREE.Vector3());
-        fx.bolt(muzzle(new THREE.Vector3()), to, cast.colour, {
+        fx.bolt(origin.clone(), to, cast.colour, {
           delay: i * 0.075,
           size: 0.3 + Math.min(0.35, cast.damage * 0.012),
           onArrive: () => fx.burst(to, cast.colour, 0.9 + Math.min(1, cast.damage / 20)),
