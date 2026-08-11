@@ -2275,11 +2275,15 @@ async function boot(): Promise<void> {
      * it so that the two reads stay apart — a drop inside a floor is damage you chose
      * and this is the ground giving way. It costs the rest of the floor: the altar
      * you had not claimed, the boss you had not killed, and whatever they were worth.
+     *
+     * `fallThrough` and NOT `descend`, which is the whole of why none of the above was
+     * ever true in a running game — `descend` refuses to move anybody whose boss is
+     * still alive, so this fired the caption and did nothing else.
      */
     combat.onPitfall = () => {
       hud.addLog('The floor opens. You go down with it.', 0x9aa3ad);
       fx.shake = Math.min(1.5, fx.shake + 0.9);
-      void descend();
+      void fallThrough();
     };
     /**
      * The one door a CAST can open: a block shoved onto a plate. Watched exactly the
@@ -2820,6 +2824,33 @@ async function boot(): Promise<void> {
     // Heal on descent, sized off the depth being LEFT, so a good floor is rewarded
     // but attrition is real.
     state.hp += healable(state.hp, state.maxHp, descendHeal(state.depth));
+    await enterFloor(state.depth + 1);
+  };
+
+  /**
+   * THE FLOOR OPENED UNDER YOU. Not the same act as taking the stairs, and it must
+   * not go through the same function.
+   *
+   * It did. `onPitfall` called `descend`, and `descend` opens with
+   * `if (!combat.bossDead) return` — so a trapdoor could only ever drop somebody who
+   * had already killed the boss and was standing next to a staircase they had chosen
+   * not to use. Everywhere else it played the caption, shook the screen, and left the
+   * player standing on a hole. The hazard was inert for the whole of its useful life
+   * and the log line was the only evidence it existed, which is exactly why it read as
+   * "I do not fall down the hole at all".
+   *
+   * Nothing is checked here on purpose. There is no boss test, because the floor
+   * opening is not a reward for clearing it; there is no reach test, because you are
+   * not walking to anything; and there is NO HEAL, because the descent heal is what a
+   * floor pays you for finishing it and this is the opposite of finishing one. It
+   * costs the altar you had not claimed, the boss you had not killed, and whatever
+   * they were worth.
+   *
+   * The last floor has nothing under it. A trapdoor there is a hole with a cellar at
+   * the bottom rather than a way on, which is what the shaft has always been drawn as.
+   */
+  const fallThrough = async (): Promise<void> => {
+    if (state.depth >= THEMES.length) return;
     await enterFloor(state.depth + 1);
   };
 

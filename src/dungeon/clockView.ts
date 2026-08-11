@@ -26,7 +26,7 @@ import { ppu } from '../art/steps';
 import { STEP_H, WALL_H } from '../art/tiles';
 import { DIR_VEC, Surface, hazardState, type Grid, type HazardState } from './grid';
 import { loadSprite } from './sprites';
-import type { WorldUniforms } from './render';
+import { TRAP_AP, type WorldUniforms } from './render';
 
 /** How far above the floor plane a quad sits. Enough to beat z-fighting, no more. */
 const LIFT = 0.014;
@@ -105,6 +105,30 @@ const BLOCK_EASE = 0.11;
 
 /** How deep an open trapdoor is drawn. Not how far you FALL — see `hazardBites`. */
 const SHAFT_D = 3.2;
+
+/**
+ * THE TRAPDOOR IS TWO DOORS ON HINGES, and this is what it took to stop it being one
+ * picture of a door with a `scale.x` on it.
+ *
+ * The old winding state was `m.scale.set(0.34, 1, 1)` — the whole lid squeezed toward
+ * the seam. From directly above, squashing IS what a double leaf swinging down looks
+ * like, which is why it survived; from a camera standing in the room it is a trapdoor
+ * whose texture goes thin. The bolts get closer together, the ring pulls turn into
+ * slots, and the frame narrows with them, because a scale does not foreshorten a
+ * picture, it resamples it.
+ *
+ * So each leaf is now its own quad, hinged on its own lip, and OPENING IS A ROTATION.
+ * The foreshortening then happens the way foreshortening happens — in the projection —
+ * and the texels stay square all the way down. Nothing about the art changed.
+ *
+ * `TRAP_LID` windows the leaves onto the inside of the lid, dropping the stone kerb
+ * around the edge of the file. The kerb is the FLOOR, and the floor already draws it:
+ * `render` lays a frame of four strips round the aperture out of the room's own
+ * flagstones. Keeping the painted one meant two kerbs, one of which swung.
+ */
+const TRAP_LID_LO = 0.12, TRAP_LID_HI = 0.88;
+/** Where each leaf sits, per state, as a fraction of the full quarter-turn. */
+const TRAP_SWING: Record<HazardState, number> = { idle: 0, winding: 0.34, live: 1 };
 /** How far a ladder's stiles stand proud of the lip they lean on. */
 const LADDER_OVER = 0.22;
 
@@ -327,6 +351,19 @@ export class ClockView {
   private standing: {
     i: number; x: number; y: number; parts: { m: THREE.Mesh; dx: number; dz: number }[];
   }[] = [];
+  /** The two leaves, one hinged on each lip of the aperture. */
+  private leafGeo: THREE.PlaneGeometry[] = [];
+  /**
+   * How far each trapdoor is DRAWN open, 0 shut to 1 hanging straight down.
+   *
+   * Kept across syncs for the same reason `press` and `slid` are: `sync` rebuilds
+   * every quad from scratch, so a value living on the mesh would jump to the beat's
+   * pose the instant anything else on the floor moved. The swing belongs to the
+   * TRAPDOOR, not to the quad that happens to be drawing it this frame.
+   */
+  private swung = new Map<number, number>();
+  /** This sync's leaves, and which way each one falls. */
+  private hinged: { i: number; target: number; parts: { m: THREE.Mesh; side: number }[] }[] = [];
   private shaftGeo: THREE.PlaneGeometry;
   /**
    * How far each door is DRAWN, per tile, which is not the same as how far it is.
@@ -421,8 +458,35 @@ export class ClockView {
     this.blockTopGeo.rotateX(-Math.PI / 2);
     this.blockSideGeo = new THREE.PlaneGeometry(BLOCK_W, BLOCK_H);
     this.blockSideGeo.translate(0, BLOCK_H / 2, 0);
+    /**
+     * The two leaves. Each is half the aperture wide, translated so its HINGE is at
+     * the local origin — which is the whole trick, because a quad that pivots about
+     * its own centre is a quad that sinks into the floor as it turns.
+     *
+     * Index 0 is the west leaf and extends east from its hinge; index 1 is the east
+     * leaf and extends west. Two geometries rather than one plus a yaw, so the only
+     * rotation either of them ever carries is the one that opens it.
+     */
+    for (const side of [-1, 1]) {
+      const geo = new THREE.PlaneGeometry(TRAP_AP, TRAP_AP * 2);
+      geo.rotateX(-Math.PI / 2);
+      geo.translate(-side * TRAP_AP / 2, 0, 0);
+      const uv = geo.getAttribute('uv') as THREE.BufferAttribute;
+      // half the lid each, and the kerb cropped off both — see `TRAP_LID_LO`
+      const u0 = side < 0 ? TRAP_LID_LO : 0.5;
+      const u1 = side < 0 ? 0.5 : TRAP_LID_HI;
+      for (let i = 0; i < uv.count; i++) {
+        uv.setXY(
+          i,
+          u0 + uv.getX(i) * (u1 - u0),
+          TRAP_LID_LO + uv.getY(i) * (TRAP_LID_HI - TRAP_LID_LO),
+        );
+      }
+      uv.needsUpdate = true;
+      this.leafGeo.push(geo);
+    }
     // the trapdoor's shaft: as wide as the hole in `trapTile`, hung from its lip
-    this.shaftGeo = new THREE.PlaneGeometry(0.8, SHAFT_D);
+    this.shaftGeo = new THREE.PlaneGeometry(TRAP_AP * 2, SHAFT_D);
     this.shaftGeo.translate(0, -SHAFT_D / 2, 0);
     this.spikeGeo = new THREE.PlaneGeometry(SPIKE_H * SPIKE_ASPECT, SPIKE_H);
     // bottom-pivoted, so pushing it down buries it in the floor
@@ -886,6 +950,7 @@ export class ClockView {
     this.moving.length = 0;
     this.pressing.length = 0;
     this.standing.length = 0;
+    this.hinged.length = 0;
     /**
      * THE BLOCKS FIRST, before anything on a beat.
      *
@@ -920,37 +985,47 @@ export class ClockView {
             m.geometry = this.shaftGeo;
             m.rotation.set(0, dx !== 0 ? Math.PI / 2 : 0, 0);
             // on the lip of the hole `trapTile` cuts, hanging down from the floor
-            m.position.set(h.x + dx * 0.4, e - 0.002, h.y + dy * 0.4);
+            m.position.set(h.x + dx * TRAP_AP, e - 0.002, h.y + dy * TRAP_AP);
             // a shade under the room, so the hole is darker than the floor round it
             this.lit(m, g, h.x, h.y, 0.55);
           }
         }
         /**
-         * THE LID, and the three states are what it is DOING rather than three
-         * drawings of it.
+         * THE LEAVES, and the three states are one number: how far round the hinges
+         * have turned.
          *
-         * There used to be a `trapTile` per state, which is three pictures of the
-         * same object that have to agree with each other by hand. The generated art
-         * is one shut trapdoor, and a double-leaf trapdoor opening is the two leaves
-         * swinging DOWN — which from directly above is exactly a squash toward the
-         * seam. So idle is the lid at full size, winding is the same lid at a third
-         * of its width, and live does not draw it at all: the leaves are hanging
-         * straight down inside the shaft, and what you look at is the hole.
+         * There used to be a `trapTile` per state — three pictures of the same object
+         * that have to agree with each other by hand — and then one picture with a
+         * `scale.x` on it, which is worse, because a scale resamples a drawing instead
+         * of foreshortening it. Both are gone. There is a shut trapdoor in the art,
+         * there are two hinges, and everything else is `TRAP_SWING` and a rotation.
          *
-         * Which also means the lid can never disagree with itself, and the open state
-         * is the one that costs nothing to draw.
+         * Live is drawn now rather than skipped. The leaves hanging straight down
+         * inside the shaft are the most legible thing an open trapdoor has — they are
+         * the reason the hole reads as a trapdoor and not as a square somebody cut in
+         * the floor — and they cost the two quads that were already being spent.
          */
-        if (state !== 'live') {
-          const m = this.take();
-          const mat = m.material as THREE.MeshBasicMaterial;
-          mat.map = this.art.trapdoor ?? null;
-          mat.opacity = 1;
-          mat.needsUpdate = true;
-          m.geometry = this.geo;
-          m.rotation.set(0, 0, 0);
-          m.scale.set(state === 'winding' ? 0.34 : 1, 1, 1);
-          m.position.set(h.x, e + LIFT, h.y);
-          this.lit(m, g, h.x, h.y);
+        {
+          const key = g.idx(h.x, h.y);
+          const target = TRAP_SWING[state];
+          const at = this.swung.get(key) ?? target;
+          const parts: { m: THREE.Mesh; side: number }[] = [];
+          for (let s = 0; s < 2; s++) {
+            const side = s === 0 ? -1 : 1;
+            const m = this.take();
+            const mat = m.material as THREE.MeshBasicMaterial;
+            mat.map = this.art.trapdoor ?? null;
+            mat.opacity = 1;
+            mat.needsUpdate = true;
+            m.geometry = this.leafGeo[s];
+            m.scale.set(1, 1, 1);
+            // hinged on its own lip, which is where the floor's aperture ends
+            m.position.set(h.x + side * TRAP_AP, e + LIFT, h.y);
+            m.rotation.set(0, 0, side * at * (Math.PI / 2));
+            this.lit(m, g, h.x, h.y);
+            parts.push({ m, side });
+          }
+          this.hinged.push({ i: key, target, parts });
         }
         continue;
       }
@@ -1146,6 +1221,18 @@ export class ClockView {
       this.placePlate(p, next);
     }
     /**
+     * The leaves, swinging. One angle per trapdoor, applied to both of them with
+     * opposite signs — which is what makes them a PAIR rather than two doors that
+     * happen to be next to each other.
+     */
+    for (const t of this.hinged) {
+      let at = this.swung.get(t.i) ?? t.target;
+      at += (t.target - at) * EASE;
+      if (Math.abs(t.target - at) < 0.002) at = t.target;
+      this.swung.set(t.i, at);
+      for (const p of t.parts) p.m.rotation.z = p.side * at * (Math.PI / 2);
+    }
+    /**
      * The blocks, sliding home. Same shape as the plates: the rule moved the instant
      * the gust landed and this is the picture walking there.
      */
@@ -1192,7 +1279,31 @@ export class ClockView {
     }
   }
 
+  /**
+   * A DISPOSED CLOCK DRAWS NOTHING, and saying so is a one-line fix to a crash that
+   * has been eating every floor change in the game.
+   *
+   * `live` is how many quads of `pool` are in use this sync, and `refog` walks
+   * `pool[0..live)` every frame. This threw the pool away and left `live` where it
+   * was, so the moment a floor was disposed the next frame read `pool[0].userData` off
+   * an empty array and the whole loop died — and a floor is disposed at the START of
+   * `enterFloor`, which then AWAITS the next floor being built. Every frame in that
+   * window runs `floor.update` against the corpse.
+   *
+   * Which is every descent, every trapdoor, and the boot chooser's jump to depth 6 —
+   * two phase docs blame an unexplained "boot-chooser crash" for their art never
+   * having been looked at, and this is the shape of it. It needed a floor with
+   * something on the clock, which is why it looked intermittent.
+   *
+   * The per-sync lists go with it for the same reason: `update` walks all four of them
+   * and every one holds meshes this call is about to orphan.
+   */
   dispose(): void {
+    this.live = 0;
+    this.moving.length = 0;
+    this.pressing.length = 0;
+    this.standing.length = 0;
+    this.hinged.length = 0;
     for (const m of this.pool) (m.material as THREE.Material).dispose();
     for (const t of this.frames.values()) t.dispose();
     this.shadow?.dispose();
@@ -1205,6 +1316,8 @@ export class ClockView {
     this.barsGeo.clear();
     this.blockTopGeo.dispose();
     this.blockSideGeo.dispose();
+    for (const gg of this.leafGeo) gg.dispose();
+    this.leafGeo.length = 0;
     this.shaftGeo.dispose();
     this.spikeGeo.dispose();
     this.bladeGeo.dispose();

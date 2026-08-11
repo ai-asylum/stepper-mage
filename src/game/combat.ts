@@ -1468,6 +1468,27 @@ export class Combat {
   /** Called when the player steps — movement is an action, so enemies answer. */
   async playerStepped(x: number, y: number): Promise<void> {
     this.playerTile = { x, y };
+
+    /**
+     * A HOLE YOU CAN SEE IS A HOLE YOU FALL INTO.
+     *
+     * The trapdoor only ever caught you on the beat it OPENED — `tickClock` advances
+     * the beat, asks whether the thing went live, and drops whoever is standing there.
+     * Every other way of meeting one did nothing at all. It is live for half its cycle
+     * and its tile stays walkable throughout, so for most of a trapdoor's life you
+     * could look straight down an open shaft, step into it, and land on the flagstones
+     * that are not there. What made it survive is that the one case anybody tests —
+     * standing on it and waiting — is the case that worked.
+     *
+     * Asked on ARRIVAL and before the round, because falling is not something the room
+     * does to you in its turn: the floor is already open, you walked in, and you are
+     * gone before anything else on this floor gets to act. It returns rather than
+     * running the round for the same reason.
+     */
+    const open = this.floor.grid.hazards.find(
+      (h) => h.kind === 'trapdoor' && h.x === x && h.y === y && hazardState(h) === 'live');
+    if (open) { this.onPitfall(); return; }
+
     const room = this.floor.grid.roomAt(x, y);
     if (room && !this.engaged.has(room.id)) {
       this.engaged.add(room.id);

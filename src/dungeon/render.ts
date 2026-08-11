@@ -60,6 +60,15 @@ function pitFace(n: number, seed: string): Pix {
 
 const PIT_DEPTH = 6;
 
+/**
+ * Half-width of the hole a trapdoor tile is built with, in tiles.
+ *
+ * Exported because `ClockView` hangs the leaves on the lip of it and the two must not
+ * drift: the aperture is cut here, permanently, and the lid that covers it is drawn
+ * over there. A tenth of a tile of disagreement is a strip of void along the seam.
+ */
+export const TRAP_AP = 0.4;
+
 
 const WORLD_VERT = /* glsl */ `
   attribute float alight;
@@ -474,8 +483,8 @@ export class DungeonView {
          * also how a trapdoor is actually built.
          */
         const trap = g.hazards.some((h) => h.kind === 'trapdoor' && h.x === x && h.y === y);
-        // matched to the inset `trapTile` draws its leaves at, so the lid overlaps the lip
-        const AP = 0.4;
+        // The lip the leaves hinge on. Shared with `ClockView` — see `TRAP_AP`.
+        const AP = TRAP_AP;
 
         // Floor, normal +y. Winding runs from the far edge to the near edge —
         // the opposite order reads as facing down and gets backface-culled.

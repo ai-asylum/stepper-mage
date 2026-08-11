@@ -194,7 +194,19 @@ export class MurkView {
     }
   }
 
+  /**
+   * `live` FIRST, and it is the whole of a crash rather than tidiness.
+   *
+   * `update` walks `pool[0..live)` every frame. Emptying the pool and leaving the
+   * count behind means the very next frame dereferences a mesh that is not there — and
+   * a floor is disposed at the top of `enterFloor`, which then awaits the next one
+   * being built, so every frame of every floor change ran against the corpse. It
+   * looked intermittent because it needed a bank of fog to have been drawn.
+   *
+   * `FireView` has always got this right and the three views written from it did not.
+   */
   dispose(): void {
+    this.live = 0;
     for (const m of this.pool) (m.material as THREE.Material).dispose();
     for (const t of this.frames) t.dispose();
     this.geo.dispose();
