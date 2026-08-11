@@ -887,8 +887,19 @@ async function boot(): Promise<void> {
    * Input is refused for the whole of it — `cineLock` is read by `canAct` and by the
    * tap handler — so it cannot be interrupted and nothing can move while it plays.
    */
-  const CINE_OUT = 1.15;
-  const CINE_BACK = 0.55;
+  /**
+   * ONE TRANSITION, PLAYED FORWARD AND THEN PLAYED BACKWARDS.
+   *
+   * The trip out and the trip home used to be different lengths with different
+   * shapes, which is why the return never read as a return — it was a second,
+   * shorter move that happened to end where the first one started. Reversing the
+   * same transition is what makes the shot a round trip: whatever the eye did on the
+   * way out, it undoes, at the same rate, in the same time.
+   *
+   * `ease` is symmetric about its midpoint, so `1 - ease(t/T)` IS `ease((T-t)/T)` —
+   * the position curve is already a true reverse and needs nothing done to it.
+   */
+  const CINE_MOVE = 1.15;
   /**
    * HOW LONG THE LOOK TAKES, which is NOT how long the move takes.
    *
@@ -898,17 +909,18 @@ async function boot(): Promise<void> {
    * reads as the world drifting, and you still arrive without having been told which
    * way you went.
    *
-   * A turn is a thing you do FIRST and then stop doing. So the look leads: it swings
-   * over the front of the move and is finished well before the eye is, and the rest
-   * of the flight happens under a camera that is already pointed at the subject. Long
-   * enough to be watched — 0.45s for a right angle is a head turn, not a cut — and
-   * short enough to be over while the move is still going.
+   * A turn is a thing you do and then stop doing. Going out it comes FIRST: the look
+   * swings over the front of the move and is finished well before the eye is, so the
+   * rest of the flight happens under a camera already pointed at the subject. Long
+   * enough to be watched — 0.45s for a right angle is a head turn, not a cut.
    *
-   * The return is quicker because the whole return is quicker, and it keeps the same
-   * proportion: turn back to the corridor, then slide home facing it.
+   * Coming home it is the same turn in reverse, which puts it LAST. The eye holds on
+   * the subject while it travels and only turns over the tail of the slide, so the
+   * door stays in frame until you are nearly back and the corridor arrives exactly as
+   * control does. Turning first on the way back would mean the last thing you see of
+   * the thing you were sent to watch is the moment you stop watching it.
    */
-  const CINE_LOOK_OUT = 0.45;
-  const CINE_LOOK_BACK = 0.26;
+  const CINE_LOOK = 0.45;
   /**
    * THE BEAT. The camera arrives and then NOTHING HAPPENS for most of a second.
    *
@@ -3113,7 +3125,7 @@ async function boot(): Promise<void> {
 
       let k = 1;
       /**
-       * The LOOK's own progress, ahead of the move's. See `CINE_LOOK_OUT`: the turn
+       * The LOOK's own progress, ahead of the move's. See `CINE_LOOK`: the turn
        * is over the front of the flight and finished before it, never spread across
        * the whole of it.
        */
@@ -3121,9 +3133,9 @@ async function boot(): Promise<void> {
       /** How hard the camera is trembling right now. Only the grind produces any. */
       let rumble = 0;
       if (cine.phase === 'out') {
-        k = ease(Math.min(1, cine.t / CINE_OUT));
-        kLook = ease(Math.min(1, cine.t / CINE_LOOK_OUT));
-        if (cine.t >= CINE_OUT) {
+        k = ease(Math.min(1, cine.t / CINE_MOVE));
+        kLook = ease(Math.min(1, cine.t / CINE_LOOK));
+        if (cine.t >= CINE_MOVE) {
           cine = { phase: 'beat', t: 0, onArrive: cine.onArrive, onOpen: cine.onOpen };
         }
       } else if (cine.phase === 'beat') {
@@ -3159,9 +3171,12 @@ async function boot(): Promise<void> {
           hud.cinePrompt = 'TAP TO CONTINUE';
         }
       } else if (cine.phase === 'back') {
-        k = 1 - ease(Math.min(1, cine.t / CINE_BACK));
-        kLook = 1 - ease(Math.min(1, cine.t / CINE_LOOK_BACK));
-        if (cine.t >= CINE_BACK) { cine = null; hud.cinema = false; hud.cinePrompt = null; }
+        k = 1 - ease(Math.min(1, cine.t / CINE_MOVE));
+        // The outward turn, reversed: it happens at the END of the move rather than
+        // the start, so the lag is everything the turn does not need.
+        const lag = CINE_MOVE - CINE_LOOK;
+        kLook = 1 - ease(Math.min(1, Math.max(0, cine.t - lag) / CINE_LOOK));
+        if (cine.t >= CINE_MOVE) { cine = null; hud.cinema = false; hud.cinePrompt = null; }
       }
 
       if (cine) {
