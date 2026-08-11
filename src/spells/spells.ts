@@ -80,7 +80,7 @@ const SMALL_VOLUME: ReadonlySet<Element> = new Set<Element>(['frost']);
  * is decided rather than in whichever `if` happened to be written first.
  */
 // Plant last: anything that burns, blows or pours beats a seed, so a cast holding
-// both leaves the louder thing and the spores never quietly override a fire.
+// both leaves the louder thing and the bramble never quietly overrides a fire.
 export const GROUND_ELEMENTS: readonly Element[] = ['fire', 'gust', 'oil', 'water', 'frost', 'plant'];
 
 /** Does this cast fill space, rather than reach a distance? */
@@ -237,8 +237,8 @@ export const SPELLS: SpellDef[] = [
    * later, and a page that also killed things outright would never be cast for that.
    */
   {
-    id: 'plant', name: 'Spores', glyph: '🌿', role: 'bolt', kind: 'element', source: 'page', element: 'plant', cost: 2,
-    ladder: ['Spores', 'Thicket', 'Overgrowth'],
+    id: 'plant', name: 'Seed', glyph: '🌿', role: 'bolt', kind: 'element', source: 'page', element: 'plant', cost: 2,
+    ladder: ['Seed', 'Thicket', 'Overgrowth'],
     colour: 0x4fbf7a, effect: 'Seeds the ground. It spreads, then hardens into briar.',
     flavor: '"Give it a room and a week. It will not need the week."',
   },
@@ -591,7 +591,7 @@ export const COMBOS: Record<string, ComboDef> = {
   rot: { name: 'Decay', colour: 0x9de06a, damage: 5, statuses: [{ id: 'decay', power: 1 }] },
   // Gust's number, and no status at all. Everything plant is worth is on the floor
   // it leaves — see the page. A body standing in it takes 4 and a room to walk out of.
-  plant: { name: 'Spores', colour: 0x4fbf7a, damage: 4 },
+  plant: { name: 'Seed', colour: 0x4fbf7a, damage: 4 },
 
   /**
    * The harvested solos. Every one of them totals less on a body than a page does

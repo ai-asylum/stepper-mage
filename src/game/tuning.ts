@@ -486,22 +486,22 @@ export const bodyStars = (depth: number): number => 1 + Math.floor((depth - 1) /
 export const CATCH_UP_DRAWS = 3;
 
 /**
- * Rounds a spores tile grows before it hardens into briar.
+ * Rounds a bramble tile grows before it hardens into briar.
  *
  * SHORT, because the payoff is the terrain and a trap you have to wait six rounds
  * for is a trap the fight has already finished without. Three is long enough that
  * you watch it happen and can still walk out of the room, and short enough that
  * seeding a doorway is a play you make DURING a fight rather than before one.
  */
-export const SPORE_TURNS = 3;
+export const BRAMBLE_TURNS = 3;
 
 /**
- * How many rings a spores patch creeps beyond the tiles the cast itself covered.
+ * How many rings a bramble patch creeps beyond the tiles the cast itself covered.
  *
  * Two, because the growth has to be worth watching and must not be worth fleeing the
- * floor over. A rank-1 Spores covers one tile and ends up a 5x5-ish briar; an
+ * floor over. A rank-1 Seed covers one tile and ends up a 5x5-ish briar; an
  * Overgrowth starts at 25 and ends up most of a room, which is what a rank-3 page
  * spent on terrain should buy. Unbounded, a single seed reached 53 tiles in five
  * rounds and kept going — the whole floor, permanently, off one cast.
  */
-export const SPORE_GENERATIONS = 2;
+export const BRAMBLE_GENERATIONS = 2;

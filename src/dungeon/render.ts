@@ -377,7 +377,7 @@ export class DungeonView {
        *
        * A rubble TEXTURE is a differently-coloured flagstone: from a standing camera
        * the eye files it with the moss and walks onto it. Rubble is difficult terrain
-       * — it costs a clamber, and briar grown from spores becomes it — so it has to
+       * — it costs a clamber, and briar grown from a seed becomes it — so it has to
        * read as an obstacle before any rule is read. `GrowthView` stands it up out of
        * the floor as crossed cards; the tile underneath is ordinary floor.
        */

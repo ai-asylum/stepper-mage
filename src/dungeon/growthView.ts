@@ -1,7 +1,7 @@
 /**
  * The things that STAND UP out of a tile: broken stone, and briar.
  *
- * Both used to be paint. Rubble was a floor texture and spores were an ember decal,
+ * Both used to be paint. Rubble was a floor texture and bramble was an ember decal,
  * and a texture on the ground is something the eye files with the moss and the
  * flagstones — you read it as "this flagstone is a different colour", not as "there
  * is something in my way". Difficult terrain has to be an OBSTACLE at a glance, from

@@ -27,7 +27,7 @@ import { Pix, rgba } from '../art/pixel';
 import { ppu } from '../art/steps';
 import type { Substance } from '../game/ground';
 
-const SUBSTANCES: readonly Substance[] = ['fire', 'oil', 'water', 'ice', 'spores'];
+const SUBSTANCES: readonly Substance[] = ['fire', 'oil', 'water', 'ice', 'bramble'];
 
 const FRAMES = 4;
 
@@ -72,10 +72,10 @@ const PALETTE = {
   // Ice reads by being PALER and harder-edged than the water it froze from — the
   // player has to be able to tell at a glance which puddle will carry them.
   ice: { core: rgba(236, 250, 255), mid: rgba(168, 214, 232), crust: rgba(96, 146, 176) },
-  // Spores read GREEN and matte where every other substance is wet or bright — a
+  // Bramble reads GREEN and matte where every other substance is wet or bright — a
   // patch you can tell from a puddle at a glance, because one of them slows you
   // down for the rest of the floor and the other does not.
-  spores: { core: rgba(146, 220, 138), mid: rgba(72, 148, 88), crust: rgba(34, 76, 48) },
+  bramble: { core: rgba(146, 220, 138), mid: rgba(72, 148, 88), crust: rgba(34, 76, 48) },
 } as const;
 
 function emberTile(n: number, frame: number, what: Substance): Pix {

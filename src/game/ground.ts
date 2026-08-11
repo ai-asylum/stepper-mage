@@ -20,7 +20,7 @@
  */
 import type { FillTile } from '../dungeon/grid';
 import type { Element } from '../spells/spells';
-import { FIRE_TURNS, SPILL_TURNS, SPORE_GENERATIONS, SPORE_TURNS } from './tuning';
+import { FIRE_TURNS, SPILL_TURNS, BRAMBLE_GENERATIONS, BRAMBLE_TURNS } from './tuning';
 
 /**
  * Rounds of life a tile loses per step out from the middle of the spill, and the
@@ -32,7 +32,7 @@ const FALLOFF = 2;
 const MIN_TURNS = 2;
 
 /** What is lying on a tile. One per tile — see the header. */
-export type Substance = 'fire' | 'oil' | 'water' | 'ice' | 'spores';
+export type Substance = 'fire' | 'oil' | 'water' | 'ice' | 'bramble';
 
 /**
  * What happens when a substance arrives on a tile that already holds another.
@@ -73,22 +73,22 @@ function react(
   if (had === 'fire' && got === 'ice') return { left: null, full: false };
 
   /**
-   * SPORES, the fifth row, and the only substance that is a CLOCK rather than a
+   * BRAMBLE, the fifth row, and the only substance that is a CLOCK rather than a
    * hazard: left alone it creeps outward and then hardens into briar.
    *
-   *  - **spores meet water: they take, immediately.** Watered ground does not wait
+   *  - **bramble meets water: they take, immediately.** Watered ground does not wait
    *    out the growth — it is briar the moment it lands, which is the one way the
    *    player gets terrain THIS turn instead of in three. The pair reads on sight,
    *    and it is what makes a puddle worth remembering.
-   *  - **spores meet fire: they burn off.** Fire beats a seed. The tile is left
+   *  - **bramble meets fire: they burn off.** Fire beats a seed. The tile is left
    *    burning, and a thicket you regret is a Flame away from gone.
-   *  - **spores onto ice or oil: the newcomer wins**, via the fallback. Nothing
+   *  - **bramble onto ice or oil: the newcomer wins**, via the fallback. Nothing
    *    grows out of either, so there is no third thing worth authoring.
    */
-  if (had === 'water' && got === 'spores') return { left: 'spores', full: true, ripe: true };
-  if (had === 'spores' && got === 'water') return { left: 'spores', full: true, ripe: true };
-  if (had === 'spores' && got === 'fire') return { left: 'fire', full: true };
-  if (had === 'fire' && got === 'spores') return { left: 'fire', full: false };
+  if (had === 'water' && got === 'bramble') return { left: 'bramble', full: true, ripe: true };
+  if (had === 'bramble' && got === 'water') return { left: 'bramble', full: true, ripe: true };
+  if (had === 'bramble' && got === 'fire') return { left: 'fire', full: true };
+  if (had === 'fire' && got === 'bramble') return { left: 'fire', full: false };
 
   return { left: got, full: false };
 }
@@ -120,9 +120,9 @@ const FEEDS: Record<Substance, readonly Element[]> = {
   // top-up. Leaving it here would have made the interesting case unreachable.
   water: ['water'],
   ice: ['frost', 'water'],
-  // Only itself. Water does not feed spores, it RIPENS them, which is a reaction —
+  // Only itself. Water does not feed bramble, it RIPENS it, which is a reaction —
   // the same distinction frost and water already make one line above.
-  spores: ['plant'],
+  bramble: ['plant'],
 };
 
 /**
@@ -142,13 +142,13 @@ export function groundUse(what: Substance, elements: readonly Element[]): Ground
 
 /**
  * `gen` is how many times this patch is descended from the cast that made it, and
- * it exists to stop spores eating the dungeon.
+ * it exists to stop bramble eating the dungeon.
  *
  * Measured without it: a single seed went 1, 5, 13, 24, 37, 53 tiles over five
- * rounds, because every spores tile seeded all four of its neighbours every round —
+ * rounds, because every bramble tile seeded all four of its neighbours every round —
  * a flood fill wearing a plant costume. Growth has to be something the player watches
  * creep toward them and can walk around, not a floor-filling algorithm, so a patch
- * spreads only as it MATURES and only for `SPORE_GENERATIONS` rings out.
+ * spreads only as it MATURES and only for `BRAMBLE_GENERATIONS` rings out.
  */
 interface Patch { what: Substance; turns: number; gen?: number }
 
@@ -172,7 +172,7 @@ export class Ground {
   refuses: (i: number, what: Substance) => boolean = () => false;
 
   /**
-   * A spores tile has finished growing and is briar now.
+   * A bramble tile has finished growing and is briar now.
    *
    * A hook for the same reason `refuses` is one: what briar IS — `Surface.Rubble`,
    * the thing you clamber over and gust sweeps away — is a fact about the GRID, and
@@ -183,7 +183,7 @@ export class Ground {
 
   /**
    * The neighbours of a tile, for spreading. Set by `Floor`, which knows the width
-   * and which tiles are walkable; spores creeping into solid rock would be growth
+   * and which tiles are walkable; bramble creeping into solid rock would be growth
    * the player can neither see nor walk through.
    */
   neighbours: (i: number) => readonly number[] = () => [];
@@ -244,14 +244,14 @@ export class Ground {
       // A reaction burns from FULL rather than from what is left of either input —
       // oil going up is a new fire, not the remainder of an old one.
       this.patch.set(i, { what: left, turns: full ? FIRE_TURNS : life });
-      // Watered seed does not wait out its clock. This is the whole of "spores into
+      // Watered seed does not wait out its clock. This is the whole of "seed into
       // water is briar NOW", and it is the one terrain the player gets this turn.
       if (ripe) this.ripen(i);
     }
   }
 
   /**
-   * A spores tile becomes briar: off the substance map, onto the floor.
+   * A bramble tile becomes briar: off the substance map, onto the floor.
    *
    * Deleted rather than left as a spent patch, because what it turns into is a
    * SURFACE and a tile holds one substance. The growth is over; what is there now is
@@ -259,7 +259,7 @@ export class Ground {
    * generator laid.
    */
   private ripen(i: number): void {
-    if (this.patch.get(i)?.what !== 'spores') return;
+    if (this.patch.get(i)?.what !== 'bramble') return;
     this.patch.delete(i);
     this.onMature(i);
   }
@@ -299,7 +299,7 @@ export class Ground {
   level(i: number): 1 | 2 | 3 {
     const p = this.patch.get(i);
     if (!p) return 1;
-    const full = p.what === 'fire' ? FIRE_TURNS : p.what === 'spores' ? SPORE_TURNS : SPILL_TURNS;
+    const full = p.what === 'fire' ? FIRE_TURNS : p.what === 'bramble' ? BRAMBLE_TURNS : SPILL_TURNS;
     if (p.turns > full * 0.6) return 3;
     if (p.turns > full * 0.25) return 2;
     return 1;
@@ -315,7 +315,7 @@ export class Ground {
    */
   feed(tiles: readonly FillTile[], what: Substance): number {
     let grown = 0;
-    const full = what === 'fire' ? FIRE_TURNS : what === 'spores' ? SPORE_TURNS : SPILL_TURNS;
+    const full = what === 'fire' ? FIRE_TURNS : what === 'bramble' ? BRAMBLE_TURNS : SPILL_TURNS;
     for (const { i } of tiles) {
       if (this.refuses(i, what)) continue;
       const had = this.patch.get(i);
@@ -327,11 +327,11 @@ export class Ground {
   }
 
   /**
-   * One round older. Tiles that run out are bare again — EXCEPT spores, which are
+   * One round older. Tiles that run out are bare again — EXCEPT bramble, which is
    * the one substance that does not expire but ARRIVES.
    *
    * Everything else on this map is something a spell left behind, burning down to
-   * nothing. Spores are alive: every round they creep one tile outward, and when
+   * nothing. Brambles are alive: every round they creep one tile outward, and when
    * their clock runs out they do not vanish, they harden into briar. That inversion
    * is the whole of what plant is for — fire is a hazard you wait out, and a thicket
    * is a hazard that is still there when you come back.
@@ -345,30 +345,30 @@ export class Ground {
      * A patch seeds ON THE ROUND IT HARDENS, and never after.
      *
      * Spreading from every live tile every round is a flood fill; spreading as the
-     * plant goes over is a ring that steps outward once per `SPORE_TURNS` and stops
-     * at `SPORE_GENERATIONS`. That is the difference between terrain and weather.
+     * plant goes over is a ring that steps outward once per `BRAMBLE_TURNS` and stops
+     * at `BRAMBLE_GENERATIONS`. That is the difference between terrain and weather.
      */
     const sown: { i: number; gen: number }[] = [];
     for (const [i, p] of this.patch) {
-      if (p.what !== 'spores' || p.turns > 1) continue;
+      if (p.what !== 'bramble' || p.turns > 1) continue;
       const gen = (p.gen ?? 0) + 1;
-      if (gen > SPORE_GENERATIONS) continue;
+      if (gen > BRAMBLE_GENERATIONS) continue;
       for (const n of this.neighbours(i)) {
-        if (this.patch.has(n) || this.refuses(n, 'spores')) continue;
+        if (this.patch.has(n) || this.refuses(n, 'bramble')) continue;
         sown.push({ i: n, gen });
       }
     }
 
     for (const [i, p] of [...this.patch]) {
       if (p.turns > 1) { p.turns--; continue; }
-      if (p.what === 'spores') this.ripen(i);
+      if (p.what === 'bramble') this.ripen(i);
       else this.patch.delete(i);
     }
 
     // Sown AFTER the ageing pass, so a tile seeded this round starts on a full
     // clock rather than being aged on the turn it appeared.
     for (const { i, gen } of sown) {
-      if (!this.patch.has(i)) this.patch.set(i, { what: 'spores', turns: SPORE_TURNS, gen });
+      if (!this.patch.has(i)) this.patch.set(i, { what: 'bramble', turns: BRAMBLE_TURNS, gen });
     }
   }
 

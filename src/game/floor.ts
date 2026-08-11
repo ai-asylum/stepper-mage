@@ -194,7 +194,7 @@ export class Floor {
       this.syncGrowth();
     };
     /**
-     * Spores creep only where a body could walk. Growth inside a wall is growth the
+     * Bramble creeps only where a body could walk. Growth inside a wall is growth the
      * player can neither see nor clamber over, so it would read as the patch simply
      * refusing to spread in that direction — which is exactly what this makes true.
      */
@@ -331,7 +331,7 @@ export class Floor {
    *
    * Two sources on purpose. Rubble is a surface — the generator lays it, gust sweeps
    * it, and a matured thicket becomes it, so it outlives whatever put it there.
-   * Spores are a live patch on a clock, and they are drawn as the same object at a
+   * Brambles are a live patch on a clock, and they are drawn as the same object at a
    * smaller size so the player can see a thicket coming before it sets.
    */
   syncGrowth(): void {
@@ -340,7 +340,7 @@ export class Floor {
       if (this.grid.surface[i] === Surface.Rubble) out.push({ i, kind: 'rubble' });
     }
     for (const p of this.ground.patches()) {
-      if (p.what === 'spores') out.push({ i: p.i, kind: 'plant' });
+      if (p.what === 'bramble') out.push({ i: p.i, kind: 'plant' });
     }
     this.growthView.sync(this.grid, out);
   }
