@@ -141,8 +141,20 @@ for 13 — the baiting play, from one function that never asks who stood there. 
 started shut, a plate press opened it for its full span of 8, eight ticks shut it
 again, and `walkable` followed the flag both ways.
 
-**Not checked: the art.** The hazard and gate drawings have never been seen in a frame.
-Every attempt to get the camera in front of one ended in the boot chooser overlaying
-the view, and forcing past it crashed `rollBlessings` — which is the newly landed
-start-page work, not this phase, and I did not want to debug someone else's mid-flight
-feature to take a screenshot. The shapes are asserted in code and unverified by eye.
+**Not checked: most of the art.** The hazard and gate drawings had never been seen in a
+frame. Every attempt to get the camera in front of one ended in the boot chooser
+overlaying the view and then a crash, which was blamed on the newly landed start-page
+work. It was not that: `ClockView.dispose` and `MurkView.dispose` threw their quad pools
+away and left `live` where it was, so the next frame walked an empty array — and a floor
+is disposed at the TOP of `enterFloor`, which then awaits the next one being built.
+Every frame of every floor change ran against the corpse. Fixed, and the boot chooser
+goes to depth 6 now.
+
+**The trapdoor, checked in a frame at last, and it was wrong in three ways.** The lid
+was one picture with a `scale.x` on it, so the half-open state was a texture going thin
+rather than two leaves swinging; you could walk into an open shaft and nothing happened,
+because the fall only ever fired on the beat the thing opened; and when it did fire it
+called `descend`, which refuses to move anybody whose boss is still alive — so the one
+hazard that exists to take a floor off you was inert for the whole of its useful life.
+All three are fixed. Stepped into the showroom's trapdoor at depth 6 with the boss
+alive, arrived on depth 7, no heal.

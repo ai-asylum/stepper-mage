@@ -186,4 +186,6 @@ room.
 
 **Not checked in a frame: the levers.** The sprites were inspected as PNGs and look
 right; nothing has been seen standing in a room and no socket pip has been seen on a
-door.
+door. The boot-chooser crash that blocked this and `Timing_And_Hazards`' art is gone —
+it was `ClockView.dispose` leaving its live count behind after emptying the pool — so
+this is now only a matter of walking to one.
