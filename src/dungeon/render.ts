@@ -358,6 +358,7 @@ export class DungeonView {
     const waterB = tiles.water.map(() => new MeshBuild());
     const rubbleB = tiles.rubble.map(() => new MeshBuild());
     const fogB = tiles.fog.map(() => new MeshBuild());
+    const plateB = tiles.plate.map(() => new MeshBuild());
     const portalB = tiles.portal.map(() => new MeshBuild());
     // the inside of a shaft, which is deliberately not masonry — see `pitFace`
     const pitPix = [pitFace(Math.round(ppu()), seed)];
@@ -367,6 +368,14 @@ export class DungeonView {
       [Surface.Water]: waterB,
       [Surface.Rubble]: rubbleB,
       [Surface.Fog]: fogB,
+      /**
+       * The plate, which had no entry here at all and so was drawn as bare floor —
+       * an invisible tile that opens a door being the one thing a lock mechanic
+       * cannot afford. It is a floor texture and not a prop like the lever, because
+       * a plate is something you STAND on: anything standing proud of the tile would
+       * be a thing to walk around.
+       */
+      [Surface.Plate]: plateB,
       /**
        * NOT the ladder. It used to be a floor texture, which drew a ladder lying flat
        * on the ground like a picture of one — a ladder is a thing you climb, so it

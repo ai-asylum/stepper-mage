@@ -337,7 +337,10 @@ every phase. Never list tasks for editing this file or a phase doc.
       entity — `clearLine` reads the grid.
 - [ ] Pressure plates, with a different verb per floor.
       NOT STARTED. The plate itself shipped with Timing_And_Hazards; it only ever
-      opens a gate.
+      opens a gate. Two things it shipped WITHOUT are now fixed: it is drawn
+      (`buildPlate`), and stepping on one cuts to its door the way every other
+      actuation does — the call site existed and could never fire, because it read
+      the player's tile before anything had written the tile they stepped onto.
 - [ ] Secret walls: drawn slightly wrong, tap and cast. Nothing cleverer.
       NOT STARTED. Needs a tap target on a WALL, which nothing in the game has.
 - [ ] Plants grown into climbable vines, which burn. NOT STARTED. Decay is the element — phase doc.

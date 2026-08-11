@@ -2407,6 +2407,21 @@ async function boot(): Promise<void> {
        */
       {
         const g = floor.grid;
+        /**
+         * THE TILE YOU ARE ON, BEFORE ASKING WHAT IS UNDER YOUR FEET.
+         *
+         * `combat.playerTile` was not written until `playerStepped`, forty lines
+         * below, so this block asked "is anything standing on the plate" using the
+         * tile the player had just LEFT. The stale answer always agreed with the
+         * lift the door already had, `refreshPlates` always returned false, and the
+         * camera cut for a plate gate never fired once — not late, not wrong,
+         * NEVER. The gate then snapped open a moment later inside `tickClock`,
+         * which re-asks the same question with the tile finally updated, so the
+         * state was right and only the thing the player was supposed to watch was
+         * missing. Stepping onto a plate is the actuation; this is where it happens
+         * and this is where it has to be seen.
+         */
+        combat.playerTile = { x, y };
         const before = g.doors.map((d) => g.doorLift[d.i]);
         if (combat.refreshPlates()) {
           const moved = g.doors.findIndex((d, k) => g.doorLift[d.i] !== before[k]);

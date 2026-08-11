@@ -467,6 +467,7 @@ export interface TileSet {
   water: Pix[];
   rubble: Pix[];
   fog: Pix[];
+  plate: Pix[];
   ladder: Pix[];
   /** One per portal PAIR, so two mouths that match are drawn the same colour. */
   portal: Pix[];
@@ -639,6 +640,85 @@ function buildFloor(theme: Theme, seed: string, variant: number): Pix {
  * thing on a floor with straight edges and repeating rivets, rubble is the only thing
  * with cast shadows, water is the only thing that reflects.
  */
+
+/**
+ * A PRESSURE PLATE, and its entire job is being seen from the far end of the room.
+ *
+ * It shipped INVISIBLE. `Surface.Plate` has been placed by the generator and read
+ * every round by `refreshPlates` since Timing_And_Hazards, and no draw path ever had a
+ * case for it — so the one tile in the dungeon that opens a door was ordinary
+ * flagstone. A gate that rises and falls with nothing to see is not a mechanic the
+ * player can be out of sync with; it is a fault they are being asked to explain to
+ * themselves, and every conclusion they draw about it will be wrong.
+ *
+ * THE GUTTER IS THE WHOLE DRAWING. What says a slab sinks is the gap it sinks INTO: a
+ * recess all the way round, black, and wide enough to survive the coarsest step — at
+ * `ppu()` 16 that is two texels, which is why it is a fraction of P and not a constant.
+ * The bevel is second and does the rest: lit along the far edge, shadowed along the
+ * near one, the same two-texel trick the fluting uses to make a flat face read as a
+ * raised one.
+ *
+ * Distinct from IRON on purpose, which is the other regular metal surface and would
+ * otherwise be a bay full of things that look like they open doors. Iron is a seam and
+ * rivets; this is an outline you could cut round with scissors, with a pressed boss in
+ * the middle of it. One tile, one object, one thing to stand on.
+ */
+function buildPlate(theme: Theme, seed: string, variant: number): Pix {
+  const p = buildFloor(theme, `${seed}-base`, variant);
+  const P = ppu();
+  const slab = hex(0x5a5f68), rim = hex(0x8b93a0), well = hex(0x141619);
+
+  // The recess, then the slab sitting in it. Both are squares measured off P so the
+  // proportions hold at every step rather than only at the one they were drawn at.
+  const gut = Math.max(1, Math.round(P * 0.11));
+  const lo = gut, hi = P - 1 - gut;
+  for (let y = 0; y < P; y++) {
+    for (let x = 0; x < P; x++) {
+      const inside = x >= lo && x <= hi && y >= lo && y <= hi;
+      if (!inside) {
+        // Only the ring immediately around the slab is the well; outside that the
+        // floor is the room's own, so a plate sits IN the masonry and not on a patch.
+        const near = x >= lo - gut && x <= hi + gut && y >= lo - gut && y <= hi + gut;
+        if (near) p.set(x, y, mix(p.get(x, y), well, 0.85));
+        continue;
+      }
+      // A shallow dish: the middle of a plate somebody has stood on a thousand times
+      // is lower than its edges, and the gradient is what stops the slab reading flat.
+      const cx = (x - P / 2) / (P / 2), cy = (y - P / 2) / (P / 2);
+      const dish = Math.min(1, (cx * cx + cy * cy) * 0.55);
+      p.set(x, y, mix(slab, shade(slab, 0.78), dish));
+    }
+  }
+  // The bevel. Far edge catches the torch, near edge falls away — one texel each at
+  // the coarsest step, two once there is room for two.
+  const b = Math.max(1, Math.round(P * 0.045));
+  for (let x = lo; x <= hi; x++) {
+    for (let k = 0; k < b; k++) {
+      p.set(x, lo + k, mix(p.get(x, lo + k), rim, 0.75));
+      p.set(x, hi - k, mix(p.get(x, hi - k), well, 0.55));
+    }
+  }
+  for (let y = lo; y <= hi; y++) {
+    for (let k = 0; k < b; k++) {
+      p.set(lo + k, y, mix(p.get(lo + k, y), rim, 0.45));
+      p.set(hi - k, y, mix(p.get(hi - k, y), well, 0.35));
+    }
+  }
+  // The boss: a pressed disc in the middle, which is the mark that says PRESS on
+  // every machine anybody has ever used. Lit on top, so it reads as proud of the slab.
+  const r = Math.max(2, Math.round(P * 0.17));
+  p.ellipse(P >> 1, P >> 1, r, r, shade(slab, 0.86));
+  p.ellipseFrame(P >> 1, P >> 1, r, r, shade(slab, 0.6));
+  p.ellipse(P >> 1, (P >> 1) - Math.max(1, r >> 1), Math.max(1, Math.round(r * 0.55)),
+    Math.max(1, Math.round(r * 0.4)), mix(slab, rim, 0.5));
+  if (variant % 2 === 1) {
+    // Two variants so a pair of plates on one floor are not one stamp repeated: the
+    // second is scuffed across the boss, which is where a boot actually lands.
+    const y0 = (P >> 1) + Math.max(1, r >> 1);
+    p.line(lo + b, y0, hi - b, y0 - 1, shade(slab, 0.72));
+  }
+  return p;
+}
 
 /** Iron plating: straight seams, rivets, a rolled sheen. The only regular thing here. */
 function buildIron(theme: Theme, seed: string, variant: number): Pix {
@@ -927,18 +1007,20 @@ export function buildTileSet(theme: Theme, seed: string, pairs = 0): TileSet {
   const water: Pix[] = [];
   const rubble: Pix[] = [];
   const fog: Pix[] = [];
+  const plate: Pix[] = [];
   const ladder: Pix[] = [buildLadder(theme, `${seed}-lad`)];
   for (let i = 0; i < 2; i++) {
     iron.push(buildIron(theme, `${seed}-s${i}`, i));
     water.push(buildWater(theme, `${seed}-s${i}`, i));
     rubble.push(buildRubble(theme, `${seed}-s${i}`, i));
     fog.push(buildFog(theme, `${seed}-s${i}`, i));
+    plate.push(buildPlate(theme, `${seed}-s${i}`, i));
   }
   const portal: Pix[] = [];
   for (let i = 0; i < pairs; i++) {
     portal.push(buildPortal(theme, `${seed}-p${i}`, PORTAL_HUES[i % PORTAL_HUES.length]));
   }
-  return { walls, floors, ceils, iron, water, rubble, fog, ladder, portal };
+  return { walls, floors, ceils, iron, water, rubble, fog, plate, ladder, portal };
 }
 
 /**

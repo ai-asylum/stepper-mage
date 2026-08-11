@@ -94,6 +94,19 @@ SHIPPED: levers, the boss door with its sockets, and the camera cut.
   is standing and only the yaw swings out and back inside a second. Nothing has to be
   restored because nothing was taken away, and `First_Minutes`' rule that the framing
   never moves on its own is intact — this moves because the player threw a lever.
+- **STEPPING ON A PLATE CUTS TO ITS DOOR.** A plate is an actuator and every actuation
+  is watched; a lever is not a special case, it was only the first one built. This was
+  asked for, was written into the step path in `main.ts`, and then never fired once,
+  because the block asked which tile the player was on before anything had told it they
+  had moved — so the stale answer always agreed with the door and the change was made a
+  moment later by the clock, silently, with the camera pointing somewhere else. Both
+  directions: the gate falling when you step OFF is the half that teaches the rule.
+- **A PLATE IS DRAWN.** It shipped as `Surface.Plate` with no case in any draw path, so
+  the one tile in the dungeon that opens a door was bare flagstone for two phases. A
+  mechanism the player cannot see is not a mechanism they can be out of sync with — it
+  is a door that moves for no reason, and every theory they form about it will be wrong.
+  A recessed slab with a gutter round it and a pressed boss in the middle, at the same
+  bar as every other surface: identifiable at a glance, with no legend.
 
 NOT SHIPPED, and none of them are started: **blocks** pushed by gust, **pressure plates
 with a different verb per floor**, **secret walls**, and **vines**. The two that the
