@@ -481,7 +481,7 @@ export class Floor {
   update(dt: number, time: number, cam: THREE.Vector3): void {
     this.view.update(time, cam);
     this.fireView.update(time, cam);
-    this.clockView.update(cam);
+    this.clockView.update(cam, this.view.uniforms);
     this.murkView.update(
       time, cam, this.grid,
       this.view.uniforms.uTorch.value as THREE.Color,

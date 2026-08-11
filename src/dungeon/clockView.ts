@@ -26,6 +26,7 @@ import { ppu } from '../art/steps';
 import { STEP_H, WALL_H } from '../art/tiles';
 import { DIR_VEC, Surface, hazardState, type Grid, type HazardState } from './grid';
 import { loadSprite } from './sprites';
+import type { WorldUniforms } from './render';
 
 /** How far above the floor plane a quad sits. Enough to beat z-fighting, no more. */
 const LIFT = 0.014;
@@ -588,11 +589,16 @@ export class ClockView {
    * Feed it the same per-tile light the floor under it is built with and the quad
    * sits in the room instead of on top of it. A floor of ambient, because a hazard
    * that goes completely black is a hazard the player steps on.
+   *
+   * WHAT IS STORED HERE IS THE BAKED TERM ONLY. `refog` finishes the sum every frame,
+   * because the other two thirds of the room's light depend on where the player is
+   * standing and this does not.
    */
   private lit(m: THREE.Mesh, g: Grid, x: number, y: number, k = 1): void {
     const l = Math.max(0.07, g.lightAt(x, y)) * k;
     // kept, because `update` re-applies it every frame with the distance falloff on
     m.userData.lit = l;
+    m.userData.shade = k;
     (m.material as THREE.MeshBasicMaterial).color.setScalar(l);
   }
 
@@ -615,7 +621,33 @@ export class ClockView {
    */
   private static readonly FOG_DENSITY = 0.016;
 
-  private refog(cam: THREE.Vector3): void {
+  /**
+   * AND THE TORCH, which none of these quads had ever received.
+   *
+   * The room is lit three ways — ambient, baked light, and the torch the player is
+   * carrying — and `WORLD_FRAG` adds all three. This file had only the baked term, so
+   * everything the clock draws was lit by the room's memory of a torch and never by
+   * the actual one. That is what made a gate look wrong from one side and right from
+   * the other: the quad is a single brightness taken from the door's OWN tile, and
+   * whether that reads as too dark depends entirely on how the stone beside it is
+   * being lit. The showroom's boss door bakes to 0.811 with 0.811 on its north side
+   * and 1.159 on its south, so from the south it is a silhouette against a floor half
+   * again as bright, and from the north it matches.
+   *
+   * Added rather than replacing the baked term, and CLAMPED at 1: the same falloff
+   * curve the world uses (`t = 1 - d/reach`, squared, times the flicker), so a gate
+   * brightens as you walk up to it exactly as the wall around it does. The clamp is
+   * what keeps this honest — the world shader works in illuminance that runs well
+   * above 1 and is tonemapped afterwards, while a basic material's `color` is a plain
+   * multiply on the map, so the two are calibrated by eye and not by physics. Capping
+   * at 1 means the brightest this can ever draw is the texture's own colour, which
+   * cannot blow out and cannot undo the far-field fix this method exists for.
+   */
+  private static readonly TORCH_LIFT = 0.7;
+
+  private refog(cam: THREE.Vector3, u?: WorldUniforms): void {
+    const reach = (u?.uTorchReach.value as number) ?? 0;
+    const flicker = (u?.uFlicker.value as number) ?? 1;
     for (let k = 0; k < this.live; k++) {
       const m = this.pool[k];
       const base = m.userData.lit as number | undefined;
@@ -623,7 +655,17 @@ export class ClockView {
       const dx = m.position.x - cam.x, dy = m.position.y - cam.y, dz = m.position.z - cam.z;
       const d2 = dx * dx + dy * dy + dz * dz;
       const f = Math.exp(-ClockView.FOG_DENSITY * d2);
-      (m.material as THREE.MeshBasicMaterial).color.setScalar(base * f);
+      let l = base;
+      if (reach > 0) {
+        // The near clamp is the world's: without it the torch divides by nothing at
+        // all against a surface the camera is standing inside.
+        const t = Math.max(0, 1 - Math.max(Math.sqrt(d2), 0.85) / reach);
+        // Shaded quads take a shaded torch — a rim in shadow is in shadow from every
+        // light in the room, not only from the baked one.
+        const shade = (m.userData.shade as number) ?? 1;
+        l = Math.min(1, base + t * t * flicker * ClockView.TORCH_LIFT * shade);
+      }
+      (m.material as THREE.MeshBasicMaterial).color.setScalar(l * f);
     }
   }
 
@@ -898,8 +940,8 @@ export class ClockView {
    * the state's own pose, so nothing here can disagree with the rule; it only decides
    * how long the trip takes.
    */
-  update(cam?: THREE.Vector3): void {
-    if (cam) this.refog(cam);
+  update(cam?: THREE.Vector3, u?: WorldUniforms): void {
+    if (cam) this.refog(cam, u);
     /**
      * The plates, eased on the same curve as everything else on this clock.
      *
