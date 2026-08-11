@@ -25,20 +25,30 @@ import { Pix, rgba } from '../art/pixel';
 import { ppu } from '../art/steps';
 import { STEP_H, WALL_H } from '../art/tiles';
 import { DIR_VEC, Surface, hazardState, type Grid, type HazardState } from './grid';
+import { loadSprite } from './sprites';
 
 /** How far above the floor plane a quad sits. Enough to beat z-fighting, no more. */
 const LIFT = 0.014;
 
 /** Card sizes for the two hazards that are objects rather than decals. */
-const SPIKE_H = 0.42;
-const BLADE_W = 0.95;
-const BLADE_H = 0.9;
+/**
+ * Sizes taken from the GENERATED art's own aspect, not chosen and then drawn to.
+ *
+ * These were hand-plotted `Pix` and the numbers were picked to suit them. The art is
+ * now Scenario's, and a generated sprite has an aspect of its own — a 19x98 spike is
+ * a stake and a 0.2x0.42 quad is a cone. The height is the design decision and the
+ * width follows from the file, so nothing is stretched.
+ */
+const SPIKE_H = 0.55;
+const SPIKE_ASPECT = 19 / 98;
+const BLADE_H = 1.0;
+const BLADE_ASPECT = 64 / 130;
+const BLADE_W = BLADE_H * BLADE_ASPECT;
 /** How deep an open trapdoor is drawn. Not how far you FALL — see `hazardBites`. */
 const SHAFT_D = 3.2;
 /** How far a ladder's stiles stand proud of the lip they lean on. */
 const LADDER_OVER = 0.22;
 
-const STATES: readonly HazardState[] = ['live', 'winding', 'idle'];
 
 /** How far a spike card stands proud of the floor, per state. Buried, tip, all of it. */
 const SPIKE_UP: Record<HazardState, number> = { idle: 0, winding: 0.3, live: 1 };
@@ -61,92 +71,6 @@ const BLADE_AMP = 1.15;
 /** How fast a hazard eases toward its target, per frame. */
 const EASE = 0.14;
 
-const STEEL = rgba(226, 232, 238);
-const STEEL_DIM = rgba(128, 138, 150);
-const RIM = rgba(12, 10, 14);
-const BRASS = rgba(255, 194, 62);
-
-/**
- * A BED OF SPIKES, drawn as a standing card that rises through the floor.
- *
- * The first version was a floor decal — nine pale dots that got bigger — and from a
- * standing camera that is not spikes, it is spots on the ground. Spikes are the one
- * hazard whose entire meaning is VERTICAL: the danger is that they came UP, so the
- * drawing has to have height and has to move through the floor plane rather than
- * change colour on it.
- *
- * Roots at the bottom of the card so the quad can simply be pushed down through the
- * floor to retract, which is what gives the three states for free: buried, half out,
- * all the way out.
- */
-function spikeCard(n: number): Pix {
-  const p = new Pix(n, n);
-  const steel = rgba(206, 214, 222);
-  const edge = rgba(255, 255, 255);
-  const dark = rgba(74, 80, 88);
-  const cx = (n - 1) / 2;
-  const halfW = n * 0.3;
-  const tip = n * 0.04;
-  /**
-   * ONE spike, billboarded, because sixteen of them make the bed.
-   *
-   * The first version drew a ROW of four on one card and crossed two cards — which
-   * gives you four spikes from the front, four from the side, and a visible seam
-   * where the two sheets intersect. A bed of spikes has to look the same from every
-   * approach, and the only way a flat card does that is if each spike is its own
-   * card turning to face you.
-   */
-  for (let y = Math.round(tip); y < n; y++) {
-    const k = (y - tip) / (n - tip);
-    const w = halfW * k;
-    for (let x = Math.round(cx - w); x <= Math.round(cx + w); x++) {
-      if (x < 0 || x >= n) continue;
-      const side = (x - cx) / (w || 1);
-      p.set(x, y, side < -0.2 ? edge : side > 0.3 ? dark : steel);
-    }
-  }
-  return p;
-}
-
-/**
- * A PENDULUM BLADE: a crescent on a shaft, hanging from the ceiling.
- *
- * Not billboarded, unlike everything else on a card in this game, and that is the
- * whole point — a blade swings in a PLANE, and a quad that turns to face the camera
- * can never show a swing. It is fixed across the corridor and pivots about its top
- * edge, so from either end of the passage you watch it sweep past you.
- *
- * Drawn with the pivot at the very top of the card, because the mesh is rotated about
- * that edge: the shaft has to reach the ceiling at every angle or the blade detaches
- * and hangs in the air.
- */
-function bladePix(n: number): Pix {
-  const p = new Pix(n, n);
-  const steel = rgba(214, 222, 230);
-  const edge = rgba(255, 255, 255);
-  const dark = rgba(66, 72, 80);
-  const brass = rgba(150, 116, 52);
-
-  // the shaft, from the top of the card down to the hub
-  const sx = Math.round(n / 2), sw = Math.max(1, Math.round(n * 0.05));
-  const hubY = Math.round(n * 0.62);
-  p.rect(sx - sw, 0, sw * 2, hubY, dark);
-  p.rect(sx - sw, 0, Math.max(1, sw), hubY, steel);
-  p.ellipse(sx, hubY, Math.max(2, n * 0.07), Math.max(2, n * 0.07), brass);
-
-  // the crescent: a wide arc below the hub, thin at the tips and thick in the middle
-  const r = n * 0.34;
-  for (let y = hubY; y < n; y++) {
-    for (let x = 0; x < n; x++) {
-      const dx = (x - sx) / r, dy = (y - hubY) / r;
-      const d = Math.sqrt(dx * dx + dy * dy);
-      if (d > 1 || d < 0.55) continue;
-      // the cutting edge is the OUTSIDE of the arc — one bright texel of it
-      p.set(x, y, d > 0.92 ? edge : d > 0.66 ? steel : dark);
-    }
-  }
-  return p;
-}
 
 /**
  * The inside of a shaft: masonry at the lip, fading to black a few courses down.
@@ -221,48 +145,6 @@ function socketTile(n: number): Pix {
   return p;
 }
 
-/**
- * A TRAPDOOR stays a floor decal, because it genuinely is one.
- *
- * Two leaves that part on a hole. This is the one hazard whose danger is the ABSENCE
- * of floor, so drawing it flat is correct rather than a compromise — and the live
- * state is the only thing in the room darker than the room, which is what makes a
- * hole read as a hole.
- */
-function trapTile(n: number, state: HazardState): Pix {
-  const p = new Pix(n, n);
-  const leaf = rgba(96, 88, 80);
-  const band = rgba(52, 48, 44);
-  const VOIDC = rgba(4, 3, 5);
-  const inset = Math.round(n * 0.1), span = n - inset * 2;
-  if (state === 'live') {
-    /**
-     * THE HOLE IS LEFT EMPTY, not filled with black.
-     *
-     * A black quad lying in the floor plane is the thing that made an open trapdoor
-     * read as a rendering fault: it has no perspective in it, so the eye files it as
-     * a decal rather than as a void. The shaft walls under it are the depth, and they
-     * can only be seen if the lid gets out of the way — so the live state draws the
-     * LIP and nothing else, and what you look through it at is the masonry going down.
-     */
-    p.frame(inset, inset, span, span, band);
-    p.frame(inset + 1, inset + 1, span - 2, span - 2, VOIDC);
-  } else {
-    const gap = state === 'winding' ? Math.max(2, Math.round(n * 0.16)) : 1;
-    const half = Math.round((span - gap) / 2);
-    p.rect(inset, inset, span, half, leaf);
-    p.rect(inset, inset + half + gap, span, half, leaf);
-    p.rect(inset, inset + half, span, gap, VOIDC);
-    p.frame(inset, inset, span, span, band);
-    // hinge bands, so it reads as two doors rather than as two grey rectangles
-    for (const bx of [inset + Math.round(span * 0.25), inset + Math.round(span * 0.7)]) {
-      p.rect(bx, inset, Math.max(1, Math.round(n * 0.05)), half, band);
-      p.rect(bx, inset + half + gap, Math.max(1, Math.round(n * 0.05)), half, band);
-    }
-  }
-  return p;
-}
-
 /** The blade's mark on the floor: a soft dark smear along the line of the sweep. */
 function bladeShadow(n: number): Pix {
   const p = new Pix(n, n);
@@ -279,140 +161,24 @@ function bladeShadow(n: number): Pix {
   return p;
 }
 
-/**
- * A LADDER, drawn to hang on the face of a ledge.
- *
- * It shipped as a floor texture and looked exactly like what it was: a picture of a
- * ladder lying on the ground. A ladder is the one object in the game whose entire
- * meaning is the vertical face it is leaning against, so it is drawn as a tall card
- * and hung on the riser — and its stiles run off the top of the card on purpose, so
- * they can poke above the lip the way a real one does.
- */
-function ladderPix(n: number): Pix {
-  const p = new Pix(n, n);
-  const wood = rgba(122, 86, 48);
-  const lit = rgba(178, 134, 78);
-  const dark = rgba(48, 32, 16);
-  const inset = Math.max(1, Math.round(n * 0.2));
-  const sw = Math.max(1, Math.round(n * 0.09));
-  // two stiles, full height
-  for (const sx of [inset, n - 1 - inset - sw]) {
-    p.rect(sx, 0, sw, n, wood);
-    p.rect(sx, 0, Math.max(1, Math.round(sw * 0.45)), n, lit);
-    p.rect(sx + sw - 1, 0, 1, n, dark);
-  }
-  // rungs across them
-  /**
-   * FIVE OR SIX RUNGS, not twenty.
-   *
-   * The card is stretched to whatever drop it serves, so the rung COUNT is fixed in
-   * the texture and has to read at the height it ends up — and a rung every few
-   * centimetres reads as a grille, not a ladder. Spaced about a foot apart at the
-   * height a single level actually is.
-   */
-  const rungs = Math.max(3, Math.round(n / 26));
-  const rh = Math.max(1, Math.round(n * 0.055));
-  for (let r = 0; r < rungs; r++) {
-    const y = Math.round(((r + 0.5) / rungs) * n - rh / 2);
-    p.rect(inset, y, n - inset * 2 - sw, rh, lit);
-    p.rect(inset, y + rh, n - inset * 2 - sw, 1, dark);
-  }
-  return p;
-}
-
-/**
- * The countdown, drawn as PIPS rather than as a number.
- *
- * A digit at this texel density is three pixels tall and unreadable, and a number in
- * the log is a number the player has to remember while being chased. Pips are
- * countable at a glance and they shorten visibly, which is the one property the
- * mechanic actually needs: not "how many" but "how much less than last turn".
- */
-function pipStrip(n: number, turns: number, span: number): Pix {
-  const p = new Pix(n, n);
-  if (turns <= 0) return p;
-  const cells = Math.max(1, Math.min(8, span));
-  const cw = n / cells;
-  const h = Math.max(2, Math.round(n * 0.34));
-  const y = Math.round((n - h) / 2);
-  for (let i = 0; i < cells; i++) {
-    const lit = i < turns;
-    const x = Math.round(i * cw + cw * 0.18);
-    const w = Math.max(1, Math.round(cw * 0.64));
-    p.rect(x, y, w, h, lit ? BRASS : rgba(48, 40, 30));
-  }
-  p.outline(RIM, false, true);
-  return p;
-}
-
-/**
- * A shut portcullis: vertical bars with a heavy head-beam.
- *
- * Drawn as a standing quad rather than as geometry, so opening and shutting costs a
- * texture swap instead of rebuilding the floor — a gate on a five-turn countdown
- * would otherwise rebuild the whole floor mesh twice per press. It reads as a gate
- * because of the two things a wall never has: gaps you can see the room through, and
- * a horizontal beam across the top that the bars hang from.
- */
-function portcullis(n: number): Pix {
-  const p = new Pix(n, n);
-  /**
-   * THE GAPS ARE THE GATE, and the first version had none.
-   *
-   * It asked for `n / 6` bars and made each one `n * 0.07` wide, which at the step
-   * this game actually runs (`ppu()` is 72) is twelve bars on a six-texel pitch at
-   * five texels wide — a one-texel gap. Then it ran an eight-neighbour `outline` over
-   * the result, and an eight-neighbour outline closes a one-texel gap. The portcullis
-   * came out a solid sheet of steel with a grain on it, which is why it read as a
-   * wall with the alpha broken rather than as bars.
-   *
-   * So the pitch and the bar are now derived from each other rather than picked
-   * separately: the bar takes a THIRD of its pitch and the other two thirds are the
-   * hole. That ratio survives any step — at the coarsest it is one texel of bar to
-   * two of air, and at the finest it is the same picture with more texels in it.
-   * There is no outline pass at all; the rim is drawn INTO each bar, where it cannot
-   * bleed into the gap beside it.
-   */
-  const BARS = 7;
-  const pitch = n / BARS;
-  const w = Math.max(1, Math.round(pitch / 3));
-  const top = Math.round(n * 0.12);
-
-  /** One horizontal tie, thin. A portcullis is a grid; a fence is not a gate. */
-  const tie = (y: number, h: number): void => {
-    p.rect(0, y, n, h, STEEL_DIM);
-    p.rect(0, y, n, Math.max(1, Math.round(h / 3)), STEEL);
-  };
-
-  for (let b = 0; b < BARS; b++) {
-    const x = Math.round((b + 0.5) * pitch - w / 2);
-    p.rect(x, top, w, n - top, STEEL_DIM);
-    // the lit edge, one texel of it, and the shadow side the same
-    p.rect(x, top, 1, n - top, STEEL);
-    p.rect(x + w - 1, top, 1, n - top, RIM);
-    // a spiked foot, so the bottom edge is not a straight line of nothing
-    p.ellipse(x + w / 2, n - 2, Math.max(1, w * 0.9), Math.max(1, n * 0.025), STEEL);
-  }
-
-  // two ties, placed off-centre so the grille does not read as a chessboard
-  tie(Math.round(n * 0.38), Math.max(1, Math.round(n * 0.035)));
-  tie(Math.round(n * 0.74), Math.max(1, Math.round(n * 0.035)));
-
-  // the lintel the whole thing hangs from — the one part that IS solid
-  p.rect(0, 0, n, top, rgba(74, 68, 60));
-  p.rect(0, 0, n, Math.max(1, Math.round(n * 0.04)), STEEL_DIM);
-  p.rect(0, top - 1, n, 1, RIM);
-  return p;
-}
-
 export class ClockView {
   readonly group = new THREE.Group();
   private frames = new Map<string, THREE.Texture>();
-  private pips: THREE.Texture[] = [];
-  private bars: THREE.Texture | null = null;
-  private ladder: THREE.Texture | null = null;
+  /**
+   * The five hazard props, generated rather than plotted.
+   *
+   * They arrive asynchronously, which is why every one of them is a nullable field
+   * read at draw time instead of a texture built in `build`. A quad whose map is
+   * still null simply draws nothing for a frame or two on the floor it first appears
+   * on, which is the same deal every sprite in the game already takes — and the
+   * alternative is holding the floor up while five PNGs come off the disk.
+   *
+   * NOT re-authored per pixel step by this class: `loadSprite` picks the roster for
+   * the current density itself, exactly as it does for every creature and prop, so
+   * `restep` only has to ask again.
+   */
+  private art: Partial<Record<'gate' | 'spike' | 'blade' | 'ladder' | 'trapdoor', THREE.Texture>> = {};
   private geo: THREE.PlaneGeometry;
-  private pipGeo: THREE.PlaneGeometry;
   private barGeo: THREE.PlaneGeometry;
   private barGeoTop: THREE.PlaneGeometry;
   private shaftGeo: THREE.PlaneGeometry;
@@ -439,16 +205,10 @@ export class ClockView {
   private swingDir = new Map<number, number>();
   private lastBeat = new Map<number, number>();
   private shadow: THREE.Texture | null = null;
-  /**
-   * How many pips the strip can show. Covers both readers — the longest gate
-   * countdown and the most sockets a boss door has — so the frames are built once.
-   */
-  private span = 8;
 
   constructor() {
     this.geo = new THREE.PlaneGeometry(1, 1);
     this.geo.rotateX(-Math.PI / 2);
-    this.pipGeo = new THREE.PlaneGeometry(0.86, 0.3);
     this.barGeo = new THREE.PlaneGeometry(1, 1.05);
     // A second, TOP-ANCHORED copy: a portcullis retracts upward into its slot, so the
     // quad has to shrink from the bottom with its head-beam staying put.
@@ -457,7 +217,7 @@ export class ClockView {
     // the trapdoor's shaft: as wide as the hole in `trapTile`, hung from its lip
     this.shaftGeo = new THREE.PlaneGeometry(0.8, SHAFT_D);
     this.shaftGeo.translate(0, -SHAFT_D / 2, 0);
-    this.spikeGeo = new THREE.PlaneGeometry(0.2, SPIKE_H);
+    this.spikeGeo = new THREE.PlaneGeometry(SPIKE_H * SPIKE_ASPECT, SPIKE_H);
     // bottom-pivoted, so pushing it down buries it in the floor
     this.spikeGeo.translate(0, SPIKE_H / 2, 0);
     this.bladeGeo = new THREE.PlaneGeometry(BLADE_W, BLADE_H);
@@ -468,28 +228,43 @@ export class ClockView {
 
   private build(): void {
     const n = Math.max(8, Math.round(ppu()));
-    // the trapdoor is the only hazard still drawn per state — the other two are
-    // objects that MOVE, so one drawing each and the state is a transform
-    for (const st of STATES) this.frames.set(`trapdoor:${st}`, trapTile(n, st).toTexture());
-    this.frames.set('spikes', spikeCard(n).toTexture());
+    /**
+     * What is still authored here, and why each one earns it.
+     *
+     * The five OBJECTS — gate, spike, blade, ladder, trapdoor — are generated art
+     * and come in through `loadArt`. What is left is the three things that are not
+     * objects: two tiling SURFACES, which is the same category as every wall and
+     * floor in `tiles.ts` and is procedural there for the same reason, and one soft
+     * shadow, which is an alpha gradient rather than a drawing of anything.
+     */
     this.frames.set('sockets', socketTile(n).toTexture());
     this.frames.set('shaft', shaftPix(n).toTexture());
-    this.frames.set('blade', bladePix(n).toTexture());
-    for (let t = 0; t <= this.span; t++) this.pips.push(pipStrip(n, t, this.span).toTexture());
-    this.bars = portcullis(n).toTexture();
     this.shadow = bladeShadow(n).toTexture();
-    this.ladder = ladderPix(n).toTexture();
+    void this.loadArt();
+  }
+
+  /**
+   * Fetch the generated props for the CURRENT pixel step.
+   *
+   * Fire and forget on purpose: each texture lands in `this.art` when it lands, and
+   * the draw reads whatever is there. A missing one costs a frame of an invisible
+   * hazard on the floor it first appears on and never blocks the floor being built.
+   */
+  private async loadArt(): Promise<void> {
+    const want = ['gate', 'spike', 'blade', 'ladder', 'trapdoor'] as const;
+    await Promise.all(want.map(async (id) => {
+      try { this.art[id] = await loadSprite(id); } catch { /* draws nothing */ }
+    }));
   }
 
   /** Re-author at a new texel density. See `DungeonView.restep`. */
   restep(): void {
     for (const t of this.frames.values()) t.dispose();
-    for (const t of this.pips) t.dispose();
-    this.bars?.dispose();
-    this.ladder?.dispose();
     this.shadow?.dispose();
     this.frames.clear();
-    this.pips = [];
+    // The generated props are NOT disposed: `loadSprite` owns and caches them per
+    // step, and this class is one of several holders of the same texture.
+    this.art = {};
     this.build();
   }
 
@@ -579,15 +354,33 @@ export class ClockView {
             this.lit(m, g, h.x, h.y, 0.55);
           }
         }
-        const m = this.take();
-        const mat = m.material as THREE.MeshBasicMaterial;
-        mat.map = this.frames.get(`trapdoor:${state}`) ?? null;
-        mat.opacity = 1;
-        mat.needsUpdate = true;
-        m.geometry = this.geo;
-        m.rotation.set(0, 0, 0);
-        m.position.set(h.x, e + LIFT, h.y);
-        this.lit(m, g, h.x, h.y);
+        /**
+         * THE LID, and the three states are what it is DOING rather than three
+         * drawings of it.
+         *
+         * There used to be a `trapTile` per state, which is three pictures of the
+         * same object that have to agree with each other by hand. The generated art
+         * is one shut trapdoor, and a double-leaf trapdoor opening is the two leaves
+         * swinging DOWN — which from directly above is exactly a squash toward the
+         * seam. So idle is the lid at full size, winding is the same lid at a third
+         * of its width, and live does not draw it at all: the leaves are hanging
+         * straight down inside the shaft, and what you look at is the hole.
+         *
+         * Which also means the lid can never disagree with itself, and the open state
+         * is the one that costs nothing to draw.
+         */
+        if (state !== 'live') {
+          const m = this.take();
+          const mat = m.material as THREE.MeshBasicMaterial;
+          mat.map = this.art.trapdoor ?? null;
+          mat.opacity = 1;
+          mat.needsUpdate = true;
+          m.geometry = this.geo;
+          m.rotation.set(0, 0, 0);
+          m.scale.set(state === 'winding' ? 0.34 : 1, 1, 1);
+          m.position.set(h.x, e + LIFT, h.y);
+          this.lit(m, g, h.x, h.y);
+        }
         continue;
       }
 
@@ -610,7 +403,7 @@ export class ClockView {
           for (let i = 0; i < 4; i++) {
             const m = this.take();
             const mat = m.material as THREE.MeshBasicMaterial;
-            mat.map = this.frames.get('spikes') ?? null;
+            mat.map = this.art.spike ?? null;
             mat.opacity = 1;
             mat.needsUpdate = true;
             m.geometry = this.spikeGeo;
@@ -643,7 +436,7 @@ export class ClockView {
 
       const m = this.take();
       const mat = m.material as THREE.MeshBasicMaterial;
-      mat.map = this.frames.get('blade') ?? null;
+      mat.map = this.art.blade ?? null;
       mat.opacity = 1;
       mat.needsUpdate = true;
       m.geometry = this.bladeGeo;
@@ -688,7 +481,7 @@ export class ClockView {
       if (d.turns <= 0) {
         const m = this.take();
         const mat = m.material as THREE.MeshBasicMaterial;
-        mat.map = this.bars;
+        mat.map = this.art.gate ?? null;
         mat.opacity = 1;
         mat.needsUpdate = true;
         m.geometry = this.barGeo;
@@ -698,20 +491,6 @@ export class ClockView {
         continue;
       }
 
-      const m = this.take();
-      const mat = m.material as THREE.MeshBasicMaterial;
-      mat.map = this.pips[Math.max(0, Math.min(this.span, d.turns))] ?? null;
-      mat.opacity = 1;
-      mat.needsUpdate = true;
-      m.geometry = this.pipGeo;
-      /**
-       * ON the gate and standing up, not on the floor by it. The countdown has to be
-       * readable from the side of the door you are still on, which a floor decal in a
-       * doorway is not — you would be reading it off the tile you are trying to reach.
-       */
-      m.rotation.set(0, across ? Math.PI / 2 : 0, 0);
-      m.position.set(x, e + 0.86, y);
-      this.lit(m, g, x, y);
     }
 
     /**
@@ -734,7 +513,7 @@ export class ClockView {
           const rise = ne - e;
           const m = this.take();
           const mat = m.material as THREE.MeshBasicMaterial;
-          mat.map = this.ladder;
+          mat.map = this.art.ladder ?? null;
           mat.opacity = 1;
           mat.needsUpdate = true;
           m.geometry = this.geo;
@@ -753,16 +532,21 @@ export class ClockView {
     }
 
     /**
-     * THE BOSS DOOR AND ITS SOCKETS.
+     * THE BOSS DOOR. The same bars as a timed gate, because to the player's feet it
+     * is the same object.
      *
-     * The same bars as a timed gate, because it is the same object as far as the
-     * player's feet are concerned — and the same pips, reading how many levers are
-     * still out there. What it never shows is WHERE they are: the count turns
-     * exploring into something you can finish, and a location would turn it into an
-     * errand somebody set you.
+     * NO PIP STRIP, on this door or on the timed one.
      *
-     * The pips stay up after it opens, all lit. A door that forgot what it cost is a
-     * door that never cost anything.
+     * Both carried one and both were wrong. On the boss door it was supposed to be
+     * a lever counter and it was not even that: `pipStrip` always draws eight cells,
+     * so a door with two levers showed eight boxes with at most two lit, and what
+     * the player read was a countdown to something. On the timed gate it genuinely
+     * was the countdown, and it still read as a row of abstract boxes bolted to a
+     * portcullis — a readout, in a game that has no other readouts in the world.
+     *
+     * The information both were carrying is already said in words at the moment it
+     * means anything: the log when you throw a lever, and the log when a plate is
+     * pressed. What the doors themselves do is be shut or be open.
      */
     const bd = g.bossDoor;
     if (bd) {
@@ -772,7 +556,7 @@ export class ClockView {
       if (!g.doorOpen[bd.i] || this.doorLift < 1) {
         const m = this.take();
         const mat = m.material as THREE.MeshBasicMaterial;
-        mat.map = this.bars;
+        mat.map = this.art.gate ?? null;
         mat.opacity = 1;
         mat.needsUpdate = true;
         m.geometry = this.barGeoTop;
@@ -782,15 +566,6 @@ export class ClockView {
         this.lit(m, g, x, y);
         this.bossBars = m;
       }
-      const m = this.take();
-      const mat = m.material as THREE.MeshBasicMaterial;
-      mat.map = this.pips[Math.max(0, Math.min(this.span, bd.pulled.size))] ?? null;
-      mat.opacity = 1;
-      mat.needsUpdate = true;
-      m.geometry = this.pipGeo;
-      m.rotation.set(0, across ? Math.PI / 2 : 0, 0);
-      m.position.set(x, e + 0.94, y);
-      this.lit(m, g, x, y);
     }
 
     for (let i = this.live; i < this.pool.length; i++) this.pool[i].visible = false;
@@ -850,12 +625,8 @@ export class ClockView {
   dispose(): void {
     for (const m of this.pool) (m.material as THREE.Material).dispose();
     for (const t of this.frames.values()) t.dispose();
-    for (const t of this.pips) t.dispose();
-    this.bars?.dispose();
-    this.ladder?.dispose();
     this.shadow?.dispose();
     this.geo.dispose();
-    this.pipGeo.dispose();
     this.barGeo.dispose();
     this.barGeoTop.dispose();
     this.shaftGeo.dispose();

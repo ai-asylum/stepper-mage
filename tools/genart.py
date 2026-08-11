@@ -232,6 +232,62 @@ def knock_out_background(img: Image.Image, tol: int = 26) -> Image.Image:
     return img
 
 
+def knock_out_holes(img: Image.Image, tol: int = 30, min_frac: float = 0.0012) -> Image.Image:
+    """
+    Punch the ENCLOSED background regions out of a subject that has holes in it.
+
+    `knock_out_background` and the API matter both work from the border inward,
+    which is the right rule for a creature and wrong for anything you can see
+    through. A portcullis is the case: the model draws it correctly, with pure
+    white showing between the bars, and then every one of those gaps survives
+    matting because none of them touches the edge of the image. The result is a
+    gate rendered as a solid sheet with a grain on it.
+
+    So: find every connected run of near-white that the border pass missed and
+    clear it too. Guarded by an area floor, because a specular highlight on a
+    bar is also near-white and a two-texel hole punched through the middle of
+    the iron is a worse artefact than the one being fixed.
+    """
+    img = img.convert("RGBA")
+    w, h = img.size
+    px = img.load()
+    seen = bytearray(w * h)
+    floor = max(24, int(w * h * min_frac))
+    cleared = 0
+
+    for sy in range(h):
+        for sx in range(w):
+            i = sy * w + sx
+            if seen[i]:
+                continue
+            r, g, b, a = px[sx, sy]
+            if a < 8 or min(r, g, b) < 255 - tol:
+                seen[i] = 1
+                continue
+            # one region of near-white, collected before anything is cleared
+            region = []
+            stack = [(sx, sy)]
+            seen[i] = 1
+            while stack:
+                x, y = stack.pop()
+                region.append((x, y))
+                for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                    if not (0 <= nx < w and 0 <= ny < h):
+                        continue
+                    j = ny * w + nx
+                    if seen[j]:
+                        continue
+                    seen[j] = 1
+                    nr, ng, nb, na = px[nx, ny]
+                    if na >= 8 and min(nr, ng, nb) >= 255 - tol:
+                        stack.append((nx, ny))
+            if len(region) >= floor:
+                for x, y in region:
+                    px[x, y] = (0, 0, 0, 0)
+                cleared += 1
+    return img
+
+
 def crop_to_content(img: Image.Image, pad: int = 2) -> Image.Image:
     bbox = img.getbbox()
     if not bbox:
@@ -375,6 +431,8 @@ def post(asset: dict, raw: Path) -> None:
     # the transparent region it already has.
     if not m:
         img = knock_out_background(img)
+    if asset.get("holes"):
+        img = knock_out_holes(img)
     img = crop_to_content(img)
     img = to_pixel_grid(img, asset.get("height", 112), asset.get("colors", 32))
     if asset.get("keyline", True):
@@ -461,6 +519,8 @@ def post_step(asset: dict, raw: Path, step: int) -> tuple[int, int] | None:
     img = Image.open(m or raw)
     if not m:
         img = knock_out_background(img)
+    if asset.get("holes"):
+        img = knock_out_holes(img)
     img = crop_to_content(img)
     img = punch(img, tune["contrast"])
     img = to_pixel_grid(img, fh - pad, tune["colors"], target_w=fw - pad,

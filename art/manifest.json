@@ -980,6 +980,52 @@
       "height": 126,
       "seed": 1311,
       "prompt": "A THROWN IRON LEVER on a stone plinth: a heavy iron lever with a clearly VISIBLE straight handle angled sharply DOWNWARD at forty-five degrees toward the viewer's right, its tip level with the top of the plinth — thrown, not removed. Brass collar at the pivot, bolted to a small carved stone base. The rune etched into the plinth GLOWS bright amber. The handle must be present and obvious; overall shape roughly as tall as it is wide."
+    },
+    {
+      "id": "gate",
+      "kind": "prop",
+      "height": 128,
+      "seed": 1320,
+      "prompt": "A SHUT IRON PORTCULLIS filling a stone doorway: seven thick vertical iron bars with WIDE OPEN GAPS between them that you can see straight through, hanging from a heavy horizontal stone lintel across the top, two thin horizontal iron ties crossing the bars, sharpened spikes on the bottom end of every bar. Pitted dark iron, rust at the joints. The gaps between the bars are EMPTY — nothing behind them. Roughly square, as wide as it is tall.",
+      "extra": "CRITICAL: the spaces between the bars must be pure flat white background, completely empty, with nothing drawn in them — no wall, no room, no shading, no darkness. Only the bars, the ties and the lintel are drawn.",
+      "holes": true
+    },
+    {
+      "id": "spike",
+      "kind": "prop",
+      "height": 96,
+      "seed": 1321,
+      "holes": false,
+      "prompt": "A SINGLE IRON FLOOR SPIKE: one tall narrow tapering iron spike standing straight up, wide at the base and coming to a sharp needle point at the top, like a stake driven upward through a flagstone. Pitted dark iron, a bright honed edge catching the light down one side, rust and old dried blood near the base. Just the one spike, nothing else, no floor, no plate, no socket.",
+      "extra": "CRITICAL: exactly ONE spike, vertical, centered, point upward, standing alone. Do not draw a floor, a base plate, a row of spikes or a bed of spikes."
+    },
+    {
+      "id": "blade",
+      "kind": "prop",
+      "height": 128,
+      "seed": 1322,
+      "holes": true,
+      "prompt": "A PENDULUM BLADE hanging from above: a long straight iron shaft descending from the top of the frame, ending in a heavy brass pivot collar, below which hangs a huge curved crescent axe blade like a scythe, its outer edge honed bright silver and razor sharp, the inner body dark pitted iron. The whole thing hangs straight DOWN, vertical, the blade at the bottom.",
+      "extra": "CRITICAL: the shaft must reach the very TOP edge of the image and the blade must hang at the bottom. Vertical, centered, hanging straight down. No ceiling, no room, no chain — one rigid shaft and one crescent blade."
+    },
+    {
+      "id": "ladder",
+      "kind": "prop",
+      "height": 128,
+      "seed": 1323,
+      "holes": true,
+      "prompt": "A DUNGEON LADDER seen straight on: two heavy vertical wooden stiles bound with iron straps, joined by SIX evenly spaced horizontal wooden rungs with WIDE OPEN GAPS between them that you can see straight through. Worn timber, iron nails, damp and old. Tall and narrow.",
+      "extra": "CRITICAL: the gaps between the rungs must be pure flat white background, completely empty, nothing drawn in them — no wall, no shadow, no darkness. Only the two stiles and the six rungs are drawn."
+    },
+    {
+      "id": "trapdoor",
+      "kind": "icon",
+      "height": 112,
+      "seed": 1324,
+      "holes": false,
+      "keyline": false,
+      "prompt": "A SHUT IRON TRAPDOOR set into a stone floor, viewed from DIRECTLY ABOVE looking straight down: a square pair of iron-banded double leaves that meet along a seam down the middle, heavy riveted iron straps across each leaf, a recessed ring pull, set in a square stone rebate. Flat top-down plan view, no perspective, no side walls visible.",
+      "extra": "CRITICAL: a strict top-down bird's eye view of a flat square panel in the floor. Square, filling the frame. No perspective, no walls, no room, no side of anything."
     }
   ]
 }
