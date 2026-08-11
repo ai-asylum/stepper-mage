@@ -45,7 +45,7 @@ import {
   CATCH_UP_DRAWS, CHEST_HEAL_SPREAD, PLAYER_MAX_HP, THREAT_REACH, chestHealBase, descendHeal,
   fallDamage, healable,
 } from './game/tuning';
-import { setGilded } from './book/pageTexture';
+import { setGilded, setPageRanks } from './book/pageTexture';
 import {
   NODE_BY_ID, TREE, derivedBeltSlots, derivedGolemInfusion, derivedGolemsKept,
   derivedHandSize, derivedSlots, buyBlocker, isNodeId, migrateOwned, owns,
@@ -332,7 +332,6 @@ async function boot(): Promise<void> {
     pages: startPages,
     ranks: Object.fromEntries(startPages.map((id) => [id, 1])),
     stars: 0,
-    rerolls: 0,
     depth: 1,
     // Empty, and as wide as the tree has paid for. A run never inherits a vial.
     belt: newBelt(derivedBeltSlots(meta.nodes)),
@@ -437,8 +436,25 @@ async function boot(): Promise<void> {
   /** Learn a page mid-run: rebuild the book and re-sync it. */
   const learnPage = (id: string): void => {
     if (!state.pages.includes(id)) state.pages.push(id);
+    // Before the refresh, not after: the rank is what decides the name printed on the
+    // sheet, so the stale art has to be evicted while the book is still being rebuilt.
+    // Every caller writes `state.ranks[id]` immediately before calling this.
+    setPageRanks(state.ranks);
     setBookPages(state.pages);
     book.refresh();
+  };
+
+  /**
+   * Tell the grimoire what rank it holds each page at, and rebuild only if that moved.
+   *
+   * Ranks are written from eight places — every altar outcome, the mouth blessing, the
+   * start page, a burn, the debug harness — and a page's printed NAME is a function of
+   * its rank, so every one of those writes can invalidate page art. Rather than
+   * remembering to refresh at each, this is called after each and does nothing unless
+   * a rank actually changed; `setPageRanks` owns the diff and the cache eviction.
+   */
+  const syncPageRanks = (): void => {
+    if (setPageRanks(state.ranks)) book.refresh();
   };
 
   book.onRip = (spell, worldPos, worldQuat) => {
@@ -997,9 +1013,11 @@ async function boot(): Promise<void> {
   /**
    * How many times each altar has been RE-rolled.
    *
-   * The roll is deterministic per altar on purpose — walk away from three cards
-   * and come back, and they are the same three cards — so the only way a reroll
-   * charge can buy a different table is by advancing this.
+   * The roll is deterministic per altar on purpose — walk away from three cards and
+   * come back, and they are the same three cards. Nothing in the game advances this
+   * any more, now that reroll charges are gone; it survives for the debug harness,
+   * which needs to reach a roll containing a given offer kind without a charge to
+   * spend, and that is exactly what advancing the nonce does.
    */
   const altarNonce = new Map<Entity, number>();
   /**
@@ -1576,41 +1594,6 @@ async function boot(): Promise<void> {
     hud.offerAltar = e;
   };
 
-  /** What the three cards on the table are, for "did the reroll change anything". */
-  const offerSignature = (list: AltarOffer[]): string =>
-    list.map((o) => `${o.kind}:${o.id}:${o.amount}`).join('|');
-
-  /**
-   * Spend a charge to turn the table over.
-   *
-   * `rollAltarOffers` is deterministic per altar by design, so a reroll has to
-   * advance the seed — and then keep advancing it until the table has actually
-   * changed, because a charge spent on the same three cards is a bug the player
-   * paid for.
-   */
-  const rerollOffers = (): void => {
-    const e = hud.offerAltar;
-    const open = hud.offers;
-    if (!e || !open) return;
-    if (state.rerolls <= 0) {
-      hud.addLog('You have no reroll charges.', 0xffcf5c);
-      return;
-    }
-    const before = offerSignature(open);
-    state.rerolls--;
-    for (let i = 0; i < 8; i++) {
-      const n = (altarNonce.get(e) ?? 0) + 1;
-      altarNonce.set(e, n);
-      hud.offers = rollAltarOffers(e, n);
-      if (offerSignature(hud.offers) !== before) break;
-    }
-    sfx.shimmer(640);
-    hud.addLog(
-      `The altar turns over. ${state.rerolls} charge${state.rerolls === 1 ? '' : 's'} left.`,
-      0x8cc8ff,
-    );
-  };
-
   /**
    * Spend a page for good.
    *
@@ -1624,6 +1607,7 @@ async function boot(): Promise<void> {
   const burnPage = (id: string): void => {
     state.pages = state.pages.filter((p) => p !== id);
     delete state.ranks[id];
+    setPageRanks(state.ranks);
     setBookPages(state.pages);
     book.refresh();
     if (fan.gameIds.includes(id)) fan.clear();
@@ -1929,6 +1913,7 @@ async function boot(): Promise<void> {
           o.colour,
         );
       }
+      syncPageRanks();
       hud.setShout('BLESSED', o.colour);
       return;
     }
@@ -2029,14 +2014,13 @@ async function boot(): Promise<void> {
         break;
       }
       /**
-       * No `reroll` case, and no reroll offer to reach it.
+       * No `reroll` case, because rerolls are gone from the game root and branch.
        *
        * A charge was a card that paid out in maybe: you gave up a certain prize for
        * the right to ask a later altar for a better one, which is the worst trade on
-       * a table whose other two cards are spells. Both grants are gone — this card
-       * and the mouth blessing — so `state.rerolls` is now permanently 0 and the
-       * pill and the modal button, both guarded on `> 0`, never draw. The spend path
-       * survives for the debug harness only.
+       * a table whose other two cards are spells. Removed whole — the offer, the
+       * mouth blessing that banked one, the HUD pill, the modal button, the spend
+       * path and the `rerolls` field on the run itself. Nothing to leave inert.
        */
       case 'star':
         // Still the settled rule: a rolled page with no rank left to give pays 2
@@ -2050,6 +2034,11 @@ async function boot(): Promise<void> {
       default:
         break;
     }
+
+    // Every rank-writing branch above funnels through here, so one call covers the
+    // upgrade, the sacrifice, the golden and the new page — and does nothing at all
+    // for the heal, the bundle and the two payouts, which move no rank.
+    syncPageRanks();
 
     // A catch-up rite has no stone to rise from; the shimmer still plays.
     if (e) {
@@ -3233,7 +3222,6 @@ async function boot(): Promise<void> {
       case 'belt': takeIngredient(a.id); break;
       case 'card': returnComponent(a.index); break;
       case 'offer': chooseOffer(a.offer); break;
-      case 'reroll': rerollOffers(); break;
       case 'chest': openChest(a.entity); break;
       case 'move': stepper.press({ kind: 'move', m: a.m }); break;
       case 'turn': stepper.press({ kind: 'turn', d: a.d }); break;
@@ -3896,10 +3884,6 @@ async function boot(): Promise<void> {
       chooseOffer(pick);
       return pick;
     },
-    /** Spend a banked charge on the open altar. Returns the new offers. */
-    rerollAltar: () => { rerollOffers(); return hud.offers; },
-    /** Bank reroll charges outright, so the spend path is drivable on its own. */
-    grantRerolls: (n: number) => { state.rerolls = Math.max(0, n); return state.rerolls; },
     /**
      * Put a page in the book at a given rank. The sacrifice only appears when the
      * player holds a spare rank-2 page, which no default loadout ever does.
@@ -3945,7 +3929,7 @@ async function boot(): Promise<void> {
       takeFromAltar(e);
       const list = hud.offers;
       if (!list?.length) return null;
-      const order = ['upgrade', 'heal', 'new', 'stars', 'reroll', 'star', 'sacrifice'];
+      const order = ['upgrade', 'heal', 'new', 'stars', 'star', 'sacrifice'];
       let pick = list.find((o) => o.kind !== 'golden') ?? list[0];
       for (const kind of order) {
         const found = list.find((o) => o.kind === kind);
@@ -4028,9 +4012,8 @@ async function boot(): Promise<void> {
     refundNode: (id: string) => refundNode(id),
     /**
      * Bank stars outright, so the SPEND path is drivable without first playing the
-     * runs that would pay for it — the same reason `grantRerolls` exists. Sets
-     * rather than adds, and goes through the same transaction, so the bank the HUD
-     * shows and the saved bank cannot part company.
+     * runs that would pay for it. Sets rather than adds, and goes through the same
+     * transaction, so the bank the HUD shows and the saved bank cannot part company.
      */
     grantStars: (n: number) => {
       meta.stars = Math.max(0, Math.floor(n));

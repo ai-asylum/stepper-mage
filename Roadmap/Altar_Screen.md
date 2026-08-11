@@ -26,9 +26,16 @@ Then it arrives in the book looking like every other page.
 - **A spell offer IS a spell-book page.** The same art the grimoire draws, at card
   size — the player already knows what that object is and what it does, so the offer
   needs no explaining.
-- **A non-spell offer is a SCROLL.** Stars, heals, rerolls, rank-ups and sacrifices
-  are not pages and should not pretend to be. Same pixel-art hand, different object,
-  so "this is a spell" and "this is not" is answered by shape before it is read.
+- **A non-spell offer is a SCROLL.** Stars, heals, rank-ups and sacrifices are not
+  pages and should not pretend to be. Same pixel-art hand, different object, so "this
+  is a spell" and "this is not" is answered by shape before it is read. A `star`
+  payout is a scroll too, though it carries the id of the page it was rolled for —
+  the kind decides the object, never the presence of an id.
+- **A page prints the name it carries AT THAT RANK.** A rank-2 fire page is a
+  Fireball and the sheet says Fireball, on the altar card and in the grimoire alike.
+  The art was authored once off the rank-1 name, so an upgrade offer was a card headed
+  "Flame" under a caption reading "Fireball" — the object contradicting the sentence
+  describing it, and reading as a second copy of a page already held.
 - **The golden page is gold everywhere.** On the altar and in the book after it is
   claimed. It is a one-run gift and it should look like one for the whole run.
 

@@ -103,23 +103,14 @@ export interface PlayerState {
    */
   ranks: Record<string, number>;
   stars: number;
-  /**
-   * Altar reroll charges in hand.
-   *
-   * On the RUN and not on `meta`, deliberately: a charge is spare agency over
-   * this run's rolls, and one that survived the run would be a second currency
-   * the star tree has to price against stars. Banked here, an unspent charge is
-   * simply lost with everything else the run found.
-   */
-  rerolls: number;
   depth: number;
   /**
    * The ingredient belt — what is in the pouches and how many loops there are.
    *
-   * On the RUN for the same reason `rerolls` is: `Roadmap/Ingredient_Belt.md` puts
-   * ingredients surviving a run out of scope, so an unspent vial is lost with
-   * everything else the run found. Its CAPACITY comes from the star tree and is
-   * written in one place (`syncBelt` in `main.ts`).
+   * On the RUN and not on `meta`: `Roadmap/Ingredient_Belt.md` puts ingredients
+   * surviving a run out of scope, so an unspent vial is lost with everything else
+   * the run found. Its CAPACITY comes from the star tree and is written in one
+   * place (`syncBelt` in `main.ts`).
    */
   belt: BeltState;
 }

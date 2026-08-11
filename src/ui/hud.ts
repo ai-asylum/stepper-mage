@@ -17,7 +17,7 @@ import { isCastableObject, type Entity } from '../game/floor';
 import { DENIAL_STATUSES, reactionFor, type Combat, type PlayerState } from '../game/combat';
 import {
   INGREDIENT_IDS, SPELL_BY_ID, STATUS_META, displayName, harvestOf, isElement,
-  wantsCorpse, wantsObject,
+  rankName, wantsCorpse, wantsObject,
   type Element, type ResolvedCast,
 } from '../spells/spells';
 import type { BeltSlot } from '../spells/belt';
@@ -86,7 +86,7 @@ export type AltarOfferKind =
   // A bundle of one belt ingredient. About a spell, but never about a PAGE, so it
   // does not satisfy the "no roll is spell-free" rule — see `rollExtras`, which is
   // where it is rolled and where it is gated on the belt being able to keep it.
-  | 'heal' | 'stars' | 'reroll' | 'ingredient'
+  | 'heal' | 'stars' | 'ingredient'
   /**
    * A run-start BLESSING, chosen at the dungeon mouth before floor 1.
    *
@@ -100,7 +100,7 @@ export type AltarOfferKind =
    * WHERE THE RUN BEGINS, offered at the mouth once a deed has unlocked a deeper
    * start. Its own kind and not a blessing, because both would otherwise be an
    * id-less offer carrying a number in `amount` and the two would resolve as each
-   * other — a start-depth pick banking a reroll charge.
+   * other — a start-depth pick granting a blessing's stars.
    */
   | 'startDepth'
   /**
@@ -129,7 +129,7 @@ export type AltarOfferKind =
  * copy beneath the card says the rest.
  */
 const OFFER_LABEL: Record<string, string> = {
-  heal: 'mend', stars: 'stars', star: 'stars', reroll: 'reroll',
+  heal: 'mend', stars: 'stars', star: 'stars',
   rank: 'deepen', upgrade: 'deepen', sacrifice: 'sacrifice',
   ingredient: 'vial', blessing: 'blessing', startDepth: 'descend',
   startPage: 'carry',
@@ -139,7 +139,7 @@ export interface AltarOffer {
   kind: AltarOfferKind;
   /**
    * The page this offer is about, or `''` when it is about nothing in the book
-   * (heal, stars, reroll).
+   * (heal, stars).
    */
   id: string;
   /** The headline. Already carries its own number where it has one. */
@@ -181,8 +181,6 @@ export type UiAction =
   /** Open or close the bestiary. Free, always — see `Hud.drawBestiary`. */
   | { kind: 'bestiary' }
   | { kind: 'offer'; offer: AltarOffer }
-  /** Spend a banked charge to re-roll the open altar's three offers. */
-  | { kind: 'reroll' }
   | { kind: 'altar'; entity: Entity }
   | { kind: 'chest'; entity: Entity }
   /**
@@ -1622,18 +1620,8 @@ export class Hud {
     const cap = Math.max(this.handSize, this.handHeld);
     const full = this.handHeld >= cap;
     const y = 50;
-    const w = this.pill(ctx, 12, y, `HAND ${this.handHeld}/${cap}`,
+    this.pill(ctx, 12, y, `HAND ${this.handHeld}/${cap}`,
       full ? GOLD : PARCH, full ? 'rgba(255,207,92,0.75)' : 'rgba(232,217,176,0.28)');
-    /**
-     * Banked reroll charges, next to hand size and in the altar modal's blue, so
-     * the thing you hold and the button that spends it are visibly the same
-     * currency. Only while you hold one — an always-on "×0" is noise — and with no
-     * hit region, because an altar is the only place a charge can be spent.
-     */
-    if (this.state.rerolls > 0) {
-      this.pill(ctx, 12 + w + 6, y, `↻ REROLL ×${this.state.rerolls}`,
-        '#cfe6ff', 'rgba(140,200,255,0.6)');
-    }
   }
 
   /**
@@ -3250,36 +3238,6 @@ export class Hud {
 
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    this.drawReroll(ctx, W, H);
-  }
-
-  /**
-   * A reroll charge is spendable HERE and nowhere else, so the modal is the only
-   * place it can be reached. Below the row rather than beside it: it acts on all
-   * three offers, and a control that sat in line with them would read as a fourth.
-   */
-  private drawReroll(ctx: CanvasRenderingContext2D, W: number, H: number): void {
-    if (this.state.rerolls <= 0) return;
-    const label = `\u21bb  REROLL  \u00d7${this.state.rerolls}`;
-    ctx.font = 'bold 10px ui-monospace, monospace';
-    const tw = ctx.measureText(label).width + 36;
-    const bx = (W - tw) / 2, by = H - 88, bh = 28;
-    rr(ctx, bx, by, tw, bh, 14);
-    ctx.fillStyle = 'rgba(18,30,50,0.94)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(140,200,255,0.85)';
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#d6ecff';
-    ctx.fillText(label, W / 2, by + bh / 2 + 0.5);
-    ctx.font = '8px ui-monospace, monospace';
-    ctx.fillStyle = 'rgba(140,200,255,0.55)';
-    ctx.textBaseline = 'top';
-    ctx.fillText('spends a charge \u00b7 turns all three over', W / 2, by + bh + 6);
-    // Padded, because it is the one small control on a screen of large ones.
-    this.hits.push({ rect: [bx - 8, by - 8, tw + 16, bh + 16], action: { kind: 'reroll' } });
-    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   }
 
   /**
@@ -3296,9 +3254,18 @@ export class Hud {
       const spell = o.id ? ALL_PAGES.find((pg) => pg.gameId === o.id) : undefined;
       // A SPELL is a page; everything else is a scroll. The shape answers "is this a
       // spell?" before a word of the copy is read. A sacrifice is a scroll even though
-      // it names a page, because what it hands over is a transaction and not a sheet.
-      const pix = spell && o.kind !== 'sacrifice'
-        ? pageCard(spell, ALL_PAGES.indexOf(spell), o.golden)
+      // it names a page, because what it hands over is a transaction and not a sheet —
+      // and so is a `star`, which names the maxed page it was rolled for but pays in
+      // currency. Both carry an `o.id`, so the kind has to be asked, not the id.
+      const sheet = spell && o.kind !== 'sacrifice' && o.kind !== 'star';
+      /**
+       * The name AT THE RANK BEING OFFERED, not the rank-1 name on the spell record.
+       * `toRank` is 0 for the offers that hand a page over at rank 1 — a golden, a
+       * blessing's wider book, the mouth's one page — and `rankName` floors those to
+       * rung 1, so the one expression covers every page card there is.
+       */
+      const pix = sheet
+        ? pageCard(spell, ALL_PAGES.indexOf(spell), o.golden, rankName(o.id, o.toRank))
         : scrollCard(o.colour, o.kind, OFFER_LABEL[o.kind] ?? o.kind, o.golden);
       c = pix.toCanvas();
       this.offerArt.set(key, c);

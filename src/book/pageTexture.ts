@@ -26,7 +26,8 @@
  * `PIX_SIGILS` and never goes through that path.
  */
 import * as THREE from 'three';
-import { CHAPTERS, type SpellDef } from '../spells/pages';
+import { ALL_PAGES, CHAPTERS, type SpellDef } from '../spells/pages';
+import { rankName } from '../spells/spells';
 import { chapters } from '../style/palette';
 import { hex, mix, Pix, Ramp, resolveLevels, rgba, shade, slopeSoft, unpack, type Col } from '../art/pixel';
 import { CELL_H, drawCentered, fitCentered, wrap } from '../art/bitfont';
@@ -1051,13 +1052,27 @@ function schoolCol(school: SpellDef['school']): Col {
   return shade(hex(chapters[school]), 0.72);
 }
 
-export function actionPage(spell: SpellDef, index: number): Pix {
+/**
+ * `title` overrides the page's printed name, and exists for the RANK LADDER.
+ *
+ * A deepened page is a different spell by name — a rank-2 Flame is a Fireball, and
+ * that renaming is the whole of what the ladder is for. `spell.name` is the rank-1
+ * name and only ever that, so a card offering the upgrade printed "Flame" in letter
+ * height across the top while its own caption underneath said "Fireball": the object
+ * the player was looking at contradicted the sentence describing it, and read as a
+ * second copy of a page they already held rather than as a deeper one.
+ *
+ * An override rather than a rank argument, because this file draws pages and does not
+ * otherwise know the ladder exists — the caller already has `rankName` and the rank
+ * the offer is FOR, which is not always the rank the player holds.
+ */
+export function actionPage(spell: SpellDef, index: number, title?: string): Pix {
   const seed = index * 13 + 3;
   const p = parchment(seed);
   border(p, seed);
 
   // title
-  fitCentered(p, spell.name, PIX_W / 2, 11, C_INK, TITLE_W, { scale: 2, bold: true });
+  fitCentered(p, title ?? spell.name, PIX_W / 2, 11, C_INK, TITLE_W, { scale: 2, bold: true });
   // the underline flourish: a wobbling rule that swells at the middle
   for (let i = 0; i <= 60; i++) {
     const t = i / 60;
@@ -1187,11 +1202,51 @@ export function setGilded(id: string | null): void {
   }
 }
 
+/**
+ * What rank the book holds each page at, so a page can print the name it CURRENTLY
+ * carries.
+ *
+ * A deepened page is a different spell by name — that renaming is the whole of what
+ * the rank ladder is for — but the art was authored once off `spell.name`, which is
+ * the rank-1 name and only ever that. So a book holding a rank-2 fire page opened on
+ * a sheet headed "Flame", and the player had no way to tell it from the rank-1 page
+ * they started with.
+ *
+ * Kept here, beside `gilded`, because it is the same shape of problem and wants the
+ * same solution: a property of THIS RUN's copy of the page, held next to the cache it
+ * invalidates. Returns whether anything moved, so the caller only rebuilds the book
+ * when it has to — this is called on every rank write and most of them change nothing.
+ */
+const ranks = new Map<string, number>();
+
+export function setPageRanks(next: Record<string, number>): boolean {
+  const ids = new Set([...ranks.keys(), ...Object.keys(next)]);
+  let moved = false;
+  for (const id of ids) {
+    const was = ranks.get(id) ?? 0;
+    const now = next[id] ?? 0;
+    if (was === now) continue;
+    moved = true;
+    if (now > 0) ranks.set(id, now); else ranks.delete(id);
+    // Cached per SIGIL id, which is what `pageArt` keys on — not the game id.
+    // Over ALL_PAGES, not the book's current `SPELLS` — the cache outlives which
+    // pages the run happens to hold, and a stale entry for a page not in the book
+    // right now is exactly the one that would come back wrong when it is learnt.
+    for (const pg of ALL_PAGES) if (pg.gameId === id) artCache.delete(pg.id);
+  }
+  return moved;
+}
+
 export function pageArt(spell: SpellDef, index: number): PageArt {
   let art = artCache.get(spell.id);
   if (!art) {
     const gild = gilded.has(spell.gameId);
-    const action = gild ? giltify(actionPage(spell, index)) : actionPage(spell, index);
+    // The name at the rank the book holds it at. `rankName` floors an absent or 0
+    // rank to rung 1, so a page the run has not ranked still prints its own name.
+    const title = rankName(spell.gameId, ranks.get(spell.gameId) ?? 1);
+    const action = gild
+      ? giltify(actionPage(spell, index, title))
+      : actionPage(spell, index, title);
     const lore = gild ? giltify(lorePage(spell, index)) : lorePage(spell, index);
     art = {
       action: action.toTexture(),

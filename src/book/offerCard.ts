@@ -41,16 +41,20 @@ export { PIX_W as CARD_W, PIX_H as CARD_H };
  * `index` is the page's position in the book, which is what seeds its parchment — so
  * passing the real one means the page offered and the page it becomes are the same
  * sheet, down to the foxing.
+ *
+ * `title` is the name the page carries AT THE RANK BEING OFFERED — a rank-2 fire page
+ * is a Fireball and has to say so, or the card is a Flame sitting under a caption
+ * about a Fireball. Omitted, the page prints its rank-1 name as before.
  */
-export function pageCard(spell: SpellDef, index: number, golden: boolean): Pix {
-  const page = actionPage(spell, index);
+export function pageCard(spell: SpellDef, index: number, golden: boolean, title?: string): Pix {
+  const page = actionPage(spell, index, title);
   return golden ? giltify(page) : page;
 }
 
 /**
  * A NON-SPELL offer: a scroll.
  *
- * Stars, heals, rerolls, rank-ups and sacrifices are not pages and should not pretend
+ * Stars, heals, vials, rank-ups and sacrifices are not pages and should not pretend
  * to be one. The same size and the same pixel hand, so it stands beside a page as a
  * peer; a different SILHOUETTE — rolled ends top and bottom, a narrower sheet, no
  * squared corners — so the three offers sort by shape before a word is read.
@@ -68,21 +72,6 @@ export function pageCard(spell: SpellDef, index: number, golden: boolean): Pix {
  */
 function scrollSigil(p: Pix, kind: string, cx: number, cy: number, ink: Col, hi: Col): void {
   switch (kind) {
-    case 'reroll': {
-      // A ring with a bite out of it and an arrowhead on the open end: the shape of
-      // turning something over, which is exactly what the charge does.
-      p.ellipseFrame(cx, cy, 11, 11, ink);
-      p.ellipseFrame(cx, cy, 10, 10, ink);
-      // erase the bite, top-right
-      for (let a = -0.5; a < 0.9; a += 0.03) {
-        for (let r = 8; r <= 13; r++) {
-          p.set(Math.round(cx + Math.cos(a) * r), Math.round(cy - Math.sin(a) * r), 0);
-        }
-      }
-      // arrowhead at the open end
-      p.poly([[cx + 6, cy - 12], [cx + 14, cy - 9], [cx + 6, cy - 5]], ink);
-      break;
-    }
     case 'stars':
     case 'star': {
       // A four-point star with a long vertical, the same mark the HUD uses for the

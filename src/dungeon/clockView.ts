@@ -39,6 +39,16 @@ const LIFT = 0.014;
  * a stake and a 0.2x0.42 quad is a cone. The height is the design decision and the
  * width follows from the file, so nothing is stretched.
  */
+/**
+ * How much of the gate art is the STONE LINTEL, measured off the file rather than
+ * guessed: the top 14 rows of 65 are full-width masonry and the bars start below it.
+ * The lintel never moves, so the two have to be drawn separately.
+ */
+const LINTEL_V = 14 / 65;
+/** The bars' share of the texture, and the world height they hang through. */
+const BARS_V = 1 - LINTEL_V;
+const BARS_H = WALL_H * BARS_V;
+
 const SPIKE_H = 0.55;
 const SPIKE_ASPECT = 19 / 98;
 const BLADE_H = 1.0;
@@ -180,7 +190,8 @@ export class ClockView {
   private art: Partial<Record<'gate' | 'spike' | 'blade' | 'ladder' | 'trapdoor', THREE.Texture>> = {};
   private geo: THREE.PlaneGeometry;
   private barGeo: THREE.PlaneGeometry;
-  private barGeoTop: THREE.PlaneGeometry;
+  private lintelGeo: THREE.BufferGeometry;
+  private barsGeo = new Map<number, THREE.BufferGeometry>();
   private shaftGeo: THREE.PlaneGeometry;
   /**
    * How far each door is DRAWN, per tile, which is not the same as how far it is.
@@ -200,7 +211,7 @@ export class ClockView {
   setLift(i: number, k: number): void {
     this.lift.set(i, Math.max(0, Math.min(1, k)));
     const m = this.barMesh.get(i);
-    if (m) this.applyLift(m, this.lift.get(i) ?? 0);
+    if (m) this.cropBars(m, this.lift.get(i) ?? 0);
   }
 
   /** What the drawing believes, falling back to the rule for a door nobody has cut to. */
@@ -208,11 +219,6 @@ export class ClockView {
     return this.lift.get(i) ?? g.doorLift[i];
   }
 
-  private applyLift(m: THREE.Mesh, k: number): void {
-    const h = Math.max(0, 1 - k);
-    m.scale.set(1, h, 1);
-    m.visible = h > 0.02;
-  }
   private pool: THREE.Mesh[] = [];
   private live = 0;
   private spikeGeo: THREE.PlaneGeometry;
@@ -234,8 +240,17 @@ export class ClockView {
     this.barGeo = new THREE.PlaneGeometry(1, 1.05);
     // A second, TOP-ANCHORED copy: a portcullis retracts upward into its slot, so the
     // quad has to shrink from the bottom with its head-beam staying put.
-    this.barGeoTop = new THREE.PlaneGeometry(1, 1.05);
-    this.barGeoTop.translate(0, -1.05 / 2, 0);
+    // the lintel: a fixed strip across the top of the doorway, showing only the
+    // masonry rows of the texture
+    this.lintelGeo = new THREE.PlaneGeometry(1, WALL_H - BARS_H);
+    this.lintelGeo.translate(0, BARS_H + (WALL_H - BARS_H) / 2, 0);
+    {
+      const uv = this.lintelGeo.getAttribute('uv') as THREE.BufferAttribute;
+      for (let i = 0; i < uv.count; i++) {
+        uv.setY(i, BARS_V + uv.getY(i) * LINTEL_V);
+      }
+      uv.needsUpdate = true;
+    }
     // the trapdoor's shaft: as wide as the hole in `trapTile`, hung from its lip
     this.shaftGeo = new THREE.PlaneGeometry(0.8, SHAFT_D);
     this.shaftGeo.translate(0, -SHAFT_D / 2, 0);
@@ -299,21 +314,83 @@ export class ClockView {
    * object, and now they are the same drawing: bars hung from the lintel, retracting
    * upward into it by however far this door has been wound.
    */
+  /**
+   * A PORTCULLIS RETRACTS. It does not shrink.
+   *
+   * The lift was a `scale.y`, and scaling a quad squashes the picture on it: the bars
+   * got shorter AND fatter in the middle, the spiked feet flattened into stubs, and a
+   * gate halfway up read as a gate somebody had stood on. What a rising portcullis
+   * actually does is slide up into its slot, so the doorway shows LESS OF THE SAME
+   * GRID at the same size — the geometry has to be cropped and the texture cropped
+   * with it, which is two numbers moving together and not one scale.
+   *
+   * The lintel is cut off the top and drawn on its own, once, never moving. It is
+   * masonry: it holds the gate up. Riding it up with the bars was the other half of
+   * why the old version looked wrong, and it only happened because the art has the
+   * lintel baked into the same PNG.
+   */
   private drawDoor(g: Grid, i: number, x: number, y: number, e: number, across: boolean): void {
     const k = this.liftOf(g, i);
-    if (k >= 0.99) { this.barMesh.delete(i); return; }
+    const rot = across ? Math.PI / 2 : 0;
+
+    // the lintel, always, whatever the bars are doing
+    const l = this.take();
+    const lmat = l.material as THREE.MeshBasicMaterial;
+    lmat.map = this.art.gate ?? null;
+    lmat.opacity = 1;
+    lmat.needsUpdate = true;
+    l.geometry = this.lintelGeo;
+    l.rotation.set(0, rot, 0);
+    l.position.set(x, e, y);
+    l.scale.set(1, 1, 1);
+    this.lit(l, g, x, y);
+
+    if (k >= 0.995) { this.barMesh.delete(i); return; }
+
     const m = this.take();
     const mat = m.material as THREE.MeshBasicMaterial;
     mat.map = this.art.gate ?? null;
     mat.opacity = 1;
     mat.needsUpdate = true;
-    m.geometry = this.barGeoTop;
-    m.rotation.set(0, across ? Math.PI / 2 : 0, 0);
-    // hung from the lintel, so what retracts is the bottom edge
-    m.position.set(x, e + WALL_H, y);
+    m.geometry = this.barsGeoFor(i);
+    m.rotation.set(0, rot, 0);
+    m.position.set(x, e, y);
+    m.scale.set(1, 1, 1);
     this.lit(m, g, x, y);
-    this.applyLift(m, k);
+    this.cropBars(m, k);
     this.barMesh.set(i, m);
+  }
+
+  /** One quad per door, owned here, because each one is cropped to its own position. */
+  private barsGeoFor(i: number): THREE.BufferGeometry {
+    let geo = this.barsGeo.get(i);
+    if (!geo) {
+      geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3));
+      geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(8), 2));
+      geo.setIndex([0, 1, 2, 0, 2, 3]);
+      this.barsGeo.set(i, geo);
+    }
+    return geo;
+  }
+
+  /**
+   * Crop the grid to how far up it has gone: the same texels at the same size, fewer
+   * of them, and the bottom edge — the spiked feet — rising off the floor.
+   */
+  private cropBars(m: THREE.Mesh, k: number): void {
+    const geo = m.geometry as THREE.BufferGeometry;
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+    const uv = geo.getAttribute('uv') as THREE.BufferAttribute;
+    // what is left hanging is the BOTTOM of the grid; the top has gone into the slot
+    const y0 = k * BARS_H, y1 = BARS_H;
+    const v1 = (1 - k) * BARS_V;
+    pos.setXYZ(0, -0.5, y0, 0); uv.setXY(0, 0, 0);
+    pos.setXYZ(1, 0.5, y0, 0); uv.setXY(1, 1, 0);
+    pos.setXYZ(2, 0.5, y1, 0); uv.setXY(2, 1, v1);
+    pos.setXYZ(3, -0.5, y1, 0); uv.setXY(3, 0, v1);
+    pos.needsUpdate = true; uv.needsUpdate = true;
+    geo.computeBoundingSphere();
   }
 
   /**
@@ -681,7 +758,9 @@ export class ClockView {
     this.shadow?.dispose();
     this.geo.dispose();
     this.barGeo.dispose();
-    this.barGeoTop.dispose();
+    this.lintelGeo.dispose();
+    for (const gg of this.barsGeo.values()) gg.dispose();
+    this.barsGeo.clear();
     this.shaftGeo.dispose();
     this.spikeGeo.dispose();
     this.bladeGeo.dispose();
