@@ -1431,12 +1431,6 @@ export class Hud {
     if (this.offers || this.bestiaryOpen) return;
     const S = COG_SIZE;
     const x = W - S - 10, y = 6;
-    rr(ctx, x, y, S, S, 5);
-    ctx.fillStyle = this.settingsOpen ? 'rgba(255,207,92,0.22)' : 'rgba(14,9,16,0.7)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,207,92,0.45)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
     ctx.font = '17px ui-monospace, monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -3570,9 +3564,6 @@ export class Hud {
     ink(w.name, py + ph - 26, 'bold 11px ui-monospace, monospace', '#fff4dc');
     ink(`${Math.max(0, this.state.hp)}/${this.state.maxHp}`, py + ph - 14,
       '10px ui-monospace, monospace', frac > 0.34 ? 'rgba(255,225,200,0.95)' : '#ff8a70');
-    if (n > 0) {
-      ink(`${n} IN REACH`, py + 3, 'bold 9px ui-monospace, monospace', '#ff6a55');
-    }
     ctx.textAlign = 'left';
   }
 
