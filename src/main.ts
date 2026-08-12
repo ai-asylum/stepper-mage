@@ -172,6 +172,10 @@ interface Meta {
    * they disagreed with each other, and a per-axis setting would just let a player rebuild
    * that disagreement — the only sane choice here is "the world follows my finger" or "my
    * finger drives the camera", and that is a single preference.
+   *
+   * DEFAULTS TO TRUE, so the shipped feel is the inverted one and the code's unsigned
+   * direction is the option. Worth knowing when reading the gesture sites: `gsign()` is -1
+   * on a fresh save, so the branches there read as the NON-default case.
    */
   invertGestures: boolean;
 }
@@ -306,14 +310,16 @@ function loadMeta(): Meta {
         // default, so an old save opens at the new 100 rather than at a NaN frustum.
         fov: clampFov(m.fov),
         wizards: sanitizeWizards(m.wizards),
-        invertGestures: m.invertGestures === true,
+        // Default ON, and absent means ON — a save written before this setting existed
+        // should behave like a new one rather than silently opting out.
+        invertGestures: m.invertGestures !== false,
       });
     }
   } catch { /* corrupt or unavailable storage: fall through to defaults */ }
   return applyTree({
     stars: 0, loadout: [...DEFAULT_LOADOUT], slots: 0, handSize: 0, best: 0, nodes: [],
     giftedPage: null, pinned: null, bestiary: [], bossKills: [], fov: DEFAULT_FOV,
-    wizards: [FIRST_WIZARD], invertGestures: false,
+    wizards: [FIRST_WIZARD], invertGestures: true,
   });
 }
 
