@@ -117,7 +117,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'frost',
     name: 'KELA',
     title: 'the Wintermaiden',
-    reason: 'The demon she buried climbed back out. She is taking it somewhere colder.',
+    reason: 'She is carrying a demon she has already buried once back down to somewhere cold enough to keep it.',
     backstory: 'Kela has killed eleven demons for money and buried all eleven properly. '
       + 'The seventh came back. She found it wearing the face of the man who had paid her '
       + 'to remove it, sitting at his own table, and she understood that killing is not a '
@@ -139,7 +139,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'spark',
     name: 'ZEL',
     title: 'the Stormwright',
-    reason: 'The deep floors hold a charge nothing living should hold. She is going to take it.',
+    reason: 'Nobody sent her — she just wants what the deep floors are holding.',
     backstory: 'Zel was thrown out of two academies, the second one on fire. She is not '
       + 'grieving anybody and nothing was taken from her; she simply worked out, younger '
       + 'than was good for her, that the deep floors of the library hold charges nothing '
@@ -159,7 +159,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'gust',
     name: 'VANE',
     title: 'the Windwalker',
-    reason: 'A wind comes up from a depth that should have no air. He is going to find what breathes.',
+    reason: 'He found a wind coming out of a hole that should not have any air in it, and he simply had to know.',
     backstory: 'Vane has no dead to speak of and no debt anybody is collecting. He walks, '
       + 'and he has walked most places worth walking, and one afternoon he noticed a '
       + 'draught coming up out of a hole in a drowned library — a real wind, from a depth '
@@ -181,7 +181,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'rot',
     name: 'VESS',
     title: 'the Plaguebound',
-    reason: 'The rot has his arms to the elbow. The cure is in the deep library or nowhere.',
+    reason: 'He is rotting from the elbows inward, and the only cure anyone ever wrote down is under the library.',
     backstory: 'Vess was the physician the town sent for, and he was good at it, right up '
       + 'until the thing he was treating started treating him back. The black is in his '
       + 'arms to the elbow now and climbing. He has read every book above ground on the '
@@ -201,7 +201,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'plant',
     name: 'YEW',
     title: 'the Greenwarden',
-    reason: 'The green above ground started growing downward. She followed it in to find the root.',
+    reason: 'The green started growing downward this spring and she is the only one who went to look.',
     backstory: 'Yew is the youngest person to go down, and she went because nobody older '
       + 'would listen. She keeps the green on the surface — it is the only work she has '
       + 'ever wanted — and this spring it started coming up wrong: roots in the wrong '
