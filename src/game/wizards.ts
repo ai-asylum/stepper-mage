@@ -64,6 +64,15 @@ export interface Wizard {
   /** What they say once, on the selection screen, in their own voice. */
   readonly line: string;
   /**
+   * What they say the moment you cut them loose — the one beat two wizards share a screen.
+   *
+   * Separate from `line` because they are opposite situations: `line` is a wizard telling a
+   * stranger who they are, and this is somebody who has just been let out of a cage talking
+   * to the person who opened it. Nobody thanks anybody. They are all still the same people
+   * they were behind the gate.
+   */
+  readonly rescueLine: string;
+  /**
    * The wizard this one frees, or null.
    *
    * ONE each, deliberately. A roster that one good run unlocks entirely is a roster
@@ -101,6 +110,7 @@ export const WIZARDS: readonly Wizard[] = [
       + 'a doorway for eight rounds, which makes every room a thing you can set up rather '
       + 'than a thing you shoot. He asks for very little and forgives almost nothing.',
     line: 'It left me alive in the ashes of my home. I have carried them down here to give back.',
+    rescueLine: 'Do not expect me to be grateful. Expect me to be useful.',
     frees: 'frost',
     portrait: 'portrait_ash',
     quests: [
@@ -131,6 +141,7 @@ export const WIZARDS: readonly Wizard[] = [
       + 'far harder to corner: water freezes deeper, a held enemy is a fight you have '
       + 'postponed, and almost nothing reaches her that she did not allow to.',
     line: 'I do not kill them. I keep them. It is the only thing that has ever held.',
+    rescueLine: 'Eleven years of this and it is ICE that finally held me. Do not repeat that to anyone.',
     frees: 'spark',
     portrait: 'portrait_kela',
     quests: [],
@@ -151,6 +162,7 @@ export const WIZARDS: readonly Wizard[] = [
       + 'room into a single cast, which means she is the wizard who wants MORE enemies, '
       + 'closer together, standing in something wet.',
     line: 'Everything down here is holding a charge it has not earned.',
+    rescueLine: 'Iron. Of course it was iron. Take me back down there, I want another go at it.',
     frees: 'gust',
     portrait: 'portrait_zel',
     quests: [],
@@ -173,6 +185,7 @@ export const WIZARDS: readonly Wizard[] = [
       + 'the floor plan as a weapon — the most fun to play and the least forgiving of '
       + 'not looking at the room.',
     line: 'Everyone else came down here to settle something. I came down to see it.',
+    rescueLine: 'Best afternoon I have had in years. Did you see the size of that thing?',
     frees: 'rot',
     portrait: 'portrait_vane',
     quests: [],
@@ -193,6 +206,7 @@ export const WIZARDS: readonly Wizard[] = [
       + 'thing up, walk away, let the room do the rest. He is the wizard for a player who '
       + 'wants to win a fight before it starts, and the one who least minds a long one.',
     line: 'I am further along than any of you. That is why I can go deeper.',
+    rescueLine: 'You have cost me about forty minutes. I do not have a great many of those left.',
     frees: 'plant',
     portrait: 'portrait_vess',
     quests: [],
@@ -215,6 +229,7 @@ export const WIZARDS: readonly Wizard[] = [
       + 'fight happens, so she plays like a gardener: put the room in the right shape a '
       + 'turn early and the fight is already decided.',
     line: 'It has already reached the surface. I am not here early, I am here late.',
+    rescueLine: 'I was getting out of that. Eventually. It was going to take a while.',
     frees: null,
     portrait: 'portrait_yew',
     quests: [],
