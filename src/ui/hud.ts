@@ -2162,12 +2162,8 @@ export class Hud {
     if (this.rosterPeek) { this.drawWizardProfile(ctx, W, H, this.rosterPeek); return; }
 
     ctx.textAlign = 'center';
-    ctx.font = 'bold 20px ui-monospace, monospace';
-    ctx.fillStyle = GOLD;
-    ctx.fillText('WHO GOES DOWN', W / 2, 14);
-    ctx.font = '13px ui-monospace, monospace';
-    ctx.fillStyle = 'rgba(232,217,176,0.5)';
-    ctx.fillText('one only · the rest are found below', W / 2, 38);
+    // NO TITLE. Six faces in a grid do not need to be told they are a choice, and the
+    // heading was costing the portraits 44px of the only screen they have.
 
     /**
      * TWO COLUMNS, THREE ROWS, filling the screen.
@@ -2179,7 +2175,7 @@ export class Hud {
      */
     const COLS = 2, ROWS = 3;
     const gap = 8;
-    const y0 = 58;
+    const y0 = 12;
     const bottom = 12;
     /**
      * The caption sits ON the portrait, not under it.
@@ -2368,9 +2364,9 @@ export class Hud {
     y = this.wrapped(ctx, `“${w.line}”`, W / 2, y, W - 44, 16, H - 88);
 
     // CHOOSE, or the reason you cannot.
-    const label = locked ? (freed ? `FREED BY ${freed}` : 'LOCKED') : 'CHOOSE';
+    const label = locked ? (freed ? `FREED BY ${freed}` : 'LOCKED') : 'ENTER THE DUNGEON';
     ctx.font = 'bold 11px ui-monospace, monospace';
-    const bw = Math.max(ctx.measureText(label).width + 44, 150);
+    const bw = Math.max(ctx.measureText(label).width + 44, 170);
     // Under the copy, not pinned to the bottom of the screen. Pinned left a dead band
     // most of the screen tall once the prose came down to a sentence.
     const bx = (W - bw) / 2, by = Math.min(H - 56, y + 20);
