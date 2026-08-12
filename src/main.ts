@@ -56,6 +56,7 @@ import {
   derivedHandSize, derivedSlots, buyBlocker, isNodeId, migrateOwned, owns,
   refundBlocker, sanitizeOwned, type NodeId,
 } from './meta/tree';
+import { initAnalytics, track } from './systems/analytics';
 
 /**
  * Persisted meta.
@@ -189,6 +190,9 @@ interface Meta {
   freed: WizardElement[];
 }
 
+// Deliberately still the old working title. The key is an opaque save handle, not
+// a name the player ever sees, and renaming it would orphan every save in the wild
+// for no gain — see the note in README.
 const META_KEY = 'stepper-mage.meta.v1';
 
 /**
@@ -338,6 +342,22 @@ function saveMeta(m: Meta): void {
 }
 
 async function boot(): Promise<void> {
+  /**
+   * Telemetry, before anything that could throw.
+   *
+   * First two statements of boot on purpose: a crash in the engine constructor is
+   * exactly the event worth having a session for, and analytics brought up after it
+   * would record every session BUT the broken ones. Neither call can fail the boot —
+   * both no-op without their key and both swallow their own errors (`systems/`), so
+   * the worst case here is a run with no telemetry rather than a run with no game.
+   *
+   * AppsFlyer is dynamically imported so the web bundle never pulls the native
+   * plugin in; it returns immediately off-device.
+   */
+  initAnalytics();
+  void import('./systems/appsflyer').then((m) => m.initAppsFlyer());
+  track('session_start');
+
   const engine = new Engine({ internalHeight: 400, levels: 36 });
   const meta = loadMeta();
   // Before anything is built, like the texel density: the frustum decides what the
@@ -2534,6 +2554,10 @@ async function boot(): Promise<void> {
     if (floor) { engine.scene.remove(floor.group); floor.dispose(); }
 
     state.depth = depth;
+    // The progression event the retention gates read. Depth is the only number that
+    // says how far a session actually got, and it is written here rather than at the
+    // stairs so a deep START (`Descent_Unlocks`) counts as the floor it opens on.
+    track('floor_entered', { depth });
     const theme = THEMES[Math.min(THEMES.length - 1, depth - 1)];
     /**
      * WHO IS BEHIND THE GATE on this floor, decided here rather than in the generator.
@@ -2974,6 +2998,9 @@ async function boot(): Promise<void> {
     meta.stars += earned;
     meta.best = Math.max(meta.best, state.depth);
     saveMeta(meta);
+    // Both endings, through the one exit, so "how do runs end" is answerable without
+    // having to reconcile two events that would drift apart.
+    track('run_ended', { kind, depth: state.depth, earned, best: meta.best });
     // The grimoire shuts, and it does so through `bookOnScreen` — `dead` is one of
     // its clauses — rather than by being closed from here. Two writers would be two
     // answers, and this is the one that used to be the second.

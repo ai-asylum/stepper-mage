@@ -1,8 +1,8 @@
 /**
- * Stepper Mage playable ad → `ads/playable/index.html`.
+ * Unbound Descent playable ad → `ads/playable/index.html`.
  *
  *   npm run build:playable
- *   PLAYABLE_APP_ID=com.example.steppermage npm run build:playable
+ *   PLAYABLE_APP_ID=games.misaligned.unbounddescent npm run build:playable
  *
  * This file holds only what is genuinely per-game: the asset manifest and the
  * store URL. Everything else — single-file inlining, es2020, the 5 MB budget —
@@ -16,16 +16,20 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * The CTA destination.
+ * The CTA destination — the REAL listing, and deliberately set before the listing
+ * exists.
  *
- * Stepper Mage has no `capacitor.config.*` and no Play listing yet, so there is
- * no real appId to read. This placeholder keeps the URL in the right shape for
- * review, and the build shouts about it — but a creative carrying it MUST NOT
- * go to a network: an unattributable CTA burns the campaign's optimizer, and a
- * fake-door URL here is what cost traindefense 309 clicks for 1 install.
+ * The URL is deterministic from the appId in `capacitor.config.ts`, so it is
+ * correct the moment the human publishes and there is no second step to forget.
+ * The window where it 404s is harmless: playables only serve through ad networks,
+ * and no network accepts a campaign without a live listing.
+ *
+ * What must NEVER go here is a fake-door / *.vercel.app URL — that detours the
+ * click out of store attribution, so the network bills the click and the install
+ * never maps back. It cost traindefense 309 clicks for 1 install.
  */
-const PLACEHOLDER_APP_ID = 'REPLACE.WITH.REAL.APPID';
-const appId = process.env.PLAYABLE_APP_ID || PLACEHOLDER_APP_ID;
+const APP_ID = 'games.misaligned.unbounddescent';
+const appId = process.env.PLAYABLE_APP_ID || APP_ID;
 const storeUrl = `https://play.google.com/store/apps/details?id=${appId}`;
 
 /**
@@ -66,9 +70,4 @@ buildPlayable({
   globals: { __PLAYABLE_STORE_URL__: storeUrl },
 });
 
-if (appId === PLACEHOLDER_APP_ID) {
-  console.warn(
-    '\n⚠  CTA points at a PLACEHOLDER appId — this build is for review only.\n'
-    + '   Set PLAYABLE_APP_ID=<real.package.id> before any campaign upload.\n',
-  );
-}
+console.log(`   CTA → ${storeUrl}`);

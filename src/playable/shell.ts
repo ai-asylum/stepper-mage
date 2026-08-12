@@ -32,9 +32,9 @@ import { buildCtaPlate, buildDismissPlate, buildLogo, fitScale } from './art';
  */
 declare const __PLAYABLE_STORE_URL__: string | undefined;
 
-/** Working title stays in the repo; the creative ships the real name. */
-const TITLE = 'SPELLTORN';
-const SUBTITLE = 'DEEP';
+/** The shipping name, matching `capacitor.config.ts` and the Play listing. */
+const TITLE = 'UNBOUND';
+const SUBTITLE = 'DESCENT';
 
 interface AdContainer {
   ALPlayableAnalytics?: { trackEvent?: (event: string) => void };

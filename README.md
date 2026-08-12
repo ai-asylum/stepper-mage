@@ -1,4 +1,4 @@
-# Stepper Mage
+# Unbound Descent
 
 A mobile-first, first-person **dungeon stepper** where you have no weapons and no
 armour — only a spellbook. You leaf through a physical grimoire with your thumb,
@@ -46,8 +46,9 @@ on top. Sprites are embedded as data URIs by the manifest in
 creative makes no network requests while the web build is byte-for-byte the same
 fetch path it always was.
 
-The creative ships under the real name, **Spelltorn Deep** — the repo, the game
-and the HUD still say Stepper Mage, which is the working title.
+The creative and the game now share one name, **Unbound Descent**. The repo
+directory and the localStorage save key still carry the old working title; the
+save key is deliberate, since renaming it would orphan every existing save.
 
 The CTA is an **in-world interruption, never a screen change**. On whichever of
 **15 seconds or 15 turns** comes first it takes the grimoire's half of the
@@ -69,10 +70,12 @@ not drift per game, above all **`build.target: 'es2020'`**: ad WebViews are an
 old fleet, es2021+ syntax parse-errors there, and the whole creative dies before
 line one while impressions keep billing.
 
-> **The CTA is a placeholder.** Stepper Mage has no `capacitor.config.*` and no
-> Play listing, so there is no real appId. The build warns about this every run.
-> Set `PLAYABLE_APP_ID=<real.package.id>` before any campaign upload — and never
-> point it at the fake door, which detours the click out of store attribution.
+> **The CTA points at the real listing**,
+> `games.misaligned.unbounddescent`, taken from `capacitor.config.ts`. It 404s
+> until the listing is published, which is harmless — playables only serve
+> through ad networks, and no network accepts a campaign without a live listing.
+> Never point it at the fake door, which detours the click out of store
+> attribution.
 
 Useful harnesses:
 

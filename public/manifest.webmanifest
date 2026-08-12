@@ -1,6 +1,6 @@
 {
-  "name": "Stepper Mage",
-  "short_name": "Stepper Mage",
+  "name": "Unbound Descent",
+  "short_name": "Unbound Descent",
   "description": "A first-person dungeon stepper. No weapons, no armour — only your spellbook. Tear pages out, fuse them, and animate the room against itself.",
   "start_url": "./",
   "scope": "./",

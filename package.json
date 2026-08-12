@@ -1,5 +1,5 @@
 {
-  "name": "stepper-mage",
+  "name": "unbound-descent",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -12,9 +12,15 @@
     "shot": "node tools/shot.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "appsflyer-capacitor-plugin": "^6.18.0",
+    "posthog-js": "^1.416.0",
     "three": "^0.169.0"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.0",
     "@types/three": "^0.169.0",
     "playable-kit": "file:vendor/playable-kit-1.0.0.tgz",
     "playwright-core": "^1.62.0",

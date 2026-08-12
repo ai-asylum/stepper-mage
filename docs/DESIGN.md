@@ -1,4 +1,4 @@
-# Stepper Mage — Design
+# Unbound Descent — Design
 
 The settled design. Anything here has been decided; anything not here is open.
 

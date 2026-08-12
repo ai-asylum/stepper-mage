@@ -1,6 +1,6 @@
 # Roadmap
 
-Phased build for Stepper Mage. One file per phase, named by topic. Design decisions
+Phased build for Unbound Descent. One file per phase, named by topic. Design decisions
 live in [docs/DESIGN.md](../docs/DESIGN.md); this folder is only about sequencing
 and state. Per-phase task lists are in [_todo.md](_todo.md).
 
