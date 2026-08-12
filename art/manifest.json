@@ -1143,14 +1143,6 @@
       "colors": 32,
       "seed": 20105,
       "prompt": "YEW THE GREENWARDEN, A CAPTIVE: a girl of about fourteen held fast inside a cage of living THORNED BRIAR that has grown up around her and clamped shut, thorns inches from her arms. Messy hair with leaves, WARM OCHRE-GOLD smock, DEEP BLUE scarf, dirt on her cheek. Scowling, chin up, defiant and frightened. Green-gold dappled light. Full body, head to boots."
-    },
-    {
-      "id": "hero_ash",
-      "kind": "creature",
-      "height": 132,
-      "colors": 32,
-      "seed": 20106,
-      "prompt": "ASH THE FIREWIZARD, A CAPTIVE: a hard mean scarred man in his late twenties, thick burn scars down the left of his face, kneeling in a circle of blackened stone with heavy iron manacles on his wrists and a snuffed brazier beside him. DEEP CRIMSON mantle over blackened leather. Snarling upward, furious. Ember light and cool teal rim. Full body, head to boots."
     }
   ]
 }

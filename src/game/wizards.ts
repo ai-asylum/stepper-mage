@@ -70,8 +70,12 @@ export interface Wizard {
    * stranger who they are, and this is somebody who has just been let out of a cage talking
    * to the person who opened it. Nobody thanks anybody. They are all still the same people
    * they were behind the gate.
+   *
+   * OPTIONAL, and absent on ASH. He is the head of the chain — `freedBy('fire')` is null and
+   * there is nobody above him to open a gate — so a rescue line for him would be dialogue
+   * for a scene that cannot happen.
    */
-  readonly rescueLine: string;
+  readonly rescueLine?: string;
   /**
    * The wizard this one frees, or null.
    *
@@ -110,7 +114,6 @@ export const WIZARDS: readonly Wizard[] = [
       + 'a doorway for eight rounds, which makes every room a thing you can set up rather '
       + 'than a thing you shoot. He asks for very little and forgives almost nothing.',
     line: 'It left me alive in the ashes of my home. I have carried them down here to give back.',
-    rescueLine: 'Do not expect me to be grateful. Expect me to be useful.',
     frees: 'frost',
     portrait: 'portrait_ash',
     quests: [
