@@ -544,6 +544,11 @@ export class Hud {
    * what a wizard casts, and `main.ts` already holds `SPELL_BY_ID`.
    */
   startSpell: { name: string; effect: string } | null = null;
+  /**
+   * The peeked wizard's page, as a real offer, so the profile can draw the ACTUAL card
+   * through `offerCanvas` rather than inventing a second kind of spell card.
+   */
+  startCard: AltarOffer | null = null;
 
   /**
    * Where the compass points, or null when nothing does.
@@ -1974,7 +1979,7 @@ export class Hud {
     ctx.moveTo(22, H * 0.13 + 52.5); ctx.lineTo(W - 22, H * 0.13 + 52.5);
     ctx.stroke();
 
-    ctx.font = '12px ui-serif, Georgia, serif';
+    ctx.font = '11px ui-monospace, monospace';
     let y = H * 0.13 + 74;
     for (const name of this.bestiary) {
       if (y > H - 90) break;
@@ -2268,82 +2273,82 @@ export class Hud {
     const locked = !!this.roster?.find((r) => r.wizard.id === w.id)?.locked;
     const freed = this.roster?.find((r) => r.wizard.id === w.id)?.freedBy ?? null;
 
-    const ph = Math.round(H * 0.30);
-    const pw = Math.round(ph * PORTRAIT_ASPECT);
-    const px = Math.round((W - pw) / 2), py = 14;
+    /**
+     * TWO THINGS SIDE BY SIDE AT THE TOP: who you are, and what you cast.
+     *
+     * In that order and in that priority. The previous version stacked a portrait, then a
+     * name, then a line of prose, then more prose, then more — which buried the one fact
+     * the choice actually turns on. Both columns get a caption directly under the thing it
+     * captions: the name under the face, the spell's rules under the page. Nothing else
+     * competes for the top of the screen.
+     */
+    const gap = 10;
+    const topH = Math.round(H * 0.26);
+    const pw = Math.round(topH * PORTRAIT_ASPECT);
+    const cardW = Math.round(topH * (CARD_W / CARD_H));
+    const rowW = pw + gap + cardW;
+    const px = Math.round((W - rowW) / 2), py = 14;
+    const cardX = px + pw + gap;
 
     ctx.save();
     ctx.beginPath();
-    rr(ctx, px, py, pw, ph, 4);
+    rr(ctx, px, py, pw, topH, 4);
     ctx.fillStyle = 'rgba(10,7,13,0.95)';
     ctx.fill();
     ctx.clip();
     if (locked) { ctx.filter = 'grayscale(1)'; ctx.globalAlpha = 0.85; }
-    drawPortrait(ctx, w.portrait, px, py, pw, ph);
+    drawPortrait(ctx, w.portrait, px, py, pw, topH);
     ctx.filter = 'none';
     ctx.globalAlpha = 1;
     ctx.restore();
-    rr(ctx, px, py, pw, ph, 4);
+    rr(ctx, px, py, pw, topH, 4);
     ctx.strokeStyle = locked ? 'rgba(120,112,130,0.4)' : 'rgba(255,207,92,0.8)';
     ctx.lineWidth = 1.4;
     ctx.stroke();
 
-    ctx.textAlign = 'center';
-    let y = py + ph + 10;
-    ctx.font = 'bold 24px ui-monospace, monospace';
-    ctx.fillStyle = '#fff4dc';
-    ctx.fillText(w.name, W / 2, y);
-    y += 26;
-    ctx.font = '13px ui-monospace, monospace';
-    ctx.fillStyle = 'rgba(255,207,92,0.85)';
-    ctx.fillText(w.title.toUpperCase(), W / 2, y);
-    y += 22;
+    // The real page, through the same generator the altar uses — a card drawn any other
+    // way here would be a second kind of spell card in the game.
+    if (this.startCard) {
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(this.offerCanvas(this.startCard), cardX, py, cardW, topH);
+      ctx.imageSmoothingEnabled = true;
+    }
 
-    /**
-     * WHAT YOU START WITH, named. The profile did not say this at all, which made it a
-     * character sheet with the only mechanical fact about the character missing — you
-     * cannot choose between six people if the choice is secretly about which page you
-     * spend the next hour casting.
-     */
+    ctx.textAlign = 'center';
+    const pcx = px + pw / 2, kcx = cardX + cardW / 2;
+    let cy = py + topH + 16;
+
+    ctx.font = 'bold 17px ui-monospace, monospace';
+    ctx.fillStyle = '#fff4dc';
+    ctx.fillText(w.name, pcx, cy - 4);
+    ctx.font = '10px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(255,207,92,0.85)';
+    ctx.fillText(w.title.toUpperCase(), pcx, cy + 15);
+
     if (this.startSpell) {
       ctx.font = 'bold 13px ui-monospace, monospace';
       ctx.fillStyle = 'rgba(180,220,255,0.95)';
-      ctx.fillText(`STARTS WITH ${this.startSpell.name.toUpperCase()}`, W / 2, y);
-      y += 18;
-      ctx.font = '12px ui-serif, Georgia, serif';
-      ctx.fillStyle = 'rgba(190,205,225,0.8)';
-      y = this.wrapped(ctx, this.startSpell.effect, W / 2, y, W - 44, 16);
-      y += 10;
+      ctx.fillText(this.startSpell.name.toUpperCase(), kcx, cy - 2);
+      ctx.font = '10px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(196,210,228,0.85)';
+      this.wrapped(ctx, this.startSpell.effect, kcx, cy + 14, cardW + 6, 14);
     }
 
     /**
-     * FIXED body size, and a hard floor the copy may not cross.
+     * ONE SENTENCE. Why they are here and what they mean to do.
      *
-     * It was `H * 0.030`, which is how a tall viewport ended up with a 30px serif running
-     * straight under the CHOOSE button and off the bottom of the screen. Deriving a font
-     * size from the viewport is the wrong instinct here: this is a page of prose, and prose
-     * has a size that is comfortable to read regardless of how much room is going spare.
-     *
-     * `wrapped` is bounded by `floor` so an over-long backstory is CLIPPED rather than
-     * allowed to draw over the only button on the screen. A profile that scrolls is a
-     * better answer and a bigger change; this at least cannot lie about where the button is.
+     * The backstory and the why-play paragraphs are still on the wizard and are still worth
+     * having, but they do not belong on the screen you are trying to get off. A profile
+     * that has to be read is a profile that gets skipped.
      */
-    const body = 13;
-    const lh = 17;
-    const floor = H - 104;
-    ctx.font = `${body}px ui-serif, Georgia, serif`;
+    let y = py + topH + 62;
+    ctx.font = '12px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(236,226,204,0.94)';
-    y = this.wrapped(ctx, w.backstory, W / 2, y, W - 44, lh, floor);
-    y += 8;
-    ctx.font = `italic ${body}px ui-serif, Georgia, serif`;
-    ctx.fillStyle = 'rgba(205,195,220,0.8)';
-    y = this.wrapped(ctx, `“${w.line}”`, W / 2, y, W - 44, lh, floor);
-    y += 8;
-    // Why you would PLAY them, which is the other half of a selection screen and the half
-    // most rosters leave out.
-    ctx.font = `${body}px ui-serif, Georgia, serif`;
-    ctx.fillStyle = 'rgba(255,225,170,0.88)';
-    y = this.wrapped(ctx, w.whyPlay, W / 2, y, W - 44, lh, floor);
+    y = this.wrapped(ctx, w.reason, W / 2, y, W - 44, 18, H - 104);
+    y += 10;
+    ctx.font = '11px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(205,195,220,0.78)';
+    this.wrapped(ctx, `“${w.line}”`, W / 2, y, W - 44, 16, H - 104);
 
     // CHOOSE, or the reason you cannot.
     const label = locked ? (freed ? `FREED BY ${freed}` : 'LOCKED') : 'CHOOSE';

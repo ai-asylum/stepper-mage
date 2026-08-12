@@ -3737,6 +3737,11 @@ async function boot(): Promise<void> {
         hud.rosterPeek = WIZARD_BY_ID[a.id] ?? null;
         const sp = SPELL_BY_ID[a.id];
         hud.startSpell = sp ? { name: sp.name, effect: sp.effect } : null;
+        hud.startCard = sp ? {
+          kind: 'startPage', id: a.id, name: sp.name, tag: '', colour: sp.colour,
+          detail: sp.effect, cost: null, amount: 0, rank: 1, toRank: 0,
+          maxRank: MAX_RANK, golden: false,
+        } : null;
         break;
       }
       case 'wizardBack': hud.rosterPeek = null; break;

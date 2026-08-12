@@ -1069,16 +1069,16 @@
       "kind": "portrait",
       "height": 96,
       "colors": 32,
-      "seed": 20002,
-      "prompt": "KELA THE WINTERMAIDEN: a severe woman in her thirties, a demon hunter, pale grey eyes and a thin scar across her nose. White-blonde hair pulled back tight, frost on the ends. RUDDY WARM SKIN, wind-burnt cheeks and nose. She wears a DEEP INDIGO-BLUE hunting coat with OXBLOOD RED leather straps and a small GREEN GLASS amulet at her throat. Pale blue frost light from the left, warm amber lamplight on her right cheek. Full colour, warm and cool together, not a single-hue image."
+      "seed": 20022,
+      "prompt": "KELA THE WINTERMAIDEN: a demon hunter in her thirties, face full of CONTAINED FURY — not calm, not neutral, not blank. Jaw clenched hard, muscle tight in her cheek, brows drawn down and inward, pale grey eyes narrowed and locked on something with absolute intent, mouth pressed into a thin flat line. The look of a woman who has decided. A thin scar across the bridge of her nose. White-blonde hair pulled back hard, frost on the ends. RUDDY WIND-BURNT SKIN, red at the nose and cheekbones. She wears a DEEP INDIGO BLUE coat with OXBLOOD RED straps and a GREEN GLASS amulet. Pale blue frost light from the left, WARM AMBER lamplight on her right cheek. Intense and readable. NOT expressionless, NOT serene, NOT vacant, NOT a blank stare."
     },
     {
       "id": "portrait_zel",
       "kind": "portrait",
       "height": 96,
       "colors": 32,
-      "seed": 20013,
-      "prompt": "ZEL THE STORMWRIGHT: a young woman CRACKLING WITH ENERGY, wide-eyed and grinning with reckless delight, mid-laugh. BRIGHT and HIGH-KEY lighting, her face well lit and clearly visible, NOT in shadow. FIERY COPPER-ORANGE hair standing up and outward with static. BRILLIANT ELECTRIC YELLOW and WHITE-HOT lightning arcs crackling around her head and across her shoulders, throwing bright yellow light onto her cheeks and forehead. Warm fair freckled skin, flushed cheeks, sparks reflected as tiny highlights in her eyes. She wears a BRIGHT COBALT BLUE coat with GOLD buttons and a WHITE collar. YELLOW, GOLD, WHITE and BLUE — vivid, saturated, high contrast and FULL OF LIGHT. She looks thrilled and completely alive. NOT dark, NOT gloomy, NOT purple, NOT a shadowed face."
+      "seed": 20023,
+      "prompt": "ZEL THE STORMWRIGHT: a young woman with a SULTRY, HUNGRY, KNOWING expression — chin tilted down, looking UP at the viewer through her lashes, HALF-LIDDED heavy eyes, one eyebrow raised, a slow crooked SMIRK at one corner of her mouth. Covetous and confident, like someone appraising something she has already decided to take. CALM and composed, NOT startled. Sleek FIERY COPPER-ORANGE hair falling loose over one eye, NOT standing on end. A few lazy ELECTRIC YELLOW-WHITE sparks drifting from her fingertips near her jaw, throwing warm yellow light up onto her face. Warm fair freckled skin, bright well-lit face. She wears a COBALT BLUE coat open low with GOLD buttons. YELLOW, GOLD and BLUE, vivid and saturated. NOT shocked, NOT electrocuted, NOT wide-eyed, NOT manic, NOT hair standing up, NOT grinning with teeth."
     },
     {
       "id": "portrait_vane",
