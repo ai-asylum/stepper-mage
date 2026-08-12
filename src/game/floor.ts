@@ -197,7 +197,26 @@ export class Floor {
     wantCaptiveRoom = false,
   ) {
     this.theme = themeForDepth(depth);
-    this.grid = generate({ depth, seed, layout, wantCaptiveRoom });
+    /**
+     * A CAPTIVE FLOOR IS REGENERATED UNTIL IT HAS A GATE. No ungated fallback.
+     *
+     * About a third of shapes can seal a room without stranding the stairs, so a floor that
+     * needs one is simply rolled again with a perturbed seed until it can. At that rate 200
+     * attempts fail with probability around 1e-35, and each attempt is a few milliseconds of
+     * grid work with nothing loaded yet — this runs before any sprite is fetched.
+     *
+     * The alternative was letting the captive stand in an open room when the shape refused, and
+     * that is worse than it looks: the gate IS the encounter. Without it the rescue is a tap on
+     * a body in a corridor, and the one time that hero is ever offered is the time it read as
+     * nothing at all.
+     */
+    let g = generate({ depth, seed, layout, wantCaptiveRoom });
+    if (wantCaptiveRoom) {
+      for (let n = 1; n < 200 && g.captiveRoom < 0; n++) {
+        g = generate({ depth, seed: `${seed}-g${n}`, layout, wantCaptiveRoom });
+      }
+    }
+    this.grid = g;
     // Shallow water will not take a flame. `Ground` deliberately knows nothing about
     // tiles, so the one place holding both it and the grid is where the rule goes.
     this.ground.refuses = (i, what) =>
