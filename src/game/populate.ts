@@ -100,10 +100,18 @@ export function populate(
    * open it — wrong element, wrong wizard — must still be able to finish the floor, so the
    * one thing the room may never contain is the way down.
    */
-  // Nothing to place when the generator could not seal a room on this floor's shape.
-  let captivePlaced = !captive || grid.captiveRoom < 0;
+  /**
+   * The captive ALWAYS appears, gated when the floor's shape allows it and open when it does
+   * not. Measured, only about a third of floors have a room with one or two mouths that can be
+   * sealed without stranding the stairs — and a rescue that simply is not on the floor is far
+   * worse than one you can walk up to, because it is the only time that hero is ever offered.
+   */
+  let captivePlaced = !captive;
   for (const room of grid.rooms) {
-    if (!captivePlaced && captive && room.id === grid.captiveRoom) {
+    const wantsThisRoom = grid.captiveRoom >= 0
+      ? room.id === grid.captiveRoom
+      : room.kind === 'normal';
+    if (!captivePlaced && captive && wantsThisRoom) {
       const spot = openTiles(room)[0];
       if (spot) {
         out.push({
