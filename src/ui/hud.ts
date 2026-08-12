@@ -351,9 +351,6 @@ const MAP_SPAN = 4;
 const MAP_CELL = 11;
 const MAP_SIZE = (MAP_SPAN * 2 + 1) * MAP_CELL + 6;
 const MAP_TOP = 28;
-/** Left edge for the floor name, clear of the portrait that now owns the corner. */
-const TEXT_LEFT = (hasPortrait: boolean): number =>
-  hasPortrait ? 12 + Math.round(MAP_SIZE * PORTRAIT_ASPECT) + 8 : 12;
 /**
  * Right edge the star readout aligns to, derived from the cog rather than written
  * twice. The two used to share `W - 12` and the cog would have sat on the count.
@@ -2443,6 +2440,7 @@ export class Hud {
   private drawCompass(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     const goal = this.compassGoal;
     if (!goal) return;
+    if (!this.bookClosed) return;
     const m = this.map?.();
     if (!m) return;
 
