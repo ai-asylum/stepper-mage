@@ -473,6 +473,15 @@ export class Hud {
    * panel closed is the thing that draws it.
    */
   resetArmed = false;
+  /**
+   * The FOV the slider should draw, and the range it spans. Pushed in by `main.ts`
+   * rather than read from the save here, so the HUD keeps knowing nothing about
+   * persistence — the same arrangement `bankedStars` has.
+   */
+  fov = 100;
+  fovRange: readonly [number, number] = [85, 120];
+  /** Track geometry from the last draw, so a drag can be resolved against it. */
+  fovTrack: { x: number; y: number; w: number } | null = null;
 
   /**
    * Where the compass points, or null when nothing does.
@@ -1925,6 +1934,24 @@ export class Hud {
   }
 
   /**
+   * The FOV a pointer at (x, y) is asking for, or null if it is not on the slider.
+   *
+   * The vertical band is far taller than the 6px bar — a slider you have to hit within
+   * three pixels is a slider you fight — and the horizontal read is CLAMPED rather than
+   * rejected, so a drag that wanders off the end of the track pins to the end instead
+   * of letting go of the knob.
+   */
+  fovAt(x: number, y: number): number | null {
+    const t = this.fovTrack;
+    if (!t || !this.settingsOpen) return null;
+    if (y < t.y - 14 || y > t.y + 20) return null;
+    if (x < t.x - 16 || x > t.x + t.w + 16) return null;
+    const [lo, hi] = this.fovRange;
+    const f = Math.max(0, Math.min(1, (x - t.x) / t.w));
+    return Math.round(lo + (hi - lo) * f);
+  }
+
+  /**
    * SETTINGS. One option today, and built as a list so the second one costs nothing.
    *
    * The reset row is a TWO-TAP control and the two states say different sentences:
@@ -1942,19 +1969,76 @@ export class Hud {
     ctx.fillStyle = GOLD;
     ctx.fillText('SETTINGS', W / 2, H * 0.13);
 
+    // ---- field of view ------------------------------------------------------
+    const [lo, hi] = this.fovRange;
+    const tw2 = Math.min(W - 80, 230);
+    const tx = (W - tw2) / 2, ty = H * 0.13 + 40;
+    ctx.font = 'bold 10px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.75)';
+    ctx.fillText(`FIELD OF VIEW   ${Math.round(this.fov)}°`, W / 2, ty - 14);
+
+    // The track. Drawn as a thin filled bar rather than a groove because the fill IS
+    // the readout — the number above says the value and the bar says where in the range
+    // it sits, which is the question a slider is actually asked.
+    const frac = (this.fov - lo) / (hi - lo);
+    rr(ctx, tx, ty, tw2, 6, 3);
+    ctx.fillStyle = 'rgba(20,14,26,0.9)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,207,92,0.35)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    if (frac > 0) {
+      rr(ctx, tx, ty, Math.max(4, tw2 * frac), 6, 3);
+      ctx.fillStyle = 'rgba(255,207,92,0.55)';
+      ctx.fill();
+    }
+    const kx = tx + tw2 * frac;
+    ctx.beginPath();
+    ctx.arc(kx, ty + 3, 6, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff4dc';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(120,80,20,0.9)';
+    ctx.stroke();
+
+    ctx.font = '8px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.4)';
+    ctx.textAlign = 'left';
+    ctx.fillText('narrow', tx, ty + 14);
+    ctx.textAlign = 'right';
+    ctx.fillText('wide', tx + tw2, ty + 14);
+    ctx.textAlign = 'center';
+
+    /**
+     * Track geometry kept for the drag rather than pushed as a hit region.
+     *
+     * A slider is the one control on this screen that needs the POINTER POSITION and
+     * not just "was I pressed" — `UiAction` carries an intent, and an intent cannot say
+     * "sixty-one percent along". So `main.ts` resolves it through `fovAt` on both press
+     * and move, which is also what makes it draggable rather than tap-only.
+     */
+    this.fovTrack = { x: tx, y: ty, w: tw2 };
+
+    // ---- reset -------------------------------------------------------------
     const armed = this.resetArmed;
     const label = armed ? 'TAP AGAIN TO WIPE' : 'RESET PROGRESS';
     const sub = armed
       ? `${this.bankedStars} stars, every node, and the bestiary`
       : 'every star, node and fusion you have banked';
 
+    /**
+     * Below the slider, not beside it. These two y values used to be +20 and +48, from
+     * when reset was the only thing on the screen, and the slider landed straight on
+     * top of the subtitle. Stacked off the track's own bottom edge so adding a third
+     * setting moves one number.
+     */
+    const resetTop = ty + 40;
     ctx.font = '9px ui-monospace, monospace';
     ctx.fillStyle = armed ? 'rgba(255,138,138,0.85)' : 'rgba(232,217,176,0.5)';
-    ctx.fillText(sub, W / 2, H * 0.13 + 20);
+    ctx.fillText(sub, W / 2, resetTop);
 
     ctx.font = 'bold 11px ui-monospace, monospace';
     const rw = Math.max(ctx.measureText(label).width + 44, 190);
-    const rx = (W - rw) / 2, ry = H * 0.13 + 48;
+    const rx = (W - rw) / 2, ry = resetTop + 20;
     rr(ctx, rx, ry, rw, 32, 8);
     ctx.fillStyle = armed ? 'rgba(58,16,20,0.96)' : 'rgba(26,18,32,0.96)';
     ctx.fill();

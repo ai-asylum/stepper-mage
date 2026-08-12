@@ -143,9 +143,38 @@ interface Meta {
    * is: it is one of four values, not a count, and a save claiming PPU 3 would build a
    * three-texel wall rather than a small number.
    */
+  /**
+   * Vertical field of view, in degrees. The second DISPLAY setting, here for the same
+   * reason the texel density is: there is one of it, and `meta` is the thing that
+   * survives a run.
+   *
+   * Clamped on load rather than counted, because a save claiming 400 is a save that
+   * turns the dungeon inside out — see `clampFov`.
+   */
+  fov: number;
 }
 
 const META_KEY = 'stepper-mage.meta.v1';
+
+/**
+ * FOV, and why the default moved.
+ *
+ * 90 was the value the game shipped with, and it is too narrow for a grid: a body one
+ * tile diagonal from you sits almost exactly on the edge of a 90-degree frame, so the
+ * most common threat in the game — the thing standing at your shoulder — is the one you
+ * cannot see. 100 puts a full diagonal comfortably inside the frame.
+ *
+ * The range is deliberately narrow at the bottom. Below about 85 the diagonal problem
+ * comes back and no amount of leaning fixes it; above about 120 the walls shear badly
+ * enough at the frame edge that the corridors stop reading as square.
+ */
+const FOV_MIN = 85;
+const FOV_MAX = 120;
+const DEFAULT_FOV = 100;
+const clampFov = (v: unknown): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(FOV_MAX, Math.max(FOV_MIN, Math.round(n))) : DEFAULT_FOV;
+};
 
 /**
  * The loadout is a book, and the book holds elements only. Animate used to sit
@@ -235,12 +264,15 @@ function loadMeta(): Meta {
         bossKills: Array.isArray(m.bossKills)
           ? m.bossKills.filter((x: unknown) => typeof x === 'number') : [],
         pinned: isNodeId(m.pinned) ? m.pinned : null,
+        // A save from before the slider has no fov; `clampFov` reads undefined as the
+        // default, so an old save opens at the new 100 rather than at a NaN frustum.
+        fov: clampFov(m.fov),
       });
     }
   } catch { /* corrupt or unavailable storage: fall through to defaults */ }
   return applyTree({
     stars: 0, loadout: [...DEFAULT_LOADOUT], slots: 0, handSize: 0, best: 0, nodes: [],
-    giftedPage: null, pinned: null, bestiary: [], bossKills: [],
+    giftedPage: null, pinned: null, bestiary: [], bossKills: [], fov: DEFAULT_FOV,
   });
 }
 
@@ -251,6 +283,10 @@ function saveMeta(m: Meta): void {
 async function boot(): Promise<void> {
   const engine = new Engine({ internalHeight: 400, levels: 36 });
   const meta = loadMeta();
+  // Before anything is built, like the texel density: the frustum decides what the
+  // first frame frames, and applying it later would show one frame at the engine's
+  // own 90 before snapping to the player's.
+  engine.setFov(meta.fov);
   /**
    * The saved texel density, in force before anything is built.
    *
@@ -2406,6 +2442,11 @@ async function boot(): Promise<void> {
     // The bestiary is meta's, so it is handed over on every floor rather than once.
     hud.bestiary = meta.bestiary;
     hud.bankedStars = meta.stars;
+    // Handed over with the rest of meta's readouts, and on every floor for the same
+    // reason they are: the HUD is rebuilt per floor and a slider that drew 100 while the
+    // camera was at 115 would be the one control in the game that lies.
+    hud.fov = meta.fov;
+    hud.fovRange = [FOV_MIN, FOV_MAX];
     hud.pinGoal = pinReadout();
     hud.bindMap(() => ({ floor, x: stepper.x, y: stepper.y, dir: stepper.dir }));
     hud.loreFor = (id) => combat.lore(id);
@@ -3154,6 +3195,84 @@ async function boot(): Promise<void> {
 
   // ------------------------------------------------------------------- the loop
 
+  /**
+   * FREE LOOK and the ENEMY LEAN — two view-only yaw offsets. See where they are
+   * applied for why neither may touch `stepper.dir`.
+   *
+   * The peek is driven by the live drag in the world area, which is a channel that was
+   * genuinely free: a one-finger drag up there resolves entirely on RELEASE (see the
+   * `pointerup` swipe), and `pointermove` returned early for anything that did not
+   * start on the book. So peeking costs the movement gesture nothing — the same drag
+   * that looks around still steps or turns when you let go of it.
+   *
+   * Capped small on purpose. A look that could reach behind you would make facing
+   * ambiguous, and facing is the thing the reticle is a promise about.
+   */
+  const PEEK_YAW_MAX = 0.40;      // ~23 degrees
+  const PEEK_PITCH_MAX = 0.13;    // ~7.5 degrees
+  /** Screen px of drag that reaches the cap. */
+  const PEEK_SPAN = 220;
+  const PEEK_EASE = 11;
+  const LEAN_MAX = 0.11;          // ~6 degrees
+  const LEAN_EASE = 3.5;
+  /** How much of the angle to a body the camera actually takes. */
+  const LEAN_FRAC = 0.35;
+
+  let peekYaw = 0, peekPitch = 0, peekYawTarget = 0, peekPitchTarget = 0;
+  let enemyLean = 0;
+  /** Latched while the FOV knob is held, so a drag off the track keeps the grab. */
+  let fovDrag = false;
+
+  /**
+   * The one writer for field of view. Camera, save and HUD in the same call, because
+   * three places holding the number is three places for it to disagree — and the one
+   * that would have gone stale silently is the HUD, which draws the knob.
+   *
+   * Saves on every change rather than on release. A slider is dragged and then the
+   * player goes back to playing; there is no "done" event to hang a write on, and
+   * `saveMeta` is a single small `setItem`.
+   */
+  const setFov = (deg: number): void => {
+    meta.fov = clampFov(deg);
+    engine.setFov(meta.fov);
+    hud.fov = meta.fov;
+    saveMeta(meta);
+  };
+
+  /** Signed shortest way round from a to b, in radians. */
+  const angleDelta = (a: number, b: number): number => {
+    let d = (b - a) % (Math.PI * 2);
+    if (d > Math.PI) d -= Math.PI * 2;
+    if (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  };
+
+  /**
+   * Where the lean wants to be: a fraction of the angle to the nearest AWAKE hostile,
+   * clamped, and zero when there is nothing to lean at.
+   *
+   * Nearest rather than most dangerous, because the lean is answering "what is at my
+   * shoulder" and not "what should I worry about" — the second is the player's job and
+   * a camera with an opinion about it would be arguing with them.
+   */
+  const leanTarget = (): number => {
+    let best: Entity | null = null;
+    let bestD = Infinity;
+    for (const e of floor.entities) {
+      if (!e.alive || !e.hostile || !combat.isAlerted(e)) continue;
+      const d = Math.abs(e.sprite.tx - stepper.x) + Math.abs(e.sprite.ty - stepper.y);
+      if (d < bestD) { bestD = d; best = e; }
+    }
+    if (!best || bestD > THREAT_REACH + 2) return 0;
+    // Forward is (-sin yaw, -cos yaw) — see `Stepper.eye`, where the pullback pushes the
+    // eye BACKWARD along (+sin, +cos). So the yaw that faces an offset is atan2(-dx,-dz).
+    const dx = best.sprite.tx - stepper.x, dz = best.sprite.ty - stepper.y;
+    if (!dx && !dz) return 0;
+    const want = Math.atan2(-dx, -dz);
+    const off = angleDelta(stepper.yaw(), want) * LEAN_FRAC;
+    return Math.min(LEAN_MAX, Math.max(-LEAN_MAX, off));
+  };
+
   engine.onUpdate = (dt) => {
     /**
      * The tree's own clock. It has exactly two moving things — an affordable node's
@@ -3170,6 +3289,33 @@ async function boot(): Promise<void> {
 
     stepper.update(wdt);
     stepper.eye(eye, engine.time);
+
+    /**
+     * THE PEEK, eased toward whatever the live drag is asking for and back to zero the
+     * moment the finger leaves.
+     *
+     * Eased rather than assigned so that letting go SPRINGS BACK instead of cutting —
+     * a hard snap to centre on release reads as a bug, and the return is the half of
+     * the gesture that tells you the look was borrowed rather than a turn. Both ends go
+     * through the same lerp for that reason: there is one motion here, not a drag and a
+     * separate animation.
+     */
+    peekYaw += (peekYawTarget - peekYaw) * Math.min(1, wdt * PEEK_EASE);
+    peekPitch += (peekPitchTarget - peekPitch) * Math.min(1, wdt * PEEK_EASE);
+
+    /**
+     * THE LEAN toward whatever is closest and awake.
+     *
+     * Deliberately tiny (`LEAN_MAX`, about six degrees) and deliberately NOT a look-at:
+     * it takes a fraction of the angle to the body, so a creature at your shoulder
+     * nudges the frame enough to bring it into view without the camera ever appearing
+     * to act on its own. A full look-at would be the camera playing the game.
+     *
+     * Only ALERTED bodies pull. A sleeping creature across the room is scenery, and a
+     * camera that drifted toward it would be telling the player something the game has
+     * decided they do not know yet.
+     */
+    enemyLean += (leanTarget() - enemyLean) * Math.min(1, wdt * LEAN_EASE);
 
     /**
      * THE CUT: a brief look at the door you just opened, then straight back.
@@ -3312,7 +3458,21 @@ async function boot(): Promise<void> {
     const jx = Math.sin(engine.time * 61) * 0.05 * s;
     const jy = Math.sin(engine.time * 47 + 1.7) * 0.05 * s;
     engine.camera.position.set(eye.x + jx, eye.y + jy, eye.z);
-    engine.camera.rotation.set(PITCH, stepper.yaw(), stepper.roll() + jx * 0.6, 'YXZ');
+    /**
+     * FACING PLUS TWO OFFSETS, and the offsets are VIEW ONLY.
+     *
+     * `stepper.yaw()` is the game state — `inReach`, `targetsInView` and every reticle
+     * in the game are computed off `stepper.dir`, so the peek and the lean must never
+     * write to it. Turning your head is not turning around: you can lean far enough to
+     * see a body and still not be allowed to cast at it, which is the honest reading of
+     * a game where facing is a move you spend a turn on.
+     */
+    engine.camera.rotation.set(
+      PITCH + peekPitch,
+      stepper.yaw() + peekYaw + enemyLean,
+      stepper.roll() + jx * 0.6,
+      'YXZ',
+    );
 
     floor.update(wdt, engine.time, eye);
     fx.update(dt, engine.camera.quaternion);
@@ -3644,6 +3804,10 @@ async function boot(): Promise<void> {
       if (touches.size === 2) twoBegin(); else two = null;
       return;
     }
+    // The slider is grabbed on PRESS, so the knob is already under the thumb by the
+    // time the drag starts. Before the book test, because settings covers the book.
+    const grabbed = hud.fovAt(x, y);
+    if (grabbed !== null) { fovDrag = true; setFov(grabbed); return; }
     st = performance.now();
     px0 = x; py0 = y; lastX = x; lastT = st; vx = 0;
     deniedThisDrag = false;
@@ -3660,7 +3824,48 @@ async function boot(): Promise<void> {
       treeScreen.scrollTo(treeScroll0 - dy);
       return;
     }
+    if (fovDrag) {
+      // Clamped inside `fovAt`, so a thumb that slides past the end of the track pins
+      // to the end rather than dropping the knob.
+      const v = hud.fovAt(local(e).x, hud.fovTrack ? hud.fovTrack.y : 0);
+      if (v !== null) setFov(v);
+      return;
+    }
     if (twoClaimed) return;
+    /**
+     * THE PEEK: a world-area drag turns your head without turning you.
+     *
+     * Placed above the `!onBook` return rather than inside it, because this is the one
+     * gesture that wants the drag WHILE it is happening — everything else in the world
+     * area is resolved on release, which is exactly why this channel was free. Sign is
+     * inverted on both axes so the world follows the finger: drag left and you look
+     * left, which is the grab-the-scenery reading rather than the push-the-camera one.
+     */
+    /**
+     * `touches.has` IS the "is this pointer held down" test — the map is filled on
+     * `pointerdown` and emptied on `pointerup`. Without it a MOUSE peeks on hover, because
+     * `pointermove` fires for a mouse whether or not a button is down, and the camera
+     * drifts around after the cursor with nothing pressed. Every other branch in this
+     * handler was accidentally safe from that: they all sit behind `onBook`, which is only
+     * ever set on a press.
+     */
+    /**
+     * TWO tests for "is this held", and both are wanted.
+     *
+     * `touches.has` is the codebase's own answer and covers touch. `e.buttons` is the
+     * belt: a mouse released OUTSIDE the stage never delivers `pointerup` here, which
+     * would leave the id in `touches` and put hover-drift straight back. `buttons` is 1
+     * during contact for touch as well, so the pair costs nothing and neither is
+     * redundant.
+     */
+    if (touches.has(e.pointerId) && e.buttons !== 0 && !onBook && !dead && !treeOpen
+        && !hud.settingsOpen && !hud.offers) {
+      const p = local(e);
+      peekYawTarget = Math.max(-PEEK_YAW_MAX, Math.min(PEEK_YAW_MAX,
+        ((p.x - px0) / PEEK_SPAN) * PEEK_YAW_MAX));
+      peekPitchTarget = Math.max(-PEEK_PITCH_MAX, Math.min(PEEK_PITCH_MAX,
+        ((p.y - py0) / PEEK_SPAN) * PEEK_PITCH_MAX));
+    }
     if (!onBook || dead) return;
     const { x, y } = local(e);
     const now = performance.now();
@@ -3683,6 +3888,10 @@ async function boot(): Promise<void> {
   });
 
   stage.addEventListener('pointerup', (e) => {
+    // The head comes back level whatever the release turns out to mean. Released here
+    // and not in the swipe branch below, because a drag that resolves to nothing at all
+    // still has to give the view back.
+    peekYawTarget = 0; peekPitchTarget = 0;
     const { x, y } = local(e);
     if (touches.has(e.pointerId)) touches.set(e.pointerId, { x, y });
     if (two?.ids.includes(e.pointerId)) twoEnd();
@@ -3697,7 +3906,16 @@ async function boot(): Promise<void> {
       if (treeMoved < 10) actTree(treeScreen.hit(x, y));
       return;
     }
+    if (fovDrag) { fovDrag = false; return; }
     if (claimed) return;
+    /**
+     * SETTINGS EATS THE TAP, and eats the swipe with it.
+     *
+     * Without this a drag over the panel still reached the swipe branch at the bottom of
+     * this handler and stepped the player through a dungeon they cannot see. The panel is
+     * a full-screen fill, so anything landing on it is meant for it.
+     */
+    if (hud.settingsOpen) { act(hud.hit(x, y)); return; }
     // A finished run resolves its tap through the HUD, so the run-end card's door to
     // the tree is a real control — and `act` sends every other tap the same way.
     if (dead) { act(hud.hit(x, y)); return; }
@@ -3730,6 +3948,9 @@ async function boot(): Promise<void> {
     touches.delete(e.pointerId);
     if (touches.size === 0) { twoClaimed = false; two = null; }
     onBook = false; treeDown = false; book.dragEnd(0);
+    // A cancelled pointer never reaches `pointerup`, so without this the head stays
+    // turned for the rest of the run.
+    peekYawTarget = 0; peekPitchTarget = 0;
   });
   // Desktop's scroll, since the tree is taller than any window it will be read in.
   stage.addEventListener('wheel', (e) => {
