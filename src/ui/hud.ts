@@ -25,6 +25,8 @@ import { drawBeltIcon } from './beltIcons';
 import { BELT_ENABLED } from '../flags';
 import type { HitFx } from '../game/hitfx';
 import { Pix, hex } from '../art/pixel';
+import { drawPortrait, PORTRAIT_ASPECT } from './portraits';
+import type { Wizard } from '../game/wizards';
 import { drawCentered, CELL_H } from '../art/bitfont';
 import * as THREE from 'three';
 import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
@@ -138,6 +140,13 @@ const OFFER_LABEL: Record<string, string> = {
 
 export interface AltarOffer {
   kind: AltarOfferKind;
+  /**
+   * Portrait asset id, when this card is about a PERSON rather than a page.
+   *
+   * Optional because it is only ever set by the roster screen — an altar's offers are
+   * pages and heals, and giving those a face would be the card claiming to be somebody.
+   */
+  portrait?: string;
   /**
    * The page this offer is about, or `''` when it is about nothing in the book
    * (heal, stars).
@@ -321,6 +330,25 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 /** Side of the settings cog, in HUD px. */
 const COG_SIZE = 18;
 /**
+ * The in-game portrait beside the health bar. Small — it is a reminder of who you are,
+ * not a picture to look at, and the 66x98 source crops to this aspect without losing any
+ * of the face (see `drawPortrait`).
+ */
+const PORTRAIT_W = 24;
+/** Derived from the art's own aspect, so the whole bust fits with nothing cropped. */
+const PORTRAIT_H = Math.round(PORTRAIT_W / PORTRAIT_ASPECT);
+/** Top of the portrait frame. Above the bar's line, clear of the depth label. */
+const PORTRAIT_TOP = 10;
+/**
+ * Left edge for everything in the top-left stack — the floor name, the wizard's name and
+ * the health bar — so all three move together when a portrait takes the corner.
+ *
+ * One function rather than three literals because the collision this fixes was exactly
+ * three places independently believing they owned x = 12.
+ */
+const TEXT_LEFT = (hasPortrait: boolean): number =>
+  hasPortrait ? 12 + PORTRAIT_W + 6 : 12;
+/**
  * Right edge the star readout aligns to, derived from the cog rather than written
  * twice. The two used to share `W - 12` and the cog would have sat on the count.
  */
@@ -482,6 +510,11 @@ export class Hud {
   fovRange: readonly [number, number] = [85, 120];
   /** Track geometry from the last draw, so a drag can be resolved against it. */
   fovTrack: { x: number; y: number; w: number } | null = null;
+  /**
+   * Who the player is this run. Null only before a wizard has been chosen, which is the
+   * one moment the vitals block has no name to put over the bar.
+   */
+  wizard: Wizard | null = null;
 
   /**
    * Where the compass points, or null when nothing does.
@@ -1295,7 +1328,9 @@ export class Hud {
     // Depth AND the floor's name, permanently. A name that only ever appeared as a
     // fading shout is a name you cannot go back and read.
     const depth = `DEPTH ${ROMAN[Math.min(ROMAN.length, Math.max(1, this.state.depth)) - 1]}`;
-    ink(this.floorName ? `${depth} — ${this.floorName}` : depth, 12, 12,
+    // Shifted right by the portrait when there is one — the portrait owns the corner and
+    // this used to draw straight through it.
+    ink(this.floorName ? `${depth} — ${this.floorName}` : depth, TEXT_LEFT(!!this.wizard), 12,
       'rgba(240,228,196,0.82)');
 
     ctx.textAlign = 'right';
@@ -3081,14 +3116,58 @@ export class Hud {
 
   private drawVitals(ctx: CanvasRenderingContext2D, W: number): void {
     // Top-left, under the depth label. Anchoring this to the book put it right
-    // where the torn pages fan out.
-    const y = 28;
-    const bw = W * 0.34;
+    // where the torn pages fan out. Dropped 4px to make a line for the wizard's name,
+    // which used to draw straight across the bar.
+    const y = this.wizard ? 32 : 28;
+
+    /**
+     * THE PORTRAIT, left of the bar, with the name over it.
+     *
+     * Here rather than anywhere else because this corner is already the answer to "how
+     * am I doing" — and WHO you are belongs beside HOW MUCH OF YOU IS LEFT. It is also
+     * the one place on screen the player is already looking when things are going badly,
+     * which is when a character is worth being reminded of.
+     *
+     * The frame is drawn whether or not the image has decoded (see `drawPortrait`), so a
+     * portrait that arrives two frames late fills a hole instead of moving the layout.
+     */
+    const w = this.wizard;
+    const px = 12, pw = PORTRAIT_W, ph = PORTRAIT_H;
+    if (w) {
+      // Top of the corner, ABOVE the bar's own line, because the depth label owns y=12
+      // at x=12 and the two were drawing over each other. `drawTopBar` moves the floor
+      // name right by the same width — see `TEXT_LEFT`.
+      const py = PORTRAIT_TOP;
+      rr(ctx, px, py, pw, ph, 3);
+      ctx.fillStyle = 'rgba(8,5,11,0.9)';
+      ctx.fill();
+      ctx.save();
+      ctx.beginPath();
+      rr(ctx, px + 1, py + 1, pw - 2, ph - 2, 2);
+      ctx.clip();
+      drawPortrait(ctx, w.portrait, px + 1, py + 1, pw - 2, ph - 2);
+      ctx.restore();
+      rr(ctx, px, py, pw, ph, 3);
+      ctx.strokeStyle = 'rgba(255,207,92,0.45)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // The name sits between the floor name and the bar, so the corner reads top to
+      // bottom as WHERE, WHO, HOW MUCH OF YOU IS LEFT.
+      ctx.font = 'bold 8px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(255,207,92,0.9)';
+      ctx.fillText(w.name, TEXT_LEFT(true), 21);
+    }
+
+    // The bar starts clear of the portrait, and its width comes down by the same amount
+    // so the right-hand end stays exactly where it has always been.
+    const bx = TEXT_LEFT(!!w);
+    const bw = W * 0.34 - (bx - 12);
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    rr(ctx, 12, y, bw, 9, 4); ctx.fill();
+    rr(ctx, bx, y, bw, 9, 4); ctx.fill();
     const frac = Math.max(0, this.state.hp / this.state.maxHp);
     ctx.fillStyle = frac > 0.34 ? '#c9382a' : '#ff5a3c';
-    rr(ctx, 13, y + 1, Math.max(0, (bw - 2) * frac), 7, 3); ctx.fill();
+    rr(ctx, bx + 1, y + 1, Math.max(0, (bw - 2) * frac), 7, 3); ctx.fill();
     /**
      * THE OTHER HALF OF THE TELEGRAPH: the bar itself pulses while anything can
      * reach you, and says how many.
@@ -3105,21 +3184,19 @@ export class Hud {
       ctx.globalAlpha = 0.45 + pulse * 0.55;
       ctx.strokeStyle = '#ff3a2a';
       ctx.lineWidth = 1.5;
-      rr(ctx, 12, y, bw, 9, 4); ctx.stroke();
+      rr(ctx, bx, y, bw, 9, 4); ctx.stroke();
       ctx.globalAlpha = 1;
     }
 
+    const hp = `${Math.max(0, this.state.hp)}/${this.state.maxHp}`;
     ctx.font = '8px ui-monospace, monospace';
     ctx.fillStyle = PARCH;
-    ctx.fillText(`${Math.max(0, this.state.hp)}/${this.state.maxHp}`, 14, y + 12);
+    ctx.fillText(hp, bx + 2, y + 12);
     if (n > 0) {
-      const label = `${n} IN REACH`;
       ctx.font = 'bold 8px ui-monospace, monospace';
       ctx.fillStyle = '#ff6a55';
-      ctx.fillText(label, 14 + ctx.measureText(`${Math.max(0, this.state.hp)}/${this.state.maxHp}`).width + 10, y + 12);
+      ctx.fillText(`${n} IN REACH`, bx + 2 + ctx.measureText(hp).width + 10, y + 12);
     }
-    void W;
-
   }
 
   /**
@@ -3441,6 +3518,36 @@ export class Hud {
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(this.offerCanvas(o), x, top, cardW, cardH);
       if (sel) ctx.restore();
+
+      /**
+       * A FACE, over the card's emblem, when the card is a person.
+       *
+       * Drawn on top of the authored card rather than baked into `offerCanvas` because
+       * the card art is generated from the SPELL — the roster screen is the one place
+       * that knows a page has a person attached, and pushing that knowledge down into
+       * the card generator would put wizards inside the altar's own offers.
+       *
+       * It lands on the emblem's footprint, so the composition of the card is unchanged:
+       * title above, portrait where the sigil was, page name and reason below.
+       */
+      if (o.portrait) {
+        const iw = Math.round(cardW * 0.62);
+        const ih = Math.round(cardH * 0.44);
+        const ix = Math.round(x + (cardW - iw) / 2);
+        const iy = Math.round(top + cardH * 0.19);
+        ctx.save();
+        ctx.beginPath();
+        rr(ctx, ix, iy, iw, ih, 2);
+        ctx.fillStyle = 'rgba(12,8,14,0.95)';
+        ctx.fill();
+        ctx.clip();
+        drawPortrait(ctx, o.portrait, ix, iy, iw, ih);
+        ctx.restore();
+        rr(ctx, ix, iy, iw, ih, 2);
+        ctx.strokeStyle = 'rgba(60,40,24,0.9)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
 
       /**
        * The tag above and the body below, both centred on the card's own column.

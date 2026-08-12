@@ -72,6 +72,19 @@ FRAMING = {
         "IMPORTANT: a single centered emblem on a plain white background, flat "
         "front-on view, no perspective, no scene, no background elements."
     ),
+    # A party portrait, Baldur's Gate 1 style. The one kind in this file that is NOT a
+    # billboard in the world — it is a picture of a person, so it is the only framing
+    # allowed to crop the subject, and it crops deliberately: head and shoulders, the
+    # shoulders cut by the bottom edge. Full body at portrait size is a figure the size
+    # of a thumbnail with no face in it, which is the opposite of what a portrait is for.
+    "portrait": (
+        "IMPORTANT: a HEAD AND SHOULDERS BUST PORTRAIT in a tall vertical frame, in the "
+        "style of a Baldur's Gate 1 character portrait. The head fills the upper two "
+        "thirds; the shoulders are cropped by the bottom edge. Three-quarter view with "
+        "the face turned slightly toward the viewer, dramatic lighting from one side, "
+        "plain dark neutral background with no scene and no props. NOT a full body, no "
+        "hands, no weapon, no staff."
+    ),
 }
 
 

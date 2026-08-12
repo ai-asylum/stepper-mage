@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Engine } from './core/engine';
 import { Floor, isCastableObject, type Entity } from './game/floor';
 import { Stepper, PITCH } from './game/stepper';
+import { WIZARD_BY_ID, type Wizard } from './game/wizards';
 import {
   Combat, DENIAL_STATUSES, targetsInView, MAX_RANK, type PlayerState,
 } from './game/combat';
@@ -1883,6 +1884,12 @@ async function boot(): Promise<void> {
    * Where this run begins. 1 until the mouth's chooser says otherwise.
    */
   let startDepth = 1;
+  /**
+   * Who this run is. Held here rather than on the HUD because the HUD is rebuilt on every
+   * floor — see `enterFloor` — and the wizard is a fact about the RUN, so the per-floor
+   * rebuild reads it back from here rather than the identity being lost at the stairs.
+   */
+  let startWizard: Wizard | null = null;
 
   /** Wait for the open chooser to be answered. The mouth is the only place that
    *  blocks on one — everywhere else the modal simply owns the taps until it closes. */
@@ -1972,9 +1979,19 @@ async function boot(): Promise<void> {
     return new Rng(`${runSeed}-start-page`).sample(pool, meta.slots);
   };
 
+  /**
+   * The page you begin the run with — and therefore WHO YOU ARE.
+   *
+   * The one choke point for both, deliberately. A wizard IS their starting element (see
+   * `wizards.ts`), so the identity is derived from the page here rather than stored
+   * alongside it; there is no way to end up as Ash holding Frost, because there is no
+   * second thing to keep in step.
+   */
   const grantStartPage = (id: string): void => {
     state.ranks[id] = 1;
     learnPage(id);
+    startWizard = WIZARD_BY_ID[id] ?? null;
+    hud.wizard = startWizard;
   };
 
   const offerStartPage = (): boolean => {
@@ -1986,16 +2003,29 @@ async function boot(): Promise<void> {
       grantStartPage(menu[0] ?? DEFAULT_LOADOUT[0]);
       return false;
     }
-    hud.offerTitle = 'WHICH PAGE DO YOU CARRY';
+    /**
+     * WHO ARE YOU, not which page.
+     *
+     * Exactly the same choice and exactly the same data — a wizard IS their starting
+     * element — but asked as a person. The mechanical version of this question could not
+     * answer "what am I supposed to be doing", because "Frost: freezes the target solid"
+     * tells you what a page does and nothing about why you are holding it.
+     */
+    hud.offerTitle = 'WHO GOES DOWN';
     hud.offerSubtitle = 'one only · the rest are found below';
     hud.offers = menu.map((id) => {
       const sp = SPELL_BY_ID[id];
+      const wz = WIZARD_BY_ID[id];
       return {
-        // No tag. The same three words over all three cards labelled nothing — the
-        // subtitle already says you carry one — and `hud` draws nothing for an
-        // empty one.
-        kind: 'startPage' as const, id, name: sp.name, tag: '',
-        colour: sp.colour, detail: sp.effect,
+        kind: 'startPage' as const, id,
+        // The NAME is the person and the tag is their epithet; the page's own name has
+        // moved into the detail line, because the element is now a fact about them
+        // rather than the thing being chosen.
+        name: wz ? wz.name : sp.name,
+        tag: wz ? wz.title.replace(/^the /, '').toUpperCase() : '',
+        colour: sp.colour,
+        detail: wz ? `${sp.name}. ${wz.reason}` : sp.effect,
+        portrait: wz?.portrait,
         cost: null, amount: 0, rank: 1, toRank: 0, maxRank: MAX_RANK, golden: false,
       };
     });
@@ -2447,6 +2477,9 @@ async function boot(): Promise<void> {
     // camera was at 115 would be the one control in the game that lies.
     hud.fov = meta.fov;
     hud.fovRange = [FOV_MIN, FOV_MAX];
+    // Re-seeded per floor with the rest of the run's readouts, so the portrait beside the
+    // health bar survives the stairs.
+    hud.wizard = startWizard;
     hud.pinGoal = pinReadout();
     hud.bindMap(() => ({ floor, x: stepper.x, y: stepper.y, dir: stepper.dir }));
     hud.loreFor = (id) => combat.lore(id);

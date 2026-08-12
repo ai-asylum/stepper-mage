@@ -1052,6 +1052,57 @@
       "colors": 24,
       "seed": 9104,
       "prompt": "A CLUSTER OF THORN SPIKES: sparse, tall, spear-straight woody stalks driven up out of the stone at angles, each one a rigid yellow spine tipped with a hard point, very few leaves. Open and see-through between the stalks, more a bed of spikes than a bush. Ochre and pale gold, hard and dry. Reads as a trap you would not step into. Knee-to-waist high, standing on bare dungeon stone. Dark shadowed gaps deep inside it so it reads as a volume and not a flat panel. NOT woven, NOT a basket, NOT a lattice, NOT a fence, no repeating pattern, no border."
+    },
+    {
+      "$comment": "THE ROSTER. One portrait per page element — see src/game/wizards.ts. Kind `portrait` is the only framing in the pipeline that crops its subject, because a full body at thumbnail size is a portrait with no face in it. Each prompt carries the character's REASON, not just their element: Ash is hate, Kela is a hunter, Zel is greed, Vane is delight, Vess is dying, Yew is late."
+    },
+    {
+      "id": "portrait_ash",
+      "kind": "portrait",
+      "height": 96,
+      "colors": 32,
+      "seed": 20001,
+      "prompt": "ASH THE FIREWIZARD: a lean young man with a hard closed face and burn scars up the left side of his jaw. Cropped black hair singed short. WARM TAN SKIN. Ember-orange key light on his left cheek, and a COOL TEAL-BLUE rim light on his right shoulder and hair from behind. He wears a DEEP CRIMSON mantle lining over blackened leather, with a BRASS buckle catching a highlight. Grim and patient. Full colour, warm and cool together, not a single-hue image."
+    },
+    {
+      "id": "portrait_kela",
+      "kind": "portrait",
+      "height": 96,
+      "colors": 32,
+      "seed": 20002,
+      "prompt": "KELA THE WINTERMAIDEN: a severe woman in her thirties, a demon hunter, pale grey eyes and a thin scar across her nose. White-blonde hair pulled back tight, frost on the ends. RUDDY WARM SKIN, wind-burnt cheeks and nose. She wears a DEEP INDIGO-BLUE hunting coat with OXBLOOD RED leather straps and a small GREEN GLASS amulet at her throat. Pale blue frost light from the left, warm amber lamplight on her right cheek. Full colour, warm and cool together, not a single-hue image."
+    },
+    {
+      "id": "portrait_zel",
+      "kind": "portrait",
+      "height": 96,
+      "colors": 32,
+      "seed": 20003,
+      "prompt": "ZEL THE STORMWRIGHT: a wiry sharp-featured young woman with a hungry delighted grin, wild dark hair standing half on end with static. Thin WHITE-VIOLET arcs of electricity crawl between COPPER rings in her hair and a copper torc at her throat. WARM OLIVE SKIN. She wears a PLUM-PURPLE coat over a MUSTARD YELLOW collar. Violet key light, warm copper and gold accents, deep blue shadow. Full colour, not a single-hue image."
+    },
+    {
+      "id": "portrait_vane",
+      "kind": "portrait",
+      "height": 96,
+      "colors": 32,
+      "seed": 20004,
+      "prompt": "VANE THE WINDWALKER: a cheerful weather-tanned young man mid-laugh, blonde hair and a long TEAL scarf blown sideways out of frame by wind. Bright BLUE eyes, warm sun-browned skin. He wears a SAND-CREAM travelling shirt with a BURNT ORANGE sash. Warm pale daylight from the upper left, cool blue shadow. The only person here having a good time. Full colour, not a single-hue image."
+    },
+    {
+      "id": "portrait_vess",
+      "kind": "portrait",
+      "height": 96,
+      "colors": 32,
+      "seed": 20005,
+      "prompt": "VESS THE PLAGUEBOUND: a gaunt man with sunken cheeks, visibly dying and entirely calm about it. His skin has a GREY-GREEN pallor with BLACK creeping veins up his throat. He wears a rich DEEP TEAL physician's coat with a BRIGHT SAFFRON YELLOW silk scarf knotted at the throat and BRASS buckles — strongly coloured clothing against his grey skin. Strong WARM AMBER lantern light on the right of his face, COOL TEAL shadow on the left. TEAL AND GOLD complementary colour scheme, vivid and saturated, definitely NOT a grey or monochrome image."
+    },
+    {
+      "id": "portrait_yew",
+      "kind": "portrait",
+      "height": 96,
+      "colors": 32,
+      "seed": 20006,
+      "prompt": "YEW THE GREENWARDEN: a weathered older man, deeply lined RUDDY SUN-BROWNED face, short grey beard. VIVID EMERALD GREEN moss and a bright living shoot in his grey hair, with several clearly visible SCARLET RED berries. He wears a strong DEEP BLUE wool cloak over a WARM OCHRE-GOLD shirt — strongly coloured clothing. Warm GOLDEN dappled light from the upper right, COOL BLUE shadow on the left. BLUE AND GOLD complementary colour scheme with green and red accents, vivid and saturated, definitely NOT an olive or monochrome image."
     }
   ]
 }
