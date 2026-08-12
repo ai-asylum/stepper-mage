@@ -2812,6 +2812,26 @@ async function boot(): Promise<void> {
     hud.runEnd = { kind, depth: state.depth, earned };
   };
 
+  /**
+   * WIPE THE SAVE, on the second tap.
+   *
+   * Arms on the first press and only fires on the second, because there is no undo
+   * behind it — `META_KEY` is the single place every banked star, owned node and
+   * recorded fusion lives, and once it is gone the run history is gone with it.
+   *
+   * It RELOADS rather than resetting the live objects. Almost everything derived from
+   * the save is read once at boot — the loadout, the derived hand size and slot count,
+   * the gifted page, the texel density — so resetting in place would mean re-deriving
+   * all of it correctly from here and would quietly rot the day another field joined
+   * the save. The reload is the same path a first-ever launch takes, which makes "reset"
+   * mean exactly "be a new player" with no second definition to keep in step.
+   */
+  const resetProgress = (): void => {
+    if (!hud.resetArmed) { hud.resetArmed = true; return; }
+    try { localStorage.removeItem(META_KEY); } catch { /* private mode: nothing saved */ }
+    location.reload();
+  };
+
   const checkDeath = (): void => {
     if (state.hp > 0 || dead) return;
     engine.setDesat(0.85);
@@ -3471,6 +3491,16 @@ async function boot(): Promise<void> {
         break;
       case 'cycle': cycleTarget(); break;
       case 'bestiary': hud.bestiaryOpen = !hud.bestiaryOpen; break;
+      /**
+       * Toggling ALWAYS disarms the reset row. A panel reopened later must not still
+       * be holding a tap from a minute ago, or the second half of a confirmation the
+       * player abandoned lands on whatever they press first next time.
+       */
+      case 'settings':
+        hud.settingsOpen = !hud.settingsOpen;
+        hud.resetArmed = false;
+        break;
+      case 'resetProgress': resetProgress(); break;
       case 'altar': takeFromAltar(a.entity); break;
       case 'harvest': harvestFrom(a.entity); break;
       case 'belt': takeIngredient(a.id); break;
@@ -3579,7 +3609,7 @@ async function boot(): Promise<void> {
    */
   const UI_CONTROLS: ReadonlySet<string> = new Set([
     'cast', 'clear', 'descend', 'cycle', 'altar', 'chest', 'harvest',
-    'belt', 'card', 'tree', 'bestiary',
+    'belt', 'card', 'tree', 'bestiary', 'settings', 'resetProgress',
   ]);
 
   /**

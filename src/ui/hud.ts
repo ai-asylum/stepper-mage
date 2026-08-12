@@ -181,6 +181,14 @@ export type UiAction =
   | { kind: 'cycle' }
   /** Open or close the bestiary. Free, always — see `Hud.drawBestiary`. */
   | { kind: 'bestiary' }
+  /** Open or close the settings panel — see `Hud.drawSettings`. */
+  | { kind: 'settings' }
+  /**
+   * Wipe the save. Fires only on the SECOND tap of the reset row, because the first
+   * one arms it — see `Hud.resetArmed`. A single tap that deletes every star a player
+   * has ever banked is not a control, it is a trap.
+   */
+  | { kind: 'resetProgress' }
   | { kind: 'offer'; offer: AltarOffer }
   | { kind: 'altar'; entity: Entity }
   | { kind: 'chest'; entity: Entity }
@@ -309,6 +317,14 @@ const SAID_S = 3.2;
  * old midpoint's number.
  */
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+
+/** Side of the settings cog, in HUD px. */
+const COG_SIZE = 18;
+/**
+ * Right edge the star readout aligns to, derived from the cog rather than written
+ * twice. The two used to share `W - 12` and the cog would have sat on the count.
+ */
+const STARS_RIGHT = (W: number): number => W - COG_SIZE - 22;
 
 /** Rounded rect path helper — the UI's one shape. */
 export function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -448,6 +464,15 @@ export class Hud {
    */
   bestiary: readonly string[] = [];
   bestiaryOpen = false;
+  settingsOpen = false;
+  /**
+   * Has the reset row been tapped once already?
+   *
+   * Lives on the HUD rather than in `main.ts` because it is a property of the PANEL
+   * being open: closing settings has to disarm it, and the only thing that knows the
+   * panel closed is the thing that draws it.
+   */
+  resetArmed = false;
 
   /**
    * Where the compass points, or null when nothing does.
@@ -780,6 +805,7 @@ export class Hud {
     this.drawMiniMap(ctx, W);
     // Above the run-end return below, so the one control that is not about the run
     // stays reachable on a run that has ended.
+    this.drawSettingsCog(ctx, W);
 
     /**
      * A finished run keeps its world and its readouts and loses its controls.
@@ -817,6 +843,10 @@ export class Hud {
     if (this.descendReady) this.drawDescend(ctx, W);
     if (this.offers) this.drawOffers(ctx, W, H);
     if (this.bestiaryOpen) this.drawBestiary(ctx, W, H);
+    // Last, so it covers everything including the bestiary. The cog is hidden while
+    // the bestiary is up, so the two can never both be open — but drawing order is
+    // the wrong place to rely on that.
+    if (this.settingsOpen) this.drawSettings(ctx, W, H);
   }
 
   /**
@@ -1261,14 +1291,55 @@ export class Hud {
 
     ctx.textAlign = 'right';
     // Run total plus the bank. Showing only the run made banked stars look lost.
+    //
+    // Right edge is STARS_RIGHT rather than W - 12 because the cog now owns the
+    // corner. Pulling the readout in was the right way round: the star count is the
+    // number the player watches and the cog is a thing they press twice a session, so
+    // the count keeps the position it always had relative to the minimap under it and
+    // only gives up the sliver it was never using.
     const total = this.bankedStars + this.state.stars;
-    ink(`✦ ${total}`, W - 12, 12, GOLD);
+    ink(`✦ ${total}`, STARS_RIGHT(W), 12, GOLD);
     if (this.state.stars > 0) {
       ctx.font = '8px ui-monospace, monospace';
-      ink(`+${this.state.stars} this run`, W - 12, 23, 'rgba(255,207,92,0.7)');
+      ink(`+${this.state.stars} this run`, STARS_RIGHT(W), 23, 'rgba(255,207,92,0.7)');
       ctx.font = '9px ui-monospace, monospace';
     }
     ctx.textAlign = 'left';
+  }
+
+  /**
+   * THE COG, in the top-right corner above the minimap.
+   *
+   * Placed there because it is the one piece of chrome that is not about the run: the
+   * depth name, the star count, the minimap and the bar all answer "how is this run
+   * going", and a control that can end every run you have ever banked does not belong
+   * in that row. The corner above the map is the only spot on the screen that is
+   * permanently free of the world and of the book.
+   *
+   * Hidden while a modal is up (`offers`, the bestiary, the tree). A cog drawn over
+   * the altar's own card would be a second thing to press on a screen whose whole job
+   * is asking one question.
+   */
+  private drawSettingsCog(ctx: CanvasRenderingContext2D, W: number): void {
+    if (this.offers || this.bestiaryOpen) return;
+    const S = COG_SIZE;
+    const x = W - S - 10, y = 6;
+    rr(ctx, x, y, S, S, 5);
+    ctx.fillStyle = this.settingsOpen ? 'rgba(255,207,92,0.22)' : 'rgba(14,9,16,0.7)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,207,92,0.45)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.font = '11px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = GOLD;
+    ctx.fillText('⚙', x + S / 2, y + S / 2 + 0.5);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    // Padded hit box. The drawn cog is 18px and a thumb is not, and this one sits in
+    // the screen corner where a miss has nothing else to land on.
+    this.hits.push({ rect: [x - 8, y - 6, S + 16, S + 14], action: { kind: 'settings' } });
   }
 
   /**
@@ -1851,6 +1922,68 @@ export class Hud {
     ctx.fillText(label, W / 2, by + 15);
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     this.hits.push({ rect: [bx, by, tw, 30], action: { kind: 'bestiary' } });
+  }
+
+  /**
+   * SETTINGS. One option today, and built as a list so the second one costs nothing.
+   *
+   * The reset row is a TWO-TAP control and the two states say different sentences:
+   * unarmed it names what it does, armed it names what you lose. That is deliberately
+   * not a yes/no dialog — a dialog is dismissed by reflex, where a row that has visibly
+   * changed under your thumb has to be read. The count of what is about to go is in the
+   * armed label, because "reset progress" is abstract and "31 stars" is not.
+   */
+  private drawSettings(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    ctx.fillStyle = 'rgba(8,5,12,0.92)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 13px ui-monospace, monospace';
+    ctx.fillStyle = GOLD;
+    ctx.fillText('SETTINGS', W / 2, H * 0.13);
+
+    const armed = this.resetArmed;
+    const label = armed ? 'TAP AGAIN TO WIPE' : 'RESET PROGRESS';
+    const sub = armed
+      ? `${this.bankedStars} stars, every node, and the bestiary`
+      : 'every star, node and fusion you have banked';
+
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.fillStyle = armed ? 'rgba(255,138,138,0.85)' : 'rgba(232,217,176,0.5)';
+    ctx.fillText(sub, W / 2, H * 0.13 + 20);
+
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    const rw = Math.max(ctx.measureText(label).width + 44, 190);
+    const rx = (W - rw) / 2, ry = H * 0.13 + 48;
+    rr(ctx, rx, ry, rw, 32, 8);
+    ctx.fillStyle = armed ? 'rgba(58,16,20,0.96)' : 'rgba(26,18,32,0.96)';
+    ctx.fill();
+    ctx.strokeStyle = armed ? 'rgba(255,110,110,0.9)' : 'rgba(255,207,92,0.55)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = armed ? '#ffdede' : '#fff4dc';
+    ctx.fillText(label, W / 2, ry + 16);
+    ctx.textBaseline = 'top';
+    this.hits.push({ rect: [rx, ry, rw, 32], action: { kind: 'resetProgress' } });
+
+    // CLOSE sits where the bestiary's does, because they are the same kind of screen
+    // and a player who has closed one has learnt where the other closes.
+    const close = 'CLOSE';
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    const tw = ctx.measureText(close).width + 40;
+    const bx = (W - tw) / 2, by = H - 76;
+    rr(ctx, bx, by, tw, 30, 15);
+    ctx.fillStyle = 'rgba(26,18,32,0.96)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,207,92,0.7)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff4dc';
+    ctx.fillText(close, W / 2, by + 15);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    this.hits.push({ rect: [bx, by, tw, 30], action: { kind: 'settings' } });
   }
 
   private drawCompass(ctx: CanvasRenderingContext2D, W: number): void {
