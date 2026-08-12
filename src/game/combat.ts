@@ -989,6 +989,14 @@ export class Combat {
   private async applyCast(
     cast: ResolvedCast, t: Entity, primary: boolean, targets: readonly Entity[],
   ): Promise<void> {
+    /**
+     * A CAPTIVE TAKES NO DAMAGE, EVER, and casting at one does nothing at all.
+     *
+     * They are freed by a tap and by nothing else — there is no binding to break and no
+     * element to find. This guard exists only so a blast that happens to reach the room cannot
+     * kill the person you came to rescue.
+     */
+    if (t.kind === 'captive') return;
     let damage = cast.damage;
     const c = this.combatants.get(t);
     let glow = cast.colour;
