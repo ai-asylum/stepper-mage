@@ -165,6 +165,15 @@ interface Meta {
    * nobody would have nothing selectable and no way to start.
    */
   wizards: WizardElement[];
+  /**
+   * Invert every movement gesture: swipes, the two-finger pair, and the look-drag.
+   *
+   * ONE flag for all of them rather than one per axis. The gestures were flipped because
+   * they disagreed with each other, and a per-axis setting would just let a player rebuild
+   * that disagreement — the only sane choice here is "the world follows my finger" or "my
+   * finger drives the camera", and that is a single preference.
+   */
+  invertGestures: boolean;
 }
 
 const META_KEY = 'stepper-mage.meta.v1';
@@ -297,13 +306,14 @@ function loadMeta(): Meta {
         // default, so an old save opens at the new 100 rather than at a NaN frustum.
         fov: clampFov(m.fov),
         wizards: sanitizeWizards(m.wizards),
+        invertGestures: m.invertGestures === true,
       });
     }
   } catch { /* corrupt or unavailable storage: fall through to defaults */ }
   return applyTree({
     stars: 0, loadout: [...DEFAULT_LOADOUT], slots: 0, handSize: 0, best: 0, nodes: [],
     giftedPage: null, pinned: null, bestiary: [], bossKills: [], fov: DEFAULT_FOV,
-    wizards: [FIRST_WIZARD],
+    wizards: [FIRST_WIZARD], invertGestures: false,
   });
 }
 
@@ -2529,6 +2539,7 @@ async function boot(): Promise<void> {
     // camera was at 115 would be the one control in the game that lies.
     hud.fov = meta.fov;
     hud.fovRange = [FOV_MIN, FOV_MAX];
+    hud.invertGestures = meta.invertGestures;
     // Re-seeded per floor with the rest of the run's readouts, so the portrait beside the
     // health bar survives the stairs.
     hud.wizard = startWizard;
@@ -3309,6 +3320,14 @@ async function boot(): Promise<void> {
   let fovDrag = false;
 
   /**
+   * The sign every gesture is read through — see `Meta.invertGestures`.
+   *
+   * A function and not a captured constant, because the setting is togglable mid-run and a
+   * value read once at boot would leave the checkbox lying until the next reload.
+   */
+  const gsign = (): number => (meta.invertGestures ? -1 : 1);
+
+  /**
    * The one writer for field of view. Camera, save and HUD in the same call, because
    * three places holding the number is three places for it to disagree — and the one
    * that would have gone stale silently is the HUD, which draws the knob.
@@ -3746,6 +3765,11 @@ async function boot(): Promise<void> {
         hud.resetArmed = false;
         break;
       case 'resetProgress': resetProgress(); break;
+      case 'invertGestures':
+        meta.invertGestures = !meta.invertGestures;
+        hud.invertGestures = meta.invertGestures;
+        saveMeta(meta);
+        break;
       // Looking is free and picking is not, which is why they are two actions. A tap on a
       // face used to START A RUN, and a roster you can begin a run by brushing is a roster
       // nobody reads.
@@ -3848,11 +3872,11 @@ async function boot(): Promise<void> {
     if (Math.abs(dx) > Math.abs(dy)) {
       // Same flip, for the same reason — the two-finger side-step has to agree with the
       // one-finger turn or the two hands disagree about which way left is.
-      stepper.press({ kind: 'move', m: dx < 0 ? 'right' : 'left' });
+      stepper.press({ kind: 'move', m: dx * gsign() < 0 ? 'right' : 'left' });
     } else {
       // Flipped with the one-finger swipe below — the two hands must not disagree about
       // which way forward is.
-      stepper.press({ kind: 'move', m: dy < 0 ? 'back' : 'forward', compound: true });
+      stepper.press({ kind: 'move', m: dy * gsign() < 0 ? 'back' : 'forward', compound: true });
     }
   };
 
@@ -3875,7 +3899,7 @@ async function boot(): Promise<void> {
   const UI_CONTROLS: ReadonlySet<string> = new Set([
     'cast', 'clear', 'descend', 'cycle', 'altar', 'chest', 'harvest',
     'belt', 'card', 'tree', 'bestiary', 'settings', 'resetProgress',
-    'wizardPeek', 'wizardPick', 'wizardBack',
+    'wizardPeek', 'wizardPick', 'wizardBack', 'invertGestures',
   ]);
 
   /**
@@ -3967,10 +3991,11 @@ async function boot(): Promise<void> {
     if (touches.has(e.pointerId) && e.buttons !== 0 && !onBook && !dead && !treeOpen
         && !hud.settingsOpen && !hud.offers) {
       const p = local(e);
+      const g = gsign();
       peekYawTarget = Math.max(-PEEK_YAW_MAX, Math.min(PEEK_YAW_MAX,
-        ((p.x - px0) / PEEK_SPAN) * PEEK_YAW_MAX));
+        (((p.x - px0) * g) / PEEK_SPAN) * PEEK_YAW_MAX));
       peekPitchTarget = Math.max(-PEEK_PITCH_MAX, Math.min(PEEK_PITCH_MAX,
-        ((p.y - py0) / PEEK_SPAN) * PEEK_PITCH_MAX));
+        (((p.y - py0) * g) / PEEK_SPAN) * PEEK_PITCH_MAX));
     }
     if (!onBook || dead) return;
     const { x, y } = local(e);
@@ -4049,12 +4074,12 @@ async function boot(): Promise<void> {
       if (Math.abs(dy) > Math.abs(dx)) {
         // Same rule as the turn: the world follows the finger. Drag down and the floor
         // comes toward you, which is walking forward.
-        stepper.press({ kind: 'move', m: dy < 0 ? 'back' : 'forward' });
+        stepper.press({ kind: 'move', m: dy * gsign() < 0 ? 'back' : 'forward' });
       }
       // FLIPPED to agree with the peek: a swipe left turns you left, the way the drag
       // already looked left. These two are the same hand on the same pixels and they were
       // moving the world in opposite directions.
-      else stepper.press({ kind: 'turn', d: dx < 0 ? 1 : -1 });
+      else stepper.press({ kind: 'turn', d: dx * gsign() < 0 ? 1 : -1 });
     }
   });
   stage.addEventListener('pointercancel', (e) => {

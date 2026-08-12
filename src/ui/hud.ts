@@ -198,6 +198,8 @@ export type UiAction =
   | { kind: 'wizardPick'; id: string }
   /** Back out of a profile to the roster. */
   | { kind: 'wizardBack' }
+  /** Toggle the one gesture-direction preference — see `Meta.invertGestures`. */
+  | { kind: 'invertGestures' }
   /**
    * Wipe the save. Fires only on the SECOND tap of the reset row, because the first
    * one arms it — see `Hud.resetArmed`. A single tap that deletes every star a player
@@ -513,6 +515,8 @@ export class Hud {
   fovRange: readonly [number, number] = [85, 120];
   /** Track geometry from the last draw, so a drag can be resolved against it. */
   fovTrack: { x: number; y: number; w: number } | null = null;
+  /** Mirror of `Meta.invertGestures`, pushed in by `main.ts` like `fov` is. */
+  invertGestures = false;
   /**
    * Who the player is this run. Null only before a wizard has been chosen, which is the
    * one moment the vitals block has no name to put over the bar.
@@ -2102,6 +2106,45 @@ export class Hud {
      */
     this.fovTrack = { x: tx, y: ty, w: tw2 };
 
+    // ---- invert gestures ----------------------------------------------------
+    /**
+     * A real checkbox, because this is a boolean and a boolean should look like one. The
+     * label says what the setting DOES rather than naming the flag — "invertGestures" is
+     * true of the code and meaningless to a player mid-swipe.
+     */
+    const cbY = ty + 34;
+    const box = 14;
+    const cbLabel = 'INVERT SWIPE & DRAG';
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    const cbTextW = ctx.measureText(cbLabel).width;
+    const cbW = box + 8 + cbTextW;
+    const cbX = Math.round((W - cbW) / 2);
+    rr(ctx, cbX, cbY, box, box, 3);
+    ctx.fillStyle = this.invertGestures ? 'rgba(255,207,92,0.85)' : 'rgba(20,14,26,0.9)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,207,92,0.6)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    if (this.invertGestures) {
+      // A tick, drawn rather than typed: a ✓ glyph at 14px lands differently in every font
+      // the HUD might fall back to, and this box is 14px.
+      ctx.strokeStyle = 'rgba(26,16,6,0.95)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cbX + 3.5, cbY + 7.5);
+      ctx.lineTo(cbX + 6, cbY + 10.5);
+      ctx.lineTo(cbX + 10.5, cbY + 4);
+      ctx.stroke();
+    }
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(232,217,176,0.9)';
+    ctx.fillText(cbLabel, cbX + box + 8, cbY + 3);
+    ctx.textAlign = 'center';
+    this.hits.push({
+      rect: [cbX - 10, cbY - 8, cbW + 20, box + 16],
+      action: { kind: 'invertGestures' },
+    });
+
     // ---- reset -------------------------------------------------------------
     const armed = this.resetArmed;
     const label = armed ? 'TAP AGAIN TO WIPE' : 'RESET PROGRESS';
@@ -2115,7 +2158,7 @@ export class Hud {
      * top of the subtitle. Stacked off the track's own bottom edge so adding a third
      * setting moves one number.
      */
-    const resetTop = ty + 40;
+    const resetTop = cbY + 46;
     ctx.font = '9px ui-monospace, monospace';
     ctx.fillStyle = armed ? 'rgba(255,138,138,0.85)' : 'rgba(232,217,176,0.5)';
     ctx.fillText(sub, W / 2, resetTop);
@@ -2341,22 +2384,31 @@ export class Hud {
 
     ctx.textAlign = 'center';
     const pcx = px + pw / 2, kcx = cardX + cardW / 2;
-    let cy = py + topH + 16;
+    /**
+     * ONE BASELINE GRID for both columns.
+     *
+     * They were laid out independently — the name at cy-4 and the spell at cy-2, the title at
+     * cy+15 and the effect at cy+14 — so two captions meant to read as a matched pair sat two
+     * pixels out of step, and the gaps below them came off a third set of numbers again. Both
+     * columns hang off NAME_Y and SUB_Y now, and everything under them measures from those.
+     */
+    const NAME_Y = py + topH + 12;
+    const SUB_Y = NAME_Y + 18;
 
     ctx.font = 'bold 17px ui-monospace, monospace';
     ctx.fillStyle = '#fff4dc';
-    ctx.fillText(w.name, pcx, cy - 4);
+    ctx.fillText(w.name, pcx, NAME_Y);
     ctx.font = '10px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(255,207,92,0.85)';
-    ctx.fillText(w.title.toUpperCase(), pcx, cy + 15);
+    ctx.fillText(w.title.toUpperCase(), pcx, SUB_Y);
 
     if (this.startSpell) {
-      ctx.font = 'bold 13px ui-monospace, monospace';
+      ctx.font = 'bold 15px ui-monospace, monospace';
       ctx.fillStyle = 'rgba(180,220,255,0.95)';
-      ctx.fillText(this.startSpell.name.toUpperCase(), kcx, cy - 2);
+      ctx.fillText(this.startSpell.name.toUpperCase(), kcx, NAME_Y);
       ctx.font = '10px ui-monospace, monospace';
       ctx.fillStyle = 'rgba(196,210,228,0.85)';
-      this.wrapped(ctx, this.startSpell.effect, kcx, cy + 14, cardW - 4, 14);
+      this.wrapped(ctx, this.startSpell.effect, kcx, SUB_Y, cardW - 4, 13);
     }
 
     /**
@@ -2366,7 +2418,7 @@ export class Hud {
      * having, but they do not belong on the screen you are trying to get off. A profile
      * that has to be read is a profile that gets skipped.
      */
-    let y = py + topH + 58;
+    let y = SUB_Y + 42;
     ctx.font = '12px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(236,226,204,0.94)';
     y = this.wrapped(ctx, w.reason, W / 2, y, W - 44, 18, H - 88);
@@ -2381,7 +2433,7 @@ export class Hud {
     const bw = Math.max(ctx.measureText(label).width + 44, 170);
     // Under the copy, not pinned to the bottom of the screen. Pinned left a dead band
     // most of the screen tall once the prose came down to a sentence.
-    const bx = (W - bw) / 2, by = Math.min(H - 56, y + 20);
+    const bx = (W - bw) / 2, by = Math.min(H - 56, y + 24);
     rr(ctx, bx, by, bw, 32, 8);
     ctx.fillStyle = locked ? 'rgba(22,20,26,0.95)' : 'rgba(38,26,12,0.96)';
     ctx.fill();
