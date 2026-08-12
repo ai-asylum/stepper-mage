@@ -40,7 +40,7 @@ import { BOSS_INGREDIENTS, rollDropCount, rollIngredient, type BeltState } from 
 import { BELT_ENABLED } from '../flags';
 import {
   ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CHAIN_JUMP_MS,
-  CHAIN_RANGE, CONDUCTION_MULT, DAMAGE_JITTER, DECAY_DOT, DEEP_FREEZE_MULT,
+  CHAIN_RANGE, CONDUCTION_MULT, DECAY_DOT, DEEP_FREEZE_MULT,
   DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS,
   FIRE_DETOUR, GROUND_FIRE_DOT, GROW_RING, bodyStars, fallDamage, REACTION_REACH, SPILL_VOLUME, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
   bossDamage, enemyDamage,
@@ -245,14 +245,16 @@ export interface ReactionFx {
 export class Combat {
   readonly state: PlayerState;
   private combatants = new Map<Entity, Combatant>();
-  private rng: Rng;
   /**
-   * A stream of its own for what a boss leaves behind.
+   * The only random stream in the class, and it decides what a boss leaves behind.
    *
-   * Not `this.rng`, deliberately: that one rolls the damage jitter every round, so
-   * drawing loot from it would shift every later swing on the floor. A drop is not
-   * allowed to change a fight, and a separate stream is how that is structural
-   * rather than a claim about call order.
+   * There used to be a second one — `this.rng` — rolling a damage jitter on every
+   * swing, and this field existed to be kept away from it so a drop could not shift
+   * a later swing. A FIGHT NO LONGER ROLLS ANYTHING: enemy damage is exactly
+   * `enemyDamage`/`bossDamage`, so the same room fought the same way costs the same
+   * HP every time. That is the property the whole balance method now rests on, and it
+   * is worth naming here because this is where it would be lost — anything added to
+   * combat that needs a die is a fight that has to be sampled rather than computed.
    */
   private dropRng: Rng;
   /** Rooms whose encounter has been triggered. */
@@ -349,7 +351,6 @@ export class Combat {
 
   constructor(private floor: Floor, state: PlayerState, seed: string) {
     this.state = state;
-    this.rng = new Rng(`${seed}-combat`);
     this.dropRng = new Rng(`${seed}-drops`);
     for (const e of floor.entities) this.register(e);
   }
@@ -1578,7 +1579,7 @@ export class Combat {
         if (Math.abs(e.sprite.tx - px) + Math.abs(e.sprite.ty - py) <= 1) {
           faceToward(e, px, py);
           e.sprite.play('attack');
-          const dmg = Math.max(1, c.damage + this.rng.int(DAMAGE_JITTER[0], DAMAGE_JITTER[1]));
+          const dmg = Math.max(1, c.damage);
           this.state.hp -= dmg;
           this.onPlayerHurt(dmg, e);
           this.onEvent({
@@ -1612,11 +1613,7 @@ export class Combat {
           if (near <= 1) {
             faceToward(e, foe.sprite.tx, foe.sprite.ty);
             e.sprite.play('attack');
-            this.damage(
-              foe,
-              Math.max(1, c.damage + this.rng.int(DAMAGE_JITTER[0], DAMAGE_JITTER[1])),
-              0xb98cff,
-            );
+            this.damage(foe, Math.max(1, c.damage), 0xb98cff);
             for (const inf of c.infuse) this.addStatus(foe, inf, STATUS_META[inf].turns);
           }
           await delay(ACT_PACE_MS);

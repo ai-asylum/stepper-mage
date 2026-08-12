@@ -35,10 +35,15 @@
  */
 
 /**
- * The bar has to absorb a whole fight at one cast per round — roughly nine depth-1
- * mook hits falling to six by depth 5, or six depth-1 boss hits falling to four
- * (see `DAMAGE_JITTER`: the average hit is half a point above the base, so the hit
- * count is derived from 4.5 and 6.5, not from 4 and 6).
+ * The bar has to absorb a whole fight at one cast per round — fifteen depth-1 mook
+ * hits falling to nine by depth 5, or nine depth-1 boss hits falling to five.
+ *
+ * Those counts are EXACT, not averages, because nothing rolls damage any more (see
+ * below, where the jitter used to be). They are also the numbers this bar actually
+ * produces, which the previous draft of this comment was not: it said nine falling to
+ * six, derived from 4.5 and 6.5, and both figures were left over from a 40-point bar
+ * and the old `3 + ⌈d/2⌉` curve. A stale hit count is the most expensive kind of stale
+ * comment in this file, because every other curve is quoted against it.
  *
  * 40 -> 46 when hostiles were given a move AND an attack in the same round. The bar
  * is the unit everything else is quoted in and moving it is a last resort, but it is
@@ -94,7 +99,13 @@ export const enemyHp = (depth: number): number => 7 + depth * 3;
  * is 140, and 140 is a cliff: measured, the gated line's worst seed took 42 of a
  * 40-point bar and the run ended two HP short, while at 135 the same seed takes 32 and
  * clears with eight to spare. A boss fight that turns on one extra cast of health is a
- * boss fight decided by the jitter, so the curve sits below the cliff on purpose.
+ * boss fight standing on one number, so the curve sits below the cliff on purpose.
+ *
+ * That argument got STRONGER when the damage jitter went. It used to mean the deepest
+ * boss was decided by a die roll; now it means the deepest boss is decided the same way
+ * every single time, so a curve one point over the line is not an unlucky death, it is
+ * an unwinnable game. Determinism does not make a cliff safe to stand near — it makes
+ * standing near one repeatable.
  *
  * The curve is still deliberately flat. A boss stands at the far end of a big room
  * and has to walk to you, so the first three casts are a shooting gallery and only
@@ -104,7 +115,7 @@ export const enemyHp = (depth: number): number => 7 + depth * 3;
 export const bossHp = (depth: number): number => 70 + depth * 13;
 
 /**
- * Damage per attack, before the jitter in `Combat.enemyRound`.
+ * Damage per attack. EXACTLY this — `Combat.enemyRound` adds nothing to it.
  *
  * Set from hits-to-die rather than from a damage curve: clearing a room lands
  * about one hit at depth 1 and about two and a half by depth 5, so a flat-ish
@@ -138,22 +149,44 @@ export const enemyDamage = (depth: number): number => 2 + Math.ceil(depth / 2);
  *
  * 4 + d became 5 + d when the fight started landing one fewer hit, and is 4 + d
  * again now that move-and-attack has handed that hit back — see `enemyDamage` for
- * the full argument. At depth 5 this is 9, the average swing is 9.5 and the worst
- * is 11, which keeps a boss under 30% of the bar.
+ * the full argument. At depth 5 this is 9, every swing is 9, and that is 20% of the
+ * bar: five boss hits is the whole run.
  */
 export const bossDamage = (depth: number): number => 4 + depth;
 
 /**
- * Per-attack jitter, passed straight to `Rng.int`, which is INCLUSIVE at both
- * ends. So this is -1, 0, +1 or +2 — deliberately NOT symmetric: the average hit
- * is half a point above `enemyDamage`, and every hits-to-die figure in this file
- * is derived from that biased average rather than from the base.
+ * THERE IS NO DAMAGE JITTER, and this note is here so it does not come back by
+ * accident.
  *
- * `enemyRound` floors the result at 1. That is unreachable at every depth these
- * curves produce, and it stays as a guard so `enemyDamage` can be retuned below
- * the jitter without an attack quietly healing the player.
+ * There was one — `rng.int(-1, 2)`, inclusive, so -1/0/+1/+2 with a mean half a point
+ * above the base — and it was removed to make a fight COMPUTABLE. That is the whole
+ * argument, and it is a claim about how this game gets balanced rather than about how
+ * it plays: while every swing was a die roll, the cost of a room was a distribution,
+ * and the only way to learn a distribution is to sample it. That is exactly what the
+ * old full-run harness was for, why it had to run hundreds of floors to say anything,
+ * and why it took long enough that changing a number here stopped being cheap. Killing
+ * the roll kills the need for the instrument: the same room fought the same way now
+ * costs the same HP, so a curve can be checked by arithmetic instead of by sampling.
+ *
+ * It cost the player nothing to read. The jitter was never surfaced — no number on
+ * screen was ever quoted with a range — so it was invisible variance, which is the kind
+ * that adds no tension and only costs legibility. `THREAT_REACH` had already committed
+ * this game to telling the player exactly what is coming; a swing whose size was a
+ * secret was the last place that promise was broken.
+ *
+ * WHAT IT CHANGED IN THE ECONOMY: enemies now hit for their base rather than half a
+ * point over it, so every incoming hit is 10-17% lighter and every hits-to-die figure
+ * in this file went up by about one hit. That is a real shift in the player's favour and
+ * it has deliberately NOT been paid for by raising `enemyDamage` — the whole value of
+ * this change is that the next tuning pass can be argued on paper, and folding a
+ * compensating bump into the same change would have meant re-tuning against numbers
+ * nobody had recomputed yet. The curves above are quoted at their exact new cost; if
+ * the run turns out to be over-funded, that is a curve decision to take on its own.
+ *
+ * The `Math.max(1, …)` floor in `enemyRound` stays. It can no longer trip — every curve
+ * here bottoms out at 3 — and it stays as the guard that stops a future negative
+ * modifier from turning an attack into a heal.
  */
-export const DAMAGE_JITTER: readonly [number, number] = [-1, 2];
 
 /**
  * How far a hostile can reach on its coming round — the telegraph's whole rule.
