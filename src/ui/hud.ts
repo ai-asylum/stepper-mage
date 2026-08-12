@@ -2434,7 +2434,18 @@ export class Hud {
   private drawCompass(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     const goal = this.compassGoal;
     if (!goal) return;
-    if (!this.bookClosed) return;
+    /**
+     * HIDDEN whenever anything else owns this band.
+     *
+     * Bottom centre above the grimoire is also where the CAST bar and the big CAST button
+     * live, so a held card put the arrow straight through the most important button on the
+     * screen. `bookClosed` alone did not cover it — the book is CLOSED while you are holding
+     * a torn page, which is exactly when CAST is up.
+     *
+     * So: no compass while the book is open, and none while the hand has anything in it. The
+     * arrow is for walking, and neither of those is walking.
+     */
+    if (!this.bookClosed || this.handHeld > 0 || this.runEnd || this.offers) return;
     const m = this.map?.();
     if (!m) return;
 
