@@ -165,7 +165,7 @@ export const WIZARDS: readonly Wizard[] = [
       + 'room into a single cast, which means she is the wizard who wants MORE enemies, '
       + 'closer together, standing in something wet.',
     line: 'Everything down here is holding a charge it has not earned.',
-    rescueLine: 'Iron. Of course it was iron. Take me back down there, I want another go at it.',
+    rescueLine: 'Iron. Of course it was iron. Somebody down here is going to explain that to me.',
     frees: 'gust',
     portrait: 'portrait_zel',
     quests: [],
