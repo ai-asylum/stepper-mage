@@ -340,20 +340,20 @@ const COG_SIZE = 18;
  * not a picture to look at, and the 66x98 source crops to this aspect without losing any
  * of the face (see `drawPortrait`).
  */
-const PORTRAIT_W = 24;
-/** Derived from the art's own aspect, so the whole bust fits with nothing cropped. */
-const PORTRAIT_H = Math.round(PORTRAIT_W / PORTRAIT_ASPECT);
-/** Top of the portrait frame. Above the bar's line, clear of the depth label. */
-const PORTRAIT_TOP = 10;
 /**
- * Left edge for everything in the top-left stack — the floor name, the wizard's name and
- * the health bar — so all three move together when a portrait takes the corner.
+ * THE MINIMAP'S OWN GEOMETRY, hoisted so the portrait can mirror it exactly.
  *
- * One function rather than three literals because the collision this fixes was exactly
- * three places independently believing they owned x = 12.
+ * These were locals inside `drawMiniMap` — SPAN 4, CELL 11, +6 of padding, top at 28. The
+ * portrait is supposed to be the same height as the map and sit opposite it, and "the same
+ * height" has to be one number rather than two that agree today.
  */
+const MAP_SPAN = 4;
+const MAP_CELL = 11;
+const MAP_SIZE = (MAP_SPAN * 2 + 1) * MAP_CELL + 6;
+const MAP_TOP = 28;
+/** Left edge for the floor name, clear of the portrait that now owns the corner. */
 const TEXT_LEFT = (hasPortrait: boolean): number =>
-  hasPortrait ? 12 + PORTRAIT_W + 6 : 12;
+  hasPortrait ? 12 + Math.round(MAP_SIZE * PORTRAIT_ASPECT) + 8 : 12;
 /**
  * Right edge the star readout aligns to, derived from the cog rather than written
  * twice. The two used to share `W - 12` and the cog would have sat on the count.
@@ -897,7 +897,7 @@ export class Hud {
     this.drawBelt(ctx, W);
     // Before the CAST bar, so that where a card's box and the bar's touch, CAST wins:
     // `hit` scans backwards, so whatever is pushed last is on top.
-    this.drawCompass(ctx, W);
+    this.drawCompass(ctx, W, H);
     this.drawBestiaryPill(ctx, W);
     this.drawMoveHint(ctx, W, H);
     this.drawEmptySlots(ctx, W);
@@ -909,7 +909,6 @@ export class Hud {
     this.drawHitFx(ctx, W, H);
     this.drawHurtFrom(ctx, W, H);
     this.drawDiscovery(ctx, W);
-    this.drawHand(ctx);
     this.drawPin(ctx);
     this.drawParty(ctx, W);
     this.drawSealedNote(ctx, W);
@@ -1439,11 +1438,11 @@ export class Hud {
     const { floor, x: px, y: py, dir } = this.map();
     const g = floor.grid;
 
-    const SPAN = 4;                       // tiles either side of the player
-    const CELL = 11;                      // px per tile — big enough to count
+    const SPAN = MAP_SPAN;                // tiles either side of the player
+    const CELL = MAP_CELL;                // px per tile — big enough to count
     const N = SPAN * 2 + 1;
-    const SIZE = N * CELL + 6;
-    const ox = W - SIZE - 10, oy = 28;
+    const SIZE = MAP_SIZE;
+    const ox = W - SIZE - 10, oy = MAP_TOP;
 
     rr(ctx, ox, oy, SIZE, SIZE, 5);
     ctx.fillStyle = 'rgba(8,5,11,0.92)';
@@ -1797,23 +1796,15 @@ export class Hud {
   }
 
   /**
-   * The fusion ceiling: how many components you can hold, and how many you are
-   * holding.
+   * GONE. The hand readout was `HAND held/cap` in a pill at the top-left.
    *
-   * Always on, because hand size is the number the whole turn economy is priced
-   * against and nothing else in the game ever states it — at a hand of one the
-   * player's only encounter with it was a refused swipe. Information, not a
-   * control, so it takes no hit region.
+   * It existed because hand size is what the whole turn economy is priced against and
+   * nothing else on screen ever said it — at a hand of one the player's only encounter with
+   * the ceiling was a refused swipe. The on-screen slots say both halves now: how many you
+   * have and how many are filled, in the place you are already looking to cast. A number
+   * that repeats what a picture already shows is a number competing with it, and this one
+   * was competing for the corner the portrait now owns.
    */
-  private drawHand(ctx: CanvasRenderingContext2D): void {
-    // A debug-lifted hand can hold more than the real ceiling; show the larger of
-    // the two rather than rendering a fraction that reads as a bug.
-    const cap = Math.max(this.handSize, this.handHeld);
-    const full = this.handHeld >= cap;
-    const y = 50;
-    this.pill(ctx, 12, y, `HAND ${this.handHeld}/${cap}`,
-      full ? GOLD : PARCH, full ? 'rgba(255,207,92,0.75)' : 'rgba(232,217,176,0.28)');
-  }
 
   /**
    * The fan is cancellable: one small ✕ per card, with the whole card as its target.
@@ -2419,7 +2410,7 @@ export class Hud {
     return y;
   }
 
-  private drawCompass(ctx: CanvasRenderingContext2D, W: number): void {
+  private drawCompass(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     const goal = this.compassGoal;
     if (!goal) return;
     const m = this.map?.();
@@ -2436,7 +2427,15 @@ export class Hud {
     const side = dx * rx + dy * ry;
     const angle = Math.atan2(side, ahead);
 
-    const cx = W - 62, cy = 196, r = 15;
+    /**
+     * BOTTOM CENTRE, just above the grimoire.
+     *
+     * It sat at (W - 62, 196), which is the right-hand edge halfway down — directly under
+     * the minimap, so the two rotating readouts stacked into one column and the corner that
+     * is already the busiest on screen got a third thing in it. Centred over the book, the
+     * arrow is on the axis the player is actually walking along.
+     */
+    const cx = W / 2, cy = Math.min(H - 26, this.bookTop - 26), r = 15;
 
     ctx.save();
     ctx.translate(cx, cy);
@@ -3428,89 +3427,116 @@ export class Hud {
     ctx.restore();
   }
 
+  /**
+   * THE PORTRAIT IS THE HEALTH BAR. Baldur's Gate, top-left, mirroring the minimap.
+   *
+   * There is no separate bar any more, and that is the cleanup: a bar, a name, an hp
+   * figure and a portrait were four things in one corner all saying "you", stacked into a
+   * strip 34px tall that the depth label kept colliding with. One object says all of it.
+   *
+   * Remaining health FILLS FROM THE BOTTOM. The living part of the portrait is drawn at
+   * full colour and the lost part is drained — desaturated, darkened, and washed red — so
+   * the character visibly bleeds out of the frame as the run goes badly. It reads at a
+   * glance without a number, which is the whole reason BG did it this way.
+   *
+   * Sized and placed off the MINIMAP's own numbers rather than its own, so the two corners
+   * are the same height and stay that way if the map ever changes.
+   */
   private drawVitals(ctx: CanvasRenderingContext2D, W: number): void {
-    // Top-left, under the depth label. Anchoring this to the book put it right
-    // where the torn pages fan out. Dropped 4px to make a line for the wizard's name,
-    // which used to draw straight across the bar.
-    const y = this.wizard ? 32 : 28;
-
-    /**
-     * THE PORTRAIT, left of the bar, with the name over it.
-     *
-     * Here rather than anywhere else because this corner is already the answer to "how
-     * am I doing" — and WHO you are belongs beside HOW MUCH OF YOU IS LEFT. It is also
-     * the one place on screen the player is already looking when things are going badly,
-     * which is when a character is worth being reminded of.
-     *
-     * The frame is drawn whether or not the image has decoded (see `drawPortrait`), so a
-     * portrait that arrives two frames late fills a hole instead of moving the layout.
-     */
     const w = this.wizard;
-    const px = 12, pw = PORTRAIT_W, ph = PORTRAIT_H;
-    if (w) {
-      // Top of the corner, ABOVE the bar's own line, because the depth label owns y=12
-      // at x=12 and the two were drawing over each other. `drawTopBar` moves the floor
-      // name right by the same width — see `TEXT_LEFT`.
-      const py = PORTRAIT_TOP;
-      rr(ctx, px, py, pw, ph, 3);
-      ctx.fillStyle = 'rgba(8,5,11,0.9)';
-      ctx.fill();
+    const n = this.threats.size;
+    const frac = Math.max(0, Math.min(1, this.state.hp / this.state.maxHp));
+
+    // No wizard yet (the roster is still up): keep the old bar so the run start is never
+    // a screen with no vitals at all.
+    if (!w) {
+      const bw = W * 0.34;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      rr(ctx, 12, 28, bw, 9, 4); ctx.fill();
+      ctx.fillStyle = frac > 0.34 ? '#c9382a' : '#ff5a3c';
+      rr(ctx, 13, 29, Math.max(0, (bw - 2) * frac), 7, 3); ctx.fill();
+      return;
+    }
+
+    const ph = MAP_SIZE;
+    const pw = Math.round(ph * PORTRAIT_ASPECT);
+    const px = 12, py = MAP_TOP;
+
+    rr(ctx, px, py, pw, ph, 4);
+    ctx.fillStyle = 'rgba(8,5,11,0.92)';
+    ctx.fill();
+
+    const ix = px + 2, iy = py + 2, iw = pw - 4, ih = ph - 4;
+    // The drained band, measured from the top: what you have LOST.
+    const lost = Math.round(ih * (1 - frac));
+
+    ctx.save();
+    ctx.beginPath();
+    rr(ctx, ix, iy, iw, ih, 3);
+    ctx.clip();
+    drawPortrait(ctx, w.portrait, ix, iy, iw, ih);
+    if (lost > 0) {
+      // Drain in two passes: pull the colour out of the lost band, then wash it red. One
+      // pass could do either but not both, and the desaturation is what makes it read as
+      // absence rather than as a red light shining on a healthy face.
       ctx.save();
       ctx.beginPath();
-      rr(ctx, px + 1, py + 1, pw - 2, ph - 2, 2);
+      ctx.rect(ix, iy, iw, lost);
       ctx.clip();
-      drawPortrait(ctx, w.portrait, px + 1, py + 1, pw - 2, ph - 2);
+      ctx.filter = 'grayscale(1)';
+      drawPortrait(ctx, w.portrait, ix, iy, iw, ih);
+      ctx.filter = 'none';
+      ctx.fillStyle = 'rgba(120,14,10,0.5)';
+      ctx.fillRect(ix, iy, iw, lost);
+      ctx.fillStyle = 'rgba(4,2,6,0.42)';
+      ctx.fillRect(ix, iy, iw, lost);
       ctx.restore();
-      rr(ctx, px, py, pw, ph, 3);
-      ctx.strokeStyle = 'rgba(255,207,92,0.45)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      // The name sits between the floor name and the bar, so the corner reads top to
-      // bottom as WHERE, WHO, HOW MUCH OF YOU IS LEFT.
-      ctx.font = 'bold 8px ui-monospace, monospace';
-      ctx.fillStyle = 'rgba(255,207,92,0.9)';
-      ctx.fillText(w.name, TEXT_LEFT(true), 21);
+      // The waterline, so the level is readable even at a glance.
+      ctx.fillStyle = 'rgba(255,90,60,0.9)';
+      ctx.fillRect(ix, iy + lost - 1, iw, 1.5);
     }
+    ctx.restore();
 
-    // The bar starts clear of the portrait, and its width comes down by the same amount
-    // so the right-hand end stays exactly where it has always been.
-    const bx = TEXT_LEFT(!!w);
-    const bw = W * 0.34 - (bx - 12);
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    rr(ctx, bx, y, bw, 9, 4); ctx.fill();
-    const frac = Math.max(0, this.state.hp / this.state.maxHp);
-    ctx.fillStyle = frac > 0.34 ? '#c9382a' : '#ff5a3c';
-    rr(ctx, bx + 1, y + 1, Math.max(0, (bw - 2) * frac), 7, 3); ctx.fill();
     /**
-     * THE OTHER HALF OF THE TELEGRAPH: the bar itself pulses while anything can
-     * reach you, and says how many.
+     * THE TELEGRAPH, on the frame: it pulses while anything can reach you.
      *
-     * The ring drawn on a creature only works for a creature you can SEE, and the
-     * threat that most needs announcing is the one around the corner — two tiles
-     * away, closing and swinging in the same round, with nothing on screen. This
-     * carries that case without leaking where it is, which the minimap deliberately
-     * will not do either.
+     * Moved off the old bar and onto the portrait's own edge, because the bar it used to
+     * pulse no longer exists — and the frame is a better host anyway, being the biggest
+     * closed shape on the screen that is not the world.
      */
-    const n = this.threats.size;
+    rr(ctx, px, py, pw, ph, 4);
     if (n > 0) {
       const pulse = 0.5 + Math.sin(this.engine.time * 7) * 0.5;
-      ctx.globalAlpha = 0.45 + pulse * 0.55;
+      ctx.globalAlpha = 0.5 + pulse * 0.5;
       ctx.strokeStyle = '#ff3a2a';
-      ctx.lineWidth = 1.5;
-      rr(ctx, bx, y, bw, 9, 4); ctx.stroke();
+      ctx.lineWidth = 2;
+      ctx.stroke();
       ctx.globalAlpha = 1;
+    } else {
+      ctx.strokeStyle = 'rgba(255,207,92,0.6)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
     }
 
-    const hp = `${Math.max(0, this.state.hp)}/${this.state.maxHp}`;
-    ctx.font = '8px ui-monospace, monospace';
-    ctx.fillStyle = PARCH;
-    ctx.fillText(hp, bx + 2, y + 12);
+    // Name and figure INSIDE the frame, outlined against the art the way the roster's
+    // captions are — a caption in a strip under the portrait is what made this corner
+    // tall in the first place.
+    ctx.textAlign = 'center';
+    const ink = (text: string, ty: number, font: string, fill: string) => {
+      ctx.font = font;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(4,2,6,0.9)';
+      ctx.strokeText(text, px + pw / 2, ty);
+      ctx.fillStyle = fill;
+      ctx.fillText(text, px + pw / 2, ty);
+    };
+    ink(w.name, py + ph - 26, 'bold 11px ui-monospace, monospace', '#fff4dc');
+    ink(`${Math.max(0, this.state.hp)}/${this.state.maxHp}`, py + ph - 14,
+      '10px ui-monospace, monospace', frac > 0.34 ? 'rgba(255,225,200,0.95)' : '#ff8a70');
     if (n > 0) {
-      ctx.font = 'bold 8px ui-monospace, monospace';
-      ctx.fillStyle = '#ff6a55';
-      ctx.fillText(`${n} IN REACH`, bx + 2 + ctx.measureText(hp).width + 10, y + 12);
+      ink(`${n} IN REACH`, py + 3, 'bold 9px ui-monospace, monospace', '#ff6a55');
     }
+    ctx.textAlign = 'left';
   }
 
   /**
