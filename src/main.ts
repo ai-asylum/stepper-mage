@@ -3850,7 +3850,9 @@ async function boot(): Promise<void> {
       // one-finger turn or the two hands disagree about which way left is.
       stepper.press({ kind: 'move', m: dx < 0 ? 'right' : 'left' });
     } else {
-      stepper.press({ kind: 'move', m: dy < 0 ? 'forward' : 'back', compound: true });
+      // Flipped with the one-finger swipe below — the two hands must not disagree about
+      // which way forward is.
+      stepper.press({ kind: 'move', m: dy < 0 ? 'back' : 'forward', compound: true });
     }
   };
 
@@ -4044,7 +4046,11 @@ async function boot(): Promise<void> {
     if (moved < 24) { act(hud.hit(x, y)); return; }
     if (performance.now() - st < 700) {
       const dx = x - px0, dy = y - py0;
-      if (Math.abs(dy) > Math.abs(dx)) stepper.press({ kind: 'move', m: dy < 0 ? 'forward' : 'back' });
+      if (Math.abs(dy) > Math.abs(dx)) {
+        // Same rule as the turn: the world follows the finger. Drag down and the floor
+        // comes toward you, which is walking forward.
+        stepper.press({ kind: 'move', m: dy < 0 ? 'back' : 'forward' });
+      }
       // FLIPPED to agree with the peek: a swipe left turns you left, the way the drag
       // already looked left. These two are the same hand on the same pixels and they were
       // moving the world in opposite directions.
