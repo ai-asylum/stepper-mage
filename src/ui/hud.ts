@@ -1347,7 +1347,10 @@ export class Hud {
   }
 
   private drawTopBar(ctx: CanvasRenderingContext2D, W: number): void {
-    ctx.font = '9px ui-monospace, monospace';
+    // 2x. This row is the only permanent statement of WHERE and HOW RICH, and it was set at
+    // 9px next to a 105px portrait and a 105px map — small enough that the two things a
+    // player checks between rooms were the two hardest things on the screen to read.
+    ctx.font = 'bold 17px ui-monospace, monospace';
     ctx.textBaseline = 'top';
     /**
      * Outlined, because this row sits straight on the world and the world is not a
@@ -1377,13 +1380,16 @@ export class Hud {
     // number the player watches and the cog is a thing they press twice a session, so
     // the count keeps the position it always had relative to the minimap under it and
     // only gives up the sliver it was never using.
+    /**
+     * The BANK plus this run, as one number, and nothing else.
+     *
+     * There was a second line under it — `+N this run` — and it was answering a question
+     * nobody asks: the run's own subtotal is not spendable, not a goal, and not different
+     * from the total in any way the player acts on. It was also the smallest text on the
+     * screen, which is a lot of pixels to spend on a figure that changes nothing.
+     */
     const total = this.bankedStars + this.state.stars;
     ink(`✦ ${total}`, STARS_RIGHT(W), 12, GOLD);
-    if (this.state.stars > 0) {
-      ctx.font = '8px ui-monospace, monospace';
-      ink(`+${this.state.stars} this run`, STARS_RIGHT(W), 23, 'rgba(255,207,92,0.7)');
-      ctx.font = '9px ui-monospace, monospace';
-    }
     ctx.textAlign = 'left';
   }
 
@@ -2496,8 +2502,17 @@ export class Hud {
      * nobody finishes reading — the reticle teaches aiming on its own the first time
      * something is in front of you.
      */
-    ctx.font = 'bold 13px ui-monospace, monospace';
-    ctx.fillStyle = PARCH;
+    /**
+     * 2x, and OUTLINED. This is the first instruction in the game and it was 13px of
+     * low-contrast parchment laid straight over a lit dungeon floor — the one line a player
+     * must read was competing with the busiest texture on the screen. The outline is the
+     * same trick the depth label and the roster captions use.
+     */
+    ctx.font = 'bold 24px ui-monospace, monospace';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(6,4,8,0.85)';
+    ctx.strokeText('SWIPE TO MOVE', W / 2, y);
+    ctx.fillStyle = '#fff4dc';
     ctx.fillText('SWIPE TO MOVE', W / 2, y);
     ctx.restore();
     ctx.textAlign = 'left';

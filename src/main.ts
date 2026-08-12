@@ -477,10 +477,26 @@ async function boot(): Promise<void> {
   /** Lifted only by the debug harness, so a scripted fusion still works. */
   let handSizeBonus = 0;
   /**
-   * The fusion ceiling, read through one accessor so raising it later (the star
-   * tree) is a single write to `meta` and nothing else has to know.
+   * THE FUSION CEILING: one hand per page you have found, up to three.
+   *
+   * Earned IN THE RUN rather than only bought between them. You begin holding one page and
+   * one slot, and the second page you find is also the second hand — so the thing that
+   * teaches fusion is the thing that enables it, in the same moment, with no shop trip in
+   * between. `docs/DESIGN.md` argued that a hand of one is what SELLS fusion; this keeps
+   * that and stops it being a wall, because a first run now reaches hand 2 on its own.
+   *
+   * The star tree becomes a HEAD START rather than the only road: `meta.handSize` is a
+   * floor, so owning `hand2` means you begin at two instead of climbing to it. That is why
+   * this is a `max` and not a sum — adding them would put a tree-owner at four, and three
+   * is the ceiling the whole turn economy is priced against.
+   *
+   * Read through one accessor, as before, so nothing else has to know any of this.
    */
-  const handSize = (): number => meta.handSize + handSizeBonus;
+  const HAND_MAX = 3;
+  const handSize = (): number => Math.max(
+    meta.handSize,
+    Math.min(HAND_MAX, state.pages.length),
+  ) + handSizeBonus;
 
   /**
    * Why the open page will not tear, or null when it will.
@@ -3830,7 +3846,9 @@ async function boot(): Promise<void> {
     if (dist < TWO_MIN) return;
     if (Math.abs(Math.hypot(a.x - b.x, a.y - b.y) - g.spread0) > dist) return;
     if (Math.abs(dx) > Math.abs(dy)) {
-      stepper.press({ kind: 'move', m: dx < 0 ? 'left' : 'right' });
+      // Same flip, for the same reason — the two-finger side-step has to agree with the
+      // one-finger turn or the two hands disagree about which way left is.
+      stepper.press({ kind: 'move', m: dx < 0 ? 'right' : 'left' });
     } else {
       stepper.press({ kind: 'move', m: dy < 0 ? 'forward' : 'back', compound: true });
     }
@@ -4027,7 +4045,10 @@ async function boot(): Promise<void> {
     if (performance.now() - st < 700) {
       const dx = x - px0, dy = y - py0;
       if (Math.abs(dy) > Math.abs(dx)) stepper.press({ kind: 'move', m: dy < 0 ? 'forward' : 'back' });
-      else stepper.press({ kind: 'turn', d: dx < 0 ? -1 : 1 });
+      // FLIPPED to agree with the peek: a swipe left turns you left, the way the drag
+      // already looked left. These two are the same hand on the same pixels and they were
+      // moving the world in opposite directions.
+      else stepper.press({ kind: 'turn', d: dx < 0 ? 1 : -1 });
     }
   });
   stage.addEventListener('pointercancel', (e) => {
