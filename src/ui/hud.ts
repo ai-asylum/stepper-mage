@@ -334,7 +334,7 @@ const SAID_S = 3.2;
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 
 /** Side of the settings cog, in HUD px. */
-const COG_SIZE = 18;
+const COG_SIZE = 28;
 /**
  * The in-game portrait beside the health bar. Small — it is a reminder of who you are,
  * not a picture to look at, and the 66x98 source crops to this aspect without losing any
@@ -1367,10 +1367,34 @@ export class Hud {
     // Depth AND the floor's name, permanently. A name that only ever appeared as a
     // fading shout is a name you cannot go back and read.
     const depth = `DEPTH ${ROMAN[Math.min(ROMAN.length, Math.max(1, this.state.depth)) - 1]}`;
-    // Shifted right by the portrait when there is one — the portrait owns the corner and
-    // this used to draw straight through it.
-    ink(this.floorName ? `${depth} — ${this.floorName}` : depth, TEXT_LEFT(!!this.wizard), 12,
-      'rgba(240,228,196,0.82)');
+    /**
+     * FITTED between the portrait and the star count, rather than drawn and hoped for.
+     *
+     * At 2x the floor name ran straight through the ✦ figure. The row has two fixed ends —
+     * the portrait on the left and the stars on the right — so the only thing that can give
+     * is the NAME, and it gives in that order: shrink to fit, then drop the name and keep
+     * the depth. The depth is never sacrificed, because it is the one word here the player
+     * navigates by.
+     */
+    /**
+     * DEPTH I - LIBRARY. The short name, and left aligned explicitly.
+     *
+     * The full theme name ("The Drowned Library") ran through the star count at 2x, and
+     * shrinking it to fit made the one permanent statement of WHERE the smallest thing in
+     * the row. The last word carries the floor on its own — nobody navigates by the
+     * article — so the name is cut to it rather than the type size cut to the name.
+     *
+     * `textAlign` is set here rather than assumed: this row runs after screens that leave it
+     * on 'center', which is how a left-aligned label ended up centred.
+     */
+    ctx.textAlign = 'left';
+    const short = this.floorName
+      ? this.floorName.trim().split(/\s+/).slice(-1)[0].toUpperCase()
+      : '';
+    // x = 12, the true left edge. It was indented past the portrait, which was only ever
+    // needed while the portrait started at y = 10 — it starts at MAP_TOP now, so the label's
+    // own line is clear and there is no reason for it to sit in the middle of the screen.
+    ink(short ? `${depth} - ${short}` : depth, 12, 12, 'rgba(240,228,196,0.9)');
 
     ctx.textAlign = 'right';
     // Run total plus the bank. Showing only the run made banked stars look lost.
@@ -1416,7 +1440,7 @@ export class Hud {
     ctx.strokeStyle = 'rgba(255,207,92,0.45)';
     ctx.lineWidth = 1;
     ctx.stroke();
-    ctx.font = '11px ui-monospace, monospace';
+    ctx.font = '17px ui-monospace, monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = GOLD;
