@@ -1,10 +1,14 @@
 /**
- * Ad-only pixel art: the wordmark and the button plates.
+ * The wordmark, the launch screen and the button plates.
  *
  * Drawn with the game's own `Pix` toolkit at true art resolution and upscaled
- * NEAREST by CSS, so the ad chrome is made of the same chunky pixels as the
- * walls behind it. Nothing here is fetched — it costs bytes of code, not bytes
- * of payload, which matters inside a 5 MB creative.
+ * NEAREST, so this chrome is made of the same chunky pixels as the walls behind
+ * it. Nothing here is fetched — it costs bytes of code, not bytes of payload,
+ * which matters inside a 5 MB creative.
+ *
+ * Mostly ad-only, and `buildSplash` is the exception: the store build needs the
+ * same wordmark as a PNG, and drawing it twice is how the ad and the app end up
+ * with two different logos. `tools/genlogo.mjs` renders it headless.
  */
 import { Pix, Ramp, hex, rgba, shade } from '../art/pixel';
 import { Rng } from '../core/rng';
@@ -145,7 +149,7 @@ function ragged(rng: Rng, count: number, max: number): number[] {
  * to imply it. DEEP is set in ink rather than in a pale metal, because on
  * parchment a light-on-light subtitle simply disappears.
  */
-export function buildLogo(title: string, sub: string): HTMLCanvasElement {
+function logoPix(title: string, sub: string): Pix {
   const goldRamp = new Ramp([0x7a4512, 0xc08422, 0xf0a91e, 0xffd977, 0xfff2c4]);
   // Ink barely varies: at eight pixels tall a subtitle needs to be a shape you
   // can read, and every extra tone inside a stroke that thin is just noise.
@@ -221,6 +225,41 @@ export function buildLogo(title: string, sub: string): HTMLCanvasElement {
   out.blit(main, Math.round((w - main.w) / 2), rag + padY);
   out.blit(small, Math.round((w - small.w) / 2), rag + padY + main.h + gap);
 
+  return out;
+}
+
+export function buildLogo(title: string, sub: string): HTMLCanvasElement {
+  return logoPix(title, sub).toCanvas();
+}
+
+/**
+ * The launch screen: the torn page on the dark, and nothing else.
+ *
+ * Square and generated at `size`, which is what `capacitor-assets` wants — it
+ * derives every density and both orientations by CENTRE-CROPPING this one
+ * image, so anything near an edge is not merely optional, it is guaranteed to
+ * be cut on some device. Everything that matters lives in the middle third.
+ *
+ * The upscale is a whole number chosen to fill the middle, for the same reason
+ * `fitScale` insists on one: a fractional scale resamples the art off its own
+ * grid and the pixels stop being pixels, which is the whole look. The
+ * background is the manifest's `background_color`, so the native splash, the
+ * web boot screen and the PWA card are all the same dark.
+ */
+export function buildSplash(size: number, title: string, sub: string): HTMLCanvasElement {
+  const logo = logoPix(title, sub);
+  // A third of the frame, so the wordmark survives the crop to the narrowest
+  // phone and to the squarest tablet alike.
+  const scale = Math.max(1, Math.floor((size * 0.34) / logo.w));
+  const art = logo.scale(scale);
+
+  // FLAT, with no vignette. A radial falloff drawn at this size quantises into
+  // visible concentric rings — `Pix.glow` works in a handful of bands, which is
+  // right at sprite scale and is a set of hard circles at 2732. Flat is also the
+  // truthful match: the manifest's `background_color` and the web boot screen
+  // are this exact dark, so the native splash hands over to the page invisibly.
+  const out = new Pix(size, size, hex(0x0a0710));
+  out.blit(art, Math.round((size - art.w) / 2), Math.round((size - art.h) / 2));
   return out.toCanvas();
 }
 
