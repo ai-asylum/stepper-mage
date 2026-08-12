@@ -13,7 +13,7 @@ import { DungeonView } from '../dungeon/render';
 import { STEP_H } from '../art/tiles';
 import { Sprite, preloadSprites, loadSprite } from '../dungeon/sprites';
 import { viewsFor, type SpriteView } from '../art/views';
-import { populate, spriteIdsFor, type Placed, type PlacedKind } from './populate';
+import { populate, spriteIdsFor, type CaptiveSpot, type Placed, type PlacedKind } from './populate';
 import { themeForDepth, type Theme } from '../art/theme';
 import { bossHp, enemyHp, isFast, FAST_HP_MULT, FAST_SPEED } from './tuning';
 import { Ground } from './ground';
@@ -50,6 +50,8 @@ export interface Entity {
   facing: Dir;
   /** Set once an altar has given up its page. */
   spent: boolean;
+  /** Wizard id, on a `captive` entity only. */
+  captiveId?: string;
   /**
    * Does this body fly? A flyer is over the ground terrain — rubble and briar cost it
    * nothing — and pays for everything else exactly as a walker does.
@@ -224,10 +226,17 @@ export class Floor {
   }
 
   /** Build a floor, preloading every sprite it needs before returning. */
-  static async create(depth: number, seed: string, layout?: LayoutId): Promise<Floor> {
+  static async create(
+    depth: number, seed: string, layout?: LayoutId, captive: CaptiveSpot | null = null,
+  ): Promise<Floor> {
     const f = new Floor(depth, seed, layout);
-    await preloadSprites([...spriteIdsFor(f.theme), 'altar_empty', 'chest_open']);
-    const placed = populate(f.grid, f.theme, seed, depth);
+    // The captive's sprite is preloaded with the theme's, so the room is never built around a
+    // body that has not decoded — a gate opening onto an invisible person is worse than no gate.
+    await preloadSprites([
+      ...spriteIdsFor(f.theme), 'altar_empty', 'chest_open',
+      ...(captive ? [captive.sprite] : []),
+    ]);
+    const placed = populate(f.grid, f.theme, seed, depth, captive);
     for (const p of placed) await f.spawn(p);
     return f;
   }
@@ -267,6 +276,8 @@ export class Floor {
       sprite, kind: p.kind, spriteId: p.sprite, golemId: p.golem, flies: !!p.flies,
       hp, maxHp: hp, alive: true, roomId: p.roomId, animated: false, hostile,
       spent: false, speed: fast ? FAST_SPEED : 1,
+      // Carried through so the rescue can name who it freed without a second lookup table.
+      captiveId: p.captiveId,
       // Spawned facing an arbitrary but STABLE direction, derived from the tile so
       // the same seed lays out the same room twice. Arbitrary is the point: a room
       // where every creature happens to be looking at the door has nothing to

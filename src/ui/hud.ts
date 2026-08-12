@@ -200,6 +200,10 @@ export type UiAction =
   | { kind: 'wizardBack' }
   /** Toggle the one gesture-direction preference — see `Meta.invertGestures`. */
   | { kind: 'invertGestures' }
+  /** Cut a captive loose. Once ever, per hero — see `main.ts`'s `rescue`. */
+  | { kind: 'rescue'; entity: Entity }
+  /** Dismiss the rescue card. */
+  | { kind: 'rescueDone' }
   /**
    * Wipe the save. Fires only on the SECOND tap of the reset row, because the first
    * one arms it — see `Hud.resetArmed`. A single tap that deletes every star a player
@@ -517,6 +521,14 @@ export class Hud {
   fovTrack: { x: number; y: number; w: number } | null = null;
   /** Mirror of `Meta.invertGestures`, pushed in by `main.ts` like `fov` is. */
   invertGestures = false;
+  /**
+   * The rescue card: who was just freed, and who freed them. Null the rest of the time.
+   *
+   * Both wizards, because the beat is the one moment two of them share a screen — a card with
+   * only the captive on it is a notification, and a notification is what this is deliberately
+   * not.
+   */
+  rescued: { wizard: Wizard; by: Wizard | null } | null = null;
   /**
    * Who the player is this run. Null only before a wizard has been chosen, which is the
    * one moment the vitals block has no name to put over the bar.
@@ -926,6 +938,8 @@ export class Hud {
     // the bestiary is up, so the two can never both be open — but drawing order is
     // the wrong place to rely on that.
     if (this.settingsOpen) this.drawSettings(ctx, W, H);
+    // Last of all: a rescue interrupts everything, because it happens once ever.
+    if (this.rescued) this.drawRescue(ctx, W, H);
   }
 
   /**
@@ -2481,6 +2495,75 @@ export class Hud {
     }
     if (line && y + lh <= maxY) { ctx.fillText(line, cx, y); y += lh; }
     return y;
+  }
+
+  /**
+   * THE RESCUE: two portraits facing each other, and one line from the person you freed.
+   *
+   * Face to face rather than a banner, because this is the only moment in the game two wizards
+   * are in the same place — everywhere else the roster is a menu of people you are not. Yours
+   * on the left looking right, theirs on the right, their words underneath.
+   */
+  private drawRescue(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    const r = this.rescued;
+    if (!r) return;
+    ctx.fillStyle = 'rgba(6,4,9,0.94)';
+    ctx.fillRect(0, 0, W, H);
+
+    const ph = Math.round(H * 0.24);
+    const pw = Math.round(ph * PORTRAIT_ASPECT);
+    const gap = 14;
+    const total = pw * 2 + gap;
+    const x0 = Math.round((W - total) / 2);
+    const py = Math.round(H * 0.16);
+
+    const face = (id: string, x: number, gold: boolean) => {
+      ctx.save();
+      ctx.beginPath();
+      rr(ctx, x, py, pw, ph, 4);
+      ctx.fillStyle = 'rgba(10,7,13,0.95)';
+      ctx.fill();
+      ctx.clip();
+      drawPortrait(ctx, id, x, py, pw, ph);
+      ctx.restore();
+      rr(ctx, x, py, pw, ph, 4);
+      ctx.strokeStyle = gold ? 'rgba(255,207,92,0.85)' : 'rgba(160,150,175,0.55)';
+      ctx.lineWidth = gold ? 2 : 1.2;
+      ctx.stroke();
+    };
+    if (r.by) face(r.by.portrait, x0, false);
+    face(r.wizard.portrait, x0 + pw + gap, true);
+
+    ctx.textAlign = 'center';
+    let y = py + ph + 22;
+    ctx.font = 'bold 20px ui-monospace, monospace';
+    ctx.fillStyle = '#fff4dc';
+    ctx.fillText(`${r.wizard.name} IS FREE`, W / 2, y);
+    y += 30;
+    ctx.font = '13px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.92)';
+    y = this.wrapped(ctx, `“${r.wizard.rescueLine ?? ''}”`, W / 2, y, W - 44, 18, H - 96);
+    y += 16;
+    ctx.font = '11px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(255,207,92,0.8)';
+    ctx.fillText(`${r.wizard.name.toUpperCase()} JOINS THE ROSTER`, W / 2, y);
+
+    const label = 'GO ON';
+    ctx.font = 'bold 12px ui-monospace, monospace';
+    const bw = Math.max(ctx.measureText(label).width + 44, 150);
+    const bx = (W - bw) / 2, by = Math.min(H - 56, y + 28);
+    rr(ctx, bx, by, bw, 32, 8);
+    ctx.fillStyle = 'rgba(38,26,12,0.96)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,207,92,0.9)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff4dc';
+    ctx.fillText(label, W / 2, by + 16);
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    this.hits.push({ rect: [bx, by, bw, 32], action: { kind: 'rescueDone' } });
   }
 
   private drawCompass(ctx: CanvasRenderingContext2D, W: number, H: number): void {

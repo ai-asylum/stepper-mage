@@ -3,7 +3,7 @@ import { Engine } from './core/engine';
 import { Floor, isCastableObject, type Entity } from './game/floor';
 import { Stepper, PITCH } from './game/stepper';
 import {
-  WIZARDS, WIZARD_BY_ID, FIRST_WIZARD, freedBy,
+  WIZARDS, WIZARD_BY_ID, FIRST_WIZARD, freedBy, captiveOn,
   type Wizard, type WizardElement,
 } from './game/wizards';
 import {
@@ -178,6 +178,15 @@ interface Meta {
    * on a fresh save, so the branches there read as the NON-default case.
    */
   invertGestures: boolean;
+  /**
+   * Wizards this save has FREED, which is not the same list as `wizards`.
+   *
+   * `wizards` is who you may play; this is who you have cut out of a cage. They diverge on
+   * exactly one entry and always will — ASH is playable from the first launch and is never
+   * freed by anybody — so collapsing them into one list would either make Ash rescuable or
+   * make the first save unplayable.
+   */
+  freed: WizardElement[];
 }
 
 const META_KEY = 'stepper-mage.meta.v1';
@@ -313,13 +322,14 @@ function loadMeta(): Meta {
         // Default ON, and absent means ON — a save written before this setting existed
         // should behave like a new one rather than silently opting out.
         invertGestures: m.invertGestures !== false,
+        freed: sanitizeWizards(m.freed).filter((id) => id !== FIRST_WIZARD),
       });
     }
   } catch { /* corrupt or unavailable storage: fall through to defaults */ }
   return applyTree({
     stars: 0, loadout: [...DEFAULT_LOADOUT], slots: 0, handSize: 0, best: 0, nodes: [],
     giftedPage: null, pinned: null, bestiary: [], bossKills: [], fov: DEFAULT_FOV,
-    wizards: [FIRST_WIZARD], invertGestures: true,
+    wizards: [FIRST_WIZARD], invertGestures: true, freed: [],
   });
 }
 
@@ -2525,7 +2535,22 @@ async function boot(): Promise<void> {
 
     state.depth = depth;
     const theme = THEMES[Math.min(THEMES.length - 1, depth - 1)];
-    floor = await Floor.create(depth, `${runSeed}-floor-${depth}`, layout);
+    /**
+     * WHO IS BEHIND THE GATE on this floor, decided here rather than in the generator.
+     *
+     * It depends on the save (who is already freed) and on the wizard being played (only
+     * their own captive appears), and the dungeon generator knows neither and should not
+     * learn them — it builds rooms, not progression.
+     */
+    const captiveWizard = startWizard
+      ? captiveOn(depth, startWizard.id, meta.freed)
+      : null;
+    floor = await Floor.create(
+      depth, `${runSeed}-floor-${depth}`, layout,
+      captiveWizard && captiveWizard.captiveSprite
+        ? { id: captiveWizard.id, sprite: captiveWizard.captiveSprite }
+        : null,
+    );
     engine.scene.add(floor.group);
 
     stepper = new Stepper(floor.grid, floor.grid.start.x, floor.grid.start.y, floor.grid.start.dir);
@@ -2969,6 +2994,28 @@ async function boot(): Promise<void> {
    * the save. The reload is the same path a first-ever launch takes, which makes "reset"
    * mean exactly "be a new player" with no second definition to keep in step.
    */
+  /**
+   * FREE A CAPTIVE. Once ever, per hero, across the whole save.
+   *
+   * Three writes and they must not come apart: the deed goes in `meta.freed` so the room stops
+   * generating, the wizard goes in `meta.wizards` so they can be played, and the card comes up
+   * so the player is told by the person rather than by a toast. Saved immediately — a rescue
+   * lost to a crash on the way to the stairs is the worst possible thing to have to do twice,
+   * because it can only be done once.
+   */
+  const rescue = (e: Entity): void => {
+    const id = e.captiveId as WizardElement | undefined;
+    const w = id ? WIZARD_BY_ID[id] : null;
+    if (!w || !id || meta.freed.includes(id)) return;
+    meta.freed.push(id);
+    if (!meta.wizards.includes(id)) meta.wizards.push(id);
+    saveMeta(meta);
+    e.alive = false;
+    e.sprite.group.visible = false;
+    hud.rescued = { wizard: w, by: startWizard };
+    hud.addLog(`${w.name} is free.`, 0xffcf5c);
+  };
+
   const resetProgress = (): void => {
     if (!hud.resetArmed) { hud.resetArmed = true; return; }
     try { localStorage.removeItem(META_KEY); } catch { /* private mode: nothing saved */ }
@@ -3757,6 +3804,15 @@ async function boot(): Promise<void> {
          * is a thing you pull.
          */
         if (a.entity.kind === 'lever') { throwLever(a.entity); break; }
+        /**
+         * A CAPTIVE IS TAPPED, NOT AIMED AT.
+         *
+         * Routed here rather than through a separate reticle rule, because the reticle already
+         * decides what is in front of you and a second system deciding it again is how the
+         * crossed-out-but-castable furniture bug happened. A body you can free is simply a
+         * target whose tap means something other than "aim".
+         */
+        if (a.entity.kind === 'captive') { rescue(a.entity); break; }
         hud.target = a.entity;
         break;
       case 'cycle': cycleTarget(); break;
@@ -3792,6 +3848,8 @@ async function boot(): Promise<void> {
       }
       case 'wizardBack': hud.rosterPeek = null; break;
       case 'wizardPick': pickWizard(a.id); break;
+      case 'rescue': rescue(a.entity); break;
+      case 'rescueDone': hud.rescued = null; break;
       case 'altar': takeFromAltar(a.entity); break;
       case 'harvest': harvestFrom(a.entity); break;
       case 'belt': takeIngredient(a.id); break;
@@ -3905,7 +3963,7 @@ async function boot(): Promise<void> {
   const UI_CONTROLS: ReadonlySet<string> = new Set([
     'cast', 'clear', 'descend', 'cycle', 'altar', 'chest', 'harvest',
     'belt', 'card', 'tree', 'bestiary', 'settings', 'resetProgress',
-    'wizardPeek', 'wizardPick', 'wizardBack', 'invertGestures',
+    'wizardPeek', 'wizardPick', 'wizardBack', 'invertGestures', 'rescue', 'rescueDone',
   ]);
 
   /**
@@ -4052,7 +4110,7 @@ async function boot(): Promise<void> {
      * this handler and stepped the player through a dungeon they cannot see. The panel is
      * a full-screen fill, so anything landing on it is meant for it.
      */
-    if (hud.settingsOpen || hud.roster) { act(hud.hit(x, y)); return; }
+    if (hud.settingsOpen || hud.roster || hud.rescued) { act(hud.hit(x, y)); return; }
     // A finished run resolves its tap through the HUD, so the run-end card's door to
     // the tree is a real control — and `act` sends every other tap the same way.
     if (dead) { act(hud.hit(x, y)); return; }

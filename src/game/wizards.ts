@@ -87,6 +87,32 @@ export interface Wizard {
   /** Asset id in `art/manifest.json`. */
   readonly portrait: string;
   /**
+   * Full-body sprite for the CAPTIVE pose, or null for the head of the chain.
+   *
+   * Null on ASH for the same reason he has no `rescueLine`: nobody frees him, so there is no
+   * room he can be standing in.
+   */
+  readonly captiveSprite: string | null;
+  /**
+   * What is holding them, in the player's words. Drawn on the gate.
+   *
+   * Each binding answers the CAPTIVE's own element, because a wizard is not held by accident
+   * — ice does not detain the frost wizard unless somebody put it there. And each one is
+   * undone by the element of whoever frees them, which the chain already decides (see
+   * `opensWith`): fire melts Kela's ice, frost makes Zel's iron brittle, spark burns Vane's
+   * rope, gust blows out the candles penning Vess, decay rots Yew's briar. The chain and the
+   * puzzle are the same list, so neither can drift from the other.
+   */
+  readonly binding: string | null;
+  /**
+   * The depth this captive waits on, or 0 for the head of the chain.
+   *
+   * Stored rather than read off the rescuer's quest list, because only ASH has a quest list
+   * written — deriving it by matching quest names against wizard names gave the other four a
+   * captive on floor zero. One rescue per floor from III down.
+   */
+  readonly captiveDepth: number;
+  /**
    * The quest log. Only ASH has one written; the rest are deliberately empty rather
    * than filled with placeholders, because an empty log draws nothing and a
    * placeholder log teaches the player that the log is noise.
@@ -116,6 +142,9 @@ export const WIZARDS: readonly Wizard[] = [
     line: 'It left me alive in the ashes of my home. I have carried them down here to give back.',
     frees: 'frost',
     portrait: 'portrait_ash',
+    captiveSprite: null,
+    binding: null,
+    captiveDepth: 0,
     quests: [
       { name: 'THE FIRST ALTAR', depth: 1, detail: 'Visit it.' },
       {
@@ -147,6 +176,9 @@ export const WIZARDS: readonly Wizard[] = [
     rescueLine: 'Eleven years of this and it is ICE that finally held me. Do not repeat that to anyone.',
     frees: 'spark',
     portrait: 'portrait_kela',
+    captiveSprite: 'hero_kela',
+    binding: 'a crust of ice over her wrists',
+    captiveDepth: 3,
     quests: [],
   },
   {
@@ -168,6 +200,9 @@ export const WIZARDS: readonly Wizard[] = [
     rescueLine: 'Iron. Of course it was iron. Somebody down here is going to explain that to me.',
     frees: 'gust',
     portrait: 'portrait_zel',
+    captiveSprite: 'hero_zel',
+    binding: 'iron chains that drink her sparks',
+    captiveDepth: 4,
     quests: [],
   },
   {
@@ -191,6 +226,9 @@ export const WIZARDS: readonly Wizard[] = [
     rescueLine: 'Best afternoon I have had in years. Did you see the size of that thing?',
     frees: 'rot',
     portrait: 'portrait_vane',
+    captiveSprite: 'hero_vane',
+    binding: 'a net of rope and briar',
+    captiveDepth: 5,
     quests: [],
   },
   {
@@ -212,6 +250,9 @@ export const WIZARDS: readonly Wizard[] = [
     rescueLine: 'You have cost me about forty minutes. I do not have a great many of those left.',
     frees: 'plant',
     portrait: 'portrait_vess',
+    captiveSprite: 'hero_vess',
+    binding: 'a ring of salt and burning candles',
+    captiveDepth: 6,
     quests: [],
   },
   {
@@ -235,6 +276,9 @@ export const WIZARDS: readonly Wizard[] = [
     rescueLine: 'I was getting out of that. Eventually. It was going to take a while.',
     frees: null,
     portrait: 'portrait_yew',
+    captiveSprite: 'hero_yew',
+    binding: 'a cage of living briar, grown shut',
+    captiveDepth: 7,
     quests: [],
   },
 ];
@@ -257,3 +301,28 @@ export const freedBy = (id: WizardElement): WizardElement | null =>
  * would leave a new save with nothing selectable.
  */
 export const FIRST_WIZARD: WizardElement = 'fire';
+
+/**
+ * The element that opens this wizard's gate — which is simply the element of whoever frees
+ * them, because a wizard IS their element.
+ *
+ * Derived rather than stored so the puzzle cannot disagree with the chain. If `frees` is
+ * ever re-ordered, every gate follows it in the same edit.
+ */
+export const opensWith = (id: WizardElement): WizardElement | null => freedBy(id);
+
+/**
+ * The captive waiting on this floor for this player, or null.
+ *
+ * Three things have to be true at once, and all three are why the room is not simply "a gate
+ * on every floor": somebody is bound at this depth, they are not free yet, and the wizard you
+ * are PLAYING is the one who frees them. The last clause is what stops Ash walking past four
+ * cages he cannot open — his gate is Kela's and no one else's.
+ */
+export const captiveOn = (
+  depth: number, playing: WizardElement, freed: readonly string[],
+): Wizard | null =>
+  WIZARDS.find((w) => w.captiveDepth === depth
+    && !freed.includes(w.id)
+    && freedBy(w.id) === playing) ?? null;
+

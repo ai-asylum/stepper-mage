@@ -12,9 +12,12 @@ import { Grid, DIR_VEC, Surface, type Room } from '../dungeon/grid';
 import type { Theme } from '../art/theme';
 import { ROOM_ENEMIES_BASE, ROOM_ENEMIES_MAX, roomEnemyChance } from './tuning';
 
-export type PlacedKind = 'prop' | 'enemy' | 'altar' | 'chest' | 'boss' | 'stairs' | 'lever';
+export type PlacedKind = 'prop' | 'enemy' | 'altar' | 'chest' | 'boss' | 'stairs' | 'lever'
+  | 'captive';
 
 export interface Placed {
+  /** Wizard id, on a `captive` placement only. */
+  captiveId?: string;
   kind: PlacedKind;
   /** Sprite id in public/art. */
   sprite: string;
@@ -51,7 +54,21 @@ function enemyCount(rng: Rng, depth: number, room: Room): number {
   return Math.min(ROOM_ENEMIES_MAX, base + (rng.chance(roomEnemyChance(depth)) ? 1 : 0));
 }
 
-export function populate(grid: Grid, theme: Theme, seed: string, depth: number): Placed[] {
+/**
+ * A captive to place on this floor, or null. Passed IN rather than worked out here, because
+ * who is behind the gate depends on the save (who is already freed) and on the wizard being
+ * played — neither of which the dungeon generator knows or should learn.
+ */
+export interface CaptiveSpot {
+  /** Wizard id, so the entity can be traced back to the roster. */
+  id: string;
+  /** Full-body sprite. */
+  sprite: string;
+}
+
+export function populate(
+  grid: Grid, theme: Theme, seed: string, depth: number, captive: CaptiveSpot | null = null,
+): Placed[] {
   const rng = new Rng(`${seed}-pop`);
   const out: Placed[] = [];
   const taken = new Set<number>();
@@ -75,7 +92,29 @@ export function populate(grid: Grid, theme: Theme, seed: string, depth: number):
       return open >= 3;
     });
 
+  /**
+   * THE CAPTIVE, in the first room that is not the entrance, the altar, the boss or the
+   * stairs.
+   *
+   * A room off the critical path on purpose: the gate has to be optional. A player who cannot
+   * open it — wrong element, wrong wizard — must still be able to finish the floor, so the
+   * one thing the room may never contain is the way down.
+   */
+  let captivePlaced = !captive;
   for (const room of grid.rooms) {
+    if (!captivePlaced && captive
+      && room.kind === 'normal') {
+      const spot = openTiles(room)[0];
+      if (spot) {
+        out.push({
+          kind: 'captive', sprite: captive.sprite, x: spot[0], y: spot[1],
+          ox: 0, oz: 0, hover: 0, roomId: room.id, captiveId: captive.id,
+        });
+        claim(spot[0], spot[1]);
+        captivePlaced = true;
+      }
+    }
+
     // ---- the room's signature fixture --------------------------------------
     if (room.kind === 'altar') {
       out.push({
