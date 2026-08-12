@@ -100,10 +100,10 @@ export function populate(
    * open it — wrong element, wrong wizard — must still be able to finish the floor, so the
    * one thing the room may never contain is the way down.
    */
-  let captivePlaced = !captive;
+  // Nothing to place when the generator could not seal a room on this floor's shape.
+  let captivePlaced = !captive || grid.captiveRoom < 0;
   for (const room of grid.rooms) {
-    if (!captivePlaced && captive
-      && room.kind === 'normal') {
+    if (!captivePlaced && captive && room.id === grid.captiveRoom) {
       const spot = openTiles(room)[0];
       if (spot) {
         out.push({

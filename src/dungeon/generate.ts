@@ -22,6 +22,14 @@ import { LAYOUTS, layoutFor, recentre, type LayoutId } from './layouts';
 export interface GenOpts {
   depth: number;
   seed: string;
+  /**
+   * Does this floor need a sealed room for a captive?
+   *
+   * Asked for rather than worked out, because whether anybody is behind a gate on floor three
+   * depends on the SAVE — who is already freed, and which wizard is being played — and the
+   * generator has no business knowing either. It is told, and it answers with geometry.
+   */
+  wantCaptiveRoom?: boolean;
   /** Grid grows a little with depth so later floors feel bigger. */
   size?: number;
   /**
@@ -66,7 +74,7 @@ export function generate(opts: GenOpts): Grid {
   if (!layout.dressed) {
     dress(g, rng, opts.depth);
     raise(g, rng, opts.depth);
-    wind(g, rng, opts.depth);
+    wind(g, rng, opts.depth, !!opts.wantCaptiveRoom);
     lock(g, rng, opts.depth);
     strew(g, rng, opts.depth);
   }
@@ -631,7 +639,7 @@ function raise(g: Grid, rng: Rng, depth: number): void {
  * and the trapdoor last on 8 — it is the only one that can take a floor off you, and
  * it should arrive to a player who already trusts that a wind-up means something.
  */
-function wind(g: Grid, rng: Rng, depth: number): void {
+function wind(g: Grid, rng: Rng, depth: number, wantCaptiveRoom = false): void {
   if (depth < 3) return;
 
   const sacred = new Set<number>([g.idx(g.start.x, g.start.y)]);
@@ -704,6 +712,15 @@ function wind(g: Grid, rng: Rng, depth: number): void {
     });
   }
 
+  /**
+   * THE CAPTIVE'S GATE FIRST, when this floor is asked for one.
+   *
+   * Before the ordinary gate so it gets the pick of the corridors — the two use the same search
+   * and the ordinary one would happily take the only door that seals a room. `captiveRoom` is
+   * left on the grid for `populate` to read, and stays -1 when no room could be sealed, which is
+   * a floor whose shape simply had nowhere to put one.
+   */
+  if (wantCaptiveRoom) g.captiveRoom = placeCaptiveGate(g, rng) ?? -1;
   if (depth >= 6) placeGate(g, rng);
 }
 
@@ -720,6 +737,91 @@ function wind(g: Grid, rng: Rng, depth: number): void {
  *  - WITH IT OPEN, everything is reachable. Otherwise the gate is not a gate, it is
  *    a wall somebody left a switch next to.
  */
+/**
+ * A gate that seals a ROOM, for the captive to be behind. Returns the room it sealed.
+ *
+ * The same search as `placeGate` and deliberately so — the reachability test, the "nothing the
+ * run needs may be stranded" rule and the plate distance band are all load-bearing and none of
+ * them is different here. Two things change.
+ *
+ * First, it must gate a ROOM rather than merely gate SOMETHING: the captive stands in a room,
+ * so a door that seals six corridor tiles is no use even though `placeGate` would take it.
+ * Second, it returns which room, because the gate has to choose the room and not the reverse —
+ * the captive is placed by `populate`, long after the grid exists, so generation cannot be told
+ * where they will be. It decides where they CAN be instead.
+ */
+function placeCaptiveGate(g: Grid, rng: Rng): number | null {
+  const sacred = new Set<number>([g.idx(g.start.x, g.start.y)]);
+  if (g.stairs) sacred.add(g.idx(g.stairs.x, g.stairs.y));
+  for (const r of g.rooms) sacred.add(g.idx(r.cx, r.cy));
+
+  const corridors: number[] = [];
+  for (let y = 1; y < g.h - 1; y++) {
+    for (let x = 1; x < g.w - 1; x++) {
+      const i = g.idx(x, y);
+      if (!g.walkable(x, y) || sacred.has(i)) continue;
+      if (g.roomOf[i] !== 255 || g.surface[i] !== Surface.Plain) continue;
+      if (g.hazards.some((h) => g.idx(h.x, h.y) === i)) continue;
+      let open = 0;
+      for (const [dx, dy] of DIR_VEC) if (g.walkable(x + dx, y + dy)) open++;
+      if (open === 2) corridors.push(i);
+    }
+  }
+
+  for (const i of rng.shuffle(corridors).slice(0, 20)) {
+    const x = i % g.w, y = (i / g.w) | 0;
+    const wasTile = g.tiles[i];
+    g.tiles[i] = Tile.Door;
+    g.setDoorLift(i, 0);
+    const shut = reachable(g);
+    g.setDoorLift(i, 1);
+    const open = reachable(g);
+    g.setDoorLift(i, 0);
+
+    let stranded = false;
+    for (const j of sacred) if (!shut[j]) { stranded = true; break; }
+    if (stranded) { g.tiles[i] = wasTile; continue; }
+
+    /**
+     * WHICH ROOM ended up behind it, and is enough of that room behind it to stand in.
+     *
+     * Counted per room rather than taken from the first gated tile, because a door can clip
+     * the corner of a room it does not really seal — and a captive placed in the two tiles of
+     * a room the player can still walk into is a captive behind no gate at all.
+     */
+    const gatedIn = new Map<number, number>();
+    for (let j = 0; j < open.length; j++) {
+      if (!open[j] || shut[j]) continue;
+      const rid = g.roomOf[j];
+      if (rid === 255) continue;
+      gatedIn.set(rid, (gatedIn.get(rid) ?? 0) + 1);
+    }
+    let best = -1, bestN = 0;
+    for (const [rid, n] of gatedIn) if (n > bestN) { best = rid; bestN = n; }
+    // Six tiles is a room you can put somebody in the middle of; fewer is a nook.
+    if (best < 0 || bestN < 6) { g.tiles[i] = wasTile; continue; }
+    // Never the entrance: a gate across the room the player starts in seals THEM in.
+    if (g.rooms[best]?.kind === 'entrance') { g.tiles[i] = wasTile; continue; }
+
+    const plates: number[] = [];
+    for (let j = 0; j < shut.length; j++) {
+      if (!shut[j] || sacred.has(j) || g.surface[j] !== Surface.Plain) continue;
+      if (g.roomOf[j] === 255) continue;
+      if (g.hazards.some((h) => g.idx(h.x, h.y) === j)) continue;
+      const px = j % g.w, py = (j / g.w) | 0;
+      const d = Math.abs(px - x) + Math.abs(py - y);
+      if (d >= 4 && d <= 9) plates.push(j);
+    }
+    if (!plates.length) { g.tiles[i] = wasTile; continue; }
+
+    const plate = rng.pick(plates);
+    g.surface[plate] = Surface.Plate;
+    g.doors.push({ i, plate });
+    return best;
+  }
+  return null;
+}
+
 function placeGate(g: Grid, rng: Rng): boolean {
   const sacred = new Set<number>([g.idx(g.start.x, g.start.y)]);
   if (g.stairs) sacred.add(g.idx(g.stairs.x, g.stairs.y));

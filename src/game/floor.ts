@@ -192,9 +192,12 @@ export class Floor {
   /** The fog banks, as billboards hanging in the air rather than a tint. */
   readonly murkView = new MurkView();
 
-  private constructor(readonly depth: number, readonly seed: string, layout?: LayoutId) {
+  private constructor(
+    readonly depth: number, readonly seed: string, layout?: LayoutId,
+    wantCaptiveRoom = false,
+  ) {
     this.theme = themeForDepth(depth);
-    this.grid = generate({ depth, seed, layout });
+    this.grid = generate({ depth, seed, layout, wantCaptiveRoom });
     // Shallow water will not take a flame. `Ground` deliberately knows nothing about
     // tiles, so the one place holding both it and the grid is where the rule goes.
     this.ground.refuses = (i, what) =>
@@ -229,7 +232,7 @@ export class Floor {
   static async create(
     depth: number, seed: string, layout?: LayoutId, captive: CaptiveSpot | null = null,
   ): Promise<Floor> {
-    const f = new Floor(depth, seed, layout);
+    const f = new Floor(depth, seed, layout, !!captive);
     // The captive's sprite is preloaded with the theme's, so the room is never built around a
     // body that has not decoded — a gate opening onto an invisible person is worse than no gate.
     await preloadSprites([

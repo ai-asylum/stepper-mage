@@ -332,6 +332,13 @@ export class Grid {
   hazards: Hazard[] = [];
   /** Portcullises and their plates. */
   doors: Door[] = [];
+  /**
+   * Room sealed behind the captive's gate, or -1.
+   *
+   * On the grid because the gate is grid geometry and `populate` needs to know which room it
+   * made unreachable — the captive has to stand behind the door rather than merely somewhere.
+   */
+  captiveRoom = -1;
   /** The way into the boss room, and what opens it. Null on floors that have none. */
   bossDoor: BossDoor | null = null;
 
