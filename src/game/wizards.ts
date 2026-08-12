@@ -201,7 +201,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'plant',
     name: 'YEW',
     title: 'the Greenwarden',
-    reason: 'The corruption spreading through the world starts here.',
+    reason: 'She came to end the corruption at its root.',
     backstory: 'Yew is the youngest person to go down, and she went because nobody older '
       + 'would listen. She keeps the green on the surface — it is the only work she has '
       + 'ever wanted — and this spring it started coming up wrong: roots in the wrong '
