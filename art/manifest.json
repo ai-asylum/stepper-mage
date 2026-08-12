@@ -1103,6 +1103,54 @@
       "colors": 32,
       "seed": 20026,
       "prompt": "YEW THE GREENWARDEN: a girl of about fourteen with a FIERCE, DEFIANT, STUBBORN expression — chin lifted and jutting forward, brows drawn down and together in a hard scowl, wide bright hazel eyes BLAZING with determination and a flicker of fear underneath, mouth pressed into a tight stubborn line. The face of a child nobody would listen to who came down anyway. Freckles across her nose, a smudge of dirt on one cheek, a small cut on her eyebrow. Messy sun-bleached light brown hair full of leaves, VIVID EMERALD GREEN moss, tiny WHITE flowers and SCARLET RED berries tangled in it, one green shoot curling behind her ear. Warm freckled sun-tanned skin, flushed cheeks. WARM OCHRE-GOLD smock, DEEP BLUE scarf. Bright dappled golden-green light from the upper right, cool blue shadow. Vivid and saturated. NOT calm, NOT serene, NOT blank, NOT expressionless, NOT smiling politely, NOT an adult, NOT an old man."
+    },
+    {
+      "id": "hero_kela",
+      "kind": "creature",
+      "height": 132,
+      "colors": 32,
+      "seed": 20101,
+      "prompt": "KELA THE WINTERMAIDEN, A CAPTIVE: a severe woman in her thirties, a demon hunter, standing pinned against dungeon stone with her wrists held above her head by a crust of thick blue-white ICE frozen over them. White-blonde hair pulled back, frost on the ends. DEEP INDIGO BLUE hunting coat, OXBLOOD RED straps. Ruddy wind-burnt skin. Jaw clenched, glaring straight ahead, furious and entirely undefeated. Pale blue frost light. Full body, head to boots."
+    },
+    {
+      "id": "hero_zel",
+      "kind": "creature",
+      "height": 132,
+      "colors": 32,
+      "seed": 20102,
+      "prompt": "ZEL THE STORMWRIGHT, A CAPTIVE: a wiry young woman with sleek copper-orange hair, bound to a stone pillar by heavy black IRON CHAINS wrapped around her arms and waist, the iron visibly drinking the sparks off her so nothing arcs. COBALT BLUE coat with GOLD buttons. Half-smirking despite it, chin up, unbothered and calculating. Warm gold and blue. Full body, head to boots."
+    },
+    {
+      "id": "hero_vane",
+      "kind": "creature",
+      "height": 132,
+      "colors": 32,
+      "seed": 20103,
+      "prompt": "VANE THE WINDWALKER, A CAPTIVE: a cheerful weather-tanned young man tangled upside-down in a net of dark rope and briar, one arm free and waving, TEAL scarf hanging down, sand-cream shirt. Grinning, entirely delighted by his own situation. Warm daylight and cool shadow. Full body, head to boots."
+    },
+    {
+      "id": "hero_vess",
+      "kind": "creature",
+      "height": 132,
+      "colors": 32,
+      "seed": 20104,
+      "prompt": "VESS THE PLAGUEBOUND, A CAPTIVE: a gaunt dying man in a DEEP TEAL physician's coat with a SAFFRON YELLOW scarf, slumped seated against a stone wall inside a ring of pale salt and burning candles that pen him in. Black veins up his throat. Calm, lucid, faintly amused, looking up at the viewer. Warm amber and teal. Full body, head to boots."
+    },
+    {
+      "id": "hero_yew",
+      "kind": "creature",
+      "height": 132,
+      "colors": 32,
+      "seed": 20105,
+      "prompt": "YEW THE GREENWARDEN, A CAPTIVE: a girl of about fourteen held fast inside a cage of living THORNED BRIAR that has grown up around her and clamped shut, thorns inches from her arms. Messy hair with leaves, WARM OCHRE-GOLD smock, DEEP BLUE scarf, dirt on her cheek. Scowling, chin up, defiant and frightened. Green-gold dappled light. Full body, head to boots."
+    },
+    {
+      "id": "hero_ash",
+      "kind": "creature",
+      "height": 132,
+      "colors": 32,
+      "seed": 20106,
+      "prompt": "ASH THE FIREWIZARD, A CAPTIVE: a hard mean scarred man in his late twenties, thick burn scars down the left of his face, kneeling in a circle of blackened stone with heavy iron manacles on his wrists and a snuffed brazier beside him. DEEP CRIMSON mantle over blackened leather. Snarling upward, furious. Ember light and cool teal rim. Full body, head to boots."
     }
   ]
 }
