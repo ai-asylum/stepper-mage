@@ -51,15 +51,15 @@
  *
  * `enemyDamage` came down 20% first, which is the matching fix on paper and was not
  * enough: the depth-5 gate seed took exactly 40 from seven mook hits and died with
- * the boss already dead. Healing is not available as a lever either — the harness
- * shows the player arriving at every floor at FULL, so `descendHeal` is already
- * generous enough to be irrelevant and raising it does literally nothing. (It was
- * raised, measured, and reverted.)
+ * the boss already dead. What was left was the bar, and it was also the honest lever:
+ * the change did not make enemies hit harder, it made them act more often, so the
+ * matching compensation is absorbing more actions rather than each one mattering less.
  *
- * What is left is the bar, and it is also the honest one. The change did not make
- * enemies hit harder, it made them act more often; the matching compensation is
- * being able to absorb more actions, not each action mattering less. Cutting damage
- * further would have flattened a depth curve that is deliberately steep.
+ * THIS NUMBER IS NOW THE WHOLE RUN. It used to be a per-floor allowance, because
+ * `descendHeal` handed most of it back at every staircase; that heal is gone (see the
+ * attrition section), so 46 is the total HP a run gets except for what it finds in
+ * chests and altars. Every figure above is still quoted as a fraction of it, but the
+ * fraction now compounds across floors instead of resetting, which is the point.
  */
 export const PLAYER_MAX_HP = 46;
 
@@ -387,30 +387,28 @@ export const ROUND_PACE_MS = 60;
 // ---------------------------------------------------------------- attrition
 
 /**
- * Attrition, scaled with depth because everything it is measured against is.
+ * THE BAR IS THE RUN'S BUDGET, NOT THE FLOOR'S. Nothing hands it back for free.
  *
- * Flat heals could not fund the run. The shape is worse than the total: a routed
- * floor costs 8 HP at depth 1 and 42 at depth 5 (measured), so a flat heal is a
- * windfall on floor 1 and a rounding error on floor 5. Sized off the floor's own
- * cost instead, so `descendHeal` lands you on the next floor at roughly full and
- * the bar is the fight's budget rather than the run's.
+ * There was a `descendHeal` here — 3 + 4d, paid for walking down the stairs — and it
+ * is gone. Taking the stairs now costs nothing and pays nothing; the HP you finished a
+ * floor on is the HP you start the next one with.
  *
- * Both curves came DOWN with the rebase (4 + 5d → 3 + 4d, 2 + 3d → 2 + 2d), and
- * that is the same decision as raising the damage, taken from the other end. The
- * measurement: a routed run cost 155 HP against a 171 HP budget before the rebase
- * (111% funded); moving the turn onto the cast took the cost to 95 (180% funded), and
- * the damage curves above bring it back to 126. Leaving the heals alone would have
- * left the run funded at 136% — and a bar that cannot run out is not a budget, so
- * every fight downstream would have been decided by nothing. At 3 + 4d and 2 + 2d the
- * budget is 142 against 126: 112% funded, one point off what the pre-rebase economy
- * actually shipped. The heals also start LANDING again, which is its own finding —
- * before the trim the bar was so often full at the chest that the harness logged
- * `chest +0` on all 25 floors of a five-seed run.
+ * The curve was the argument against itself. Its slope was +4 per depth against +1 for
+ * `bossDamage` and +0.5 for `enemyDamage`, and the bar it filled is a flat 46 — so the
+ * reward for descending grew four times faster than the cost of the floor you descended
+ * into, and past about depth 8 the heal (35+) simply refilled the whole bar no matter
+ * what the floor had done to you. Depth was a REWARD. That is the wrong sign for the
+ * one axis the whole game is built along, and no value of `descendHeal` fixes it,
+ * because a heal that scales with depth is the sign error rather than a bad number.
  *
- * Sized off the depth being LEFT, so the heal that funds floor 4 is the one you
- * take walking out of floor 3.
+ * What replaces it is nothing, deliberately. Healing is now something you FIND — a
+ * chest, or an altar that offers mending instead of power — so it is a reward for
+ * exploring a floor rather than a refund for leaving it. That also means the depth you
+ * reach is decided by the bar and the bar alone, which is what makes reaching depth 7
+ * an achievement rather than a formality.
+ *
+ * Read the two curves below as the ONLY income in the game.
  */
-export const descendHeal = (depth: number): number => 3 + depth * 4;
 export const chestHealBase = (depth: number): number => 2 + depth * 2;
 export const CHEST_HEAL_SPREAD = 4;
 

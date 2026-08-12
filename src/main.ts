@@ -43,7 +43,7 @@ import { affinityOf } from './game/affinity';
 import type { Element as SpellElement } from './spells/spells';
 import { DEFAULT_STEP, setPixelStep } from './art/steps';
 import {
-  CATCH_UP_DRAWS, CHEST_HEAL_SPREAD, PLAYER_MAX_HP, THREAT_REACH, chestHealBase, descendHeal,
+  CATCH_UP_DRAWS, CHEST_HEAL_SPREAD, PLAYER_MAX_HP, THREAT_REACH, chestHealBase,
   fallDamage, healable,
 } from './game/tuning';
 import { setGilded, setPageRanks } from './book/pageTexture';
@@ -1452,10 +1452,12 @@ async function boot(): Promise<void> {
     const pool: AltarOffer[] = [];
     const weights: number[] = [];
     if (state.hp < state.maxHp) {
-      // Sized off the descent heal rather than a new curve, so the altar stays
-      // inside the attrition budget `tuning.ts` is balanced against. Clamped here
-      // rather than on the way in, so the card promises what you will actually get.
-      const heal = healable(state.hp, state.maxHp, descendHeal(state.depth));
+      // Sized off the CHEST curve rather than a new one, because an altar heal and a
+      // chest heal are the same kind of thing now that the descent heal is gone: HP you
+      // FOUND. Taken flat, without the chest's spread, because an altar card names the
+      // number up front and has to be able to keep the promise. Clamped here rather
+      // than on the way in, so the card promises what you will actually get.
+      const heal = healable(state.hp, state.maxHp, chestHealBase(state.depth));
       pool.push({
         kind: 'heal', id: '', name: `Restore ${heal} Health`, tag: 'MENDING',
         colour: 0x8ce06a,
@@ -2837,9 +2839,11 @@ async function boot(): Promise<void> {
       endRun('won', state.stars + 25);
       return;
     }
-    // Heal on descent, sized off the depth being LEFT, so a good floor is rewarded
-    // but attrition is real.
-    state.hp += healable(state.hp, state.maxHp, descendHeal(state.depth));
+    // NO HEAL. The stairs cost nothing and pay nothing — the HP you finish a floor on
+    // is the HP you start the next one with. See the attrition section of `tuning.ts`:
+    // the old descent heal grew faster with depth than any damage curve did, which made
+    // going deeper a reward. Healing is something you find now, not something you are
+    // handed for leaving.
     await enterFloor(state.depth + 1);
   };
 
