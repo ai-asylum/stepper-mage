@@ -181,7 +181,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'rot',
     name: 'VESS',
     title: 'the Plaguebound',
-    reason: 'He is rotting. The cure is somewhere at the bottom.',
+    reason: 'He is rotting and looking for the cure.',
     backstory: 'Vess was the physician the town sent for, and he was good at it, right up '
       + 'until the thing he was treating started treating him back. The black is in his '
       + 'arms to the elbow now and climbing. He has read every book above ground on the '
