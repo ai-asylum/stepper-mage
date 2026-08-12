@@ -15,7 +15,7 @@ import { Sprite, preloadSprites, loadSprite } from '../dungeon/sprites';
 import { viewsFor, type SpriteView } from '../art/views';
 import { populate, spriteIdsFor, type Placed, type PlacedKind } from './populate';
 import { themeForDepth, type Theme } from '../art/theme';
-import { bossHp, enemyHp } from './tuning';
+import { bossHp, enemyHp, isFast, FAST_HP_MULT, FAST_SPEED } from './tuning';
 import { Ground } from './ground';
 import { FireView } from '../dungeon/fireView';
 import { GrowthView, type GrowthKind } from '../dungeon/growthView';
@@ -55,6 +55,16 @@ export interface Entity {
    * nothing — and pays for everything else exactly as a walker does.
    */
   flies: boolean;
+  /**
+   * Tiles this body closes per round. One for almost everything; `FAST_SPEED` for the
+   * bodies `isFast` picks out.
+   *
+   * On the entity rather than derived per round because it has to be READABLE — the
+   * reticle and the telegraph both need to say "this one is quick" before it proves it,
+   * and a body that reveals its speed only by arriving early is a rule the player
+   * cannot learn from.
+   */
+  speed: number;
 }
 
 /** Kinds that physically occupy their tile. Stairs are walk-on by design. */
@@ -241,14 +251,22 @@ export class Floor {
     sprite.setTileLight(this.grid.lightAt(p.x, p.y));
     await attachViews(sprite, p.sprite, tex);
 
-    const hp = p.kind === 'boss' ? bossHp(this.depth)
+    /**
+     * FAST BODIES ARE CHEAPER BODIES. A mook that closes two tiles a round arrives
+     * with rounds to spare that a walker never had, so it carries `FAST_HP_MULT` of
+     * the health — it reaches you and dies, rather than reaching you and staying.
+     * Bosses are never fast: the boss fight is paced by its walk across the room.
+     */
+    const fast = p.kind === 'enemy' && isFast(p.x, p.y);
+    const baseHp = p.kind === 'boss' ? bossHp(this.depth)
       : p.kind === 'enemy' ? enemyHp(this.depth)
       : 20;
+    const hp = fast ? Math.round(baseHp * FAST_HP_MULT) : baseHp;
 
     const e: Entity = {
       sprite, kind: p.kind, spriteId: p.sprite, golemId: p.golem, flies: !!p.flies,
       hp, maxHp: hp, alive: true, roomId: p.roomId, animated: false, hostile,
-      spent: false,
+      spent: false, speed: fast ? FAST_SPEED : 1,
       // Spawned facing an arbitrary but STABLE direction, derived from the tile so
       // the same seed lays out the same room twice. Arbitrary is the point: a room
       // where every creature happens to be looking at the door has nothing to

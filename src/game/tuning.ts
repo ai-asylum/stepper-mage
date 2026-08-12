@@ -78,7 +78,30 @@ export const PLAYER_MAX_HP = 46;
  * mook outright at every depth). The free round is bought back on `enemyDamage`
  * instead, where it costs the player HP without costing the fight its shape.
  */
-export const enemyHp = (depth: number): number => 7 + depth * 3;
+export const enemyHp = (depth: number): number => 28 + depth * 4;
+
+/**
+ * How fast a FAST body is, and what it pays for the speed.
+ *
+ * Two tiles a round instead of one, which is the only stat in the game that changes
+ * what a room IS rather than how long it takes: a walker's distance is under the
+ * player's control, because stepping away preserves the gap forever. A body that
+ * closes two cannot be kited, so the tile you are standing on when you turn a corner
+ * is a commitment.
+ *
+ * It pays for that in HP and in damage, because arriving sooner is already worth
+ * rounds. At 0.6 a fast body is two casts rather than three or four, so it reaches you
+ * and dies quickly instead of reaching you and staying.
+ *
+ * Which bodies are fast is derived from the TILE (see `isFast`), not rolled. Drawing it
+ * from `populate`'s rng would reshuffle every placement on every floor — the same trap
+ * documented on `roomEnemyChance` — so this is a hash of the spawn position, exactly
+ * like `Entity.facing` already is. Same seed, same layout, same bodies fast.
+ */
+export const FAST_SPEED = 2;
+export const FAST_HP_MULT = 0.6;
+export const FAST_DAMAGE_MULT = 0.75;
+export const isFast = (x: number, y: number): boolean => (x * 31 + y * 17) % 3 === 0;
 
 /**
  * Boss HP, sized so the fight is 9-11 casts unranked and 5-8 with a rank-3 page
@@ -112,7 +135,7 @@ export const enemyHp = (depth: number): number => 7 + depth * 3;
  * the back half costs anything; past about eleven casts the extra health lands
  * entirely in the shooting-gallery half and reads as a grind rather than a fight.
  */
-export const bossHp = (depth: number): number => 70 + depth * 13;
+export const bossHp = (depth: number): number => 90 + depth * 10;
 
 /**
  * Damage per attack. EXACTLY this — `Combat.enemyRound` adds nothing to it.
@@ -142,7 +165,7 @@ export const bossHp = (depth: number): number => 70 + depth * 13;
  * Kept flatter than `bossDamage` on purpose: at depth 5 a mook hits for 5 and a
  * boss for 9, and a mook that hits like a boss makes the boss furniture.
  */
-export const enemyDamage = (depth: number): number => 2 + Math.ceil(depth / 2);
+export const enemyDamage = (depth: number): number => 3 + Math.ceil(depth / 2);
 
 /**
  * A boss hits for a bit under two mooks, and never for a third of the bar.
@@ -152,7 +175,7 @@ export const enemyDamage = (depth: number): number => 2 + Math.ceil(depth / 2);
  * the full argument. At depth 5 this is 9, every swing is 9, and that is 20% of the
  * bar: five boss hits is the whole run.
  */
-export const bossDamage = (depth: number): number => 4 + depth;
+export const bossDamage = (depth: number): number => 6 + depth;
 
 /**
  * THERE IS NO DAMAGE JITTER, and this note is here so it does not come back by
@@ -260,6 +283,12 @@ export const ENGAGE_RADIUS = 7;
  * the same as targeting's: the reticle's promise, the body's right to answer and
  * the spell's reach are one fact, and three numbers that can drift is how the
  * corridor exploit happened the first time.
+ *
+ * NOT the lever on whether a fight costs anything, and it was mistaken for it once.
+ * This bounds how far a blast SPREADS from wherever it lands (`reachFrom` at the cast's
+ * centre in `combat.ts`), not how far away you may aim — that is `targetsInView`, and
+ * inside your own room it is not bounded by a number at all. Cutting this would nerf
+ * volleys and change nothing about how long a body spends walking at you.
  *
  * What CHANGED under `Roadmap/Spell_Reach.md` is not the number but the metric. A
  * volley used to take any hostile alive anywhere on the floor; now it floods out

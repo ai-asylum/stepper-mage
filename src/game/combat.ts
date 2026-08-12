@@ -43,7 +43,7 @@ import {
   CHAIN_RANGE, CONDUCTION_MULT, DECAY_DOT, DEEP_FREEZE_MULT,
   DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS,
   FIRE_DETOUR, GROUND_FIRE_DOT, GROW_RING, bodyStars, fallDamage, REACTION_REACH, SPILL_VOLUME, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
-  bossDamage, enemyDamage,
+  bossDamage, enemyDamage, FAST_DAMAGE_MULT,
 } from './tuning';
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -359,7 +359,14 @@ export class Combat {
     if (!['enemy', 'boss'].includes(e.kind) && !e.animated) return;
     this.combatants.set(e, {
       e, statuses: [], infuse: [], braced: 0, alerted: false, tangled: false,
-      damage: e.kind === 'boss' ? bossDamage(this.state.depth) : enemyDamage(this.state.depth),
+      // A fast body hits for less as well as holding less — see `FAST_DAMAGE_MULT`.
+      // Arriving early is most of what it is worth, and a body that closed two tiles
+      // AND swung like a walker would make speed strictly better rather than a trade.
+      damage: e.kind === 'boss'
+        ? bossDamage(this.state.depth)
+        : Math.max(1, Math.round(
+          enemyDamage(this.state.depth) * (e.speed > 1 ? FAST_DAMAGE_MULT : 1),
+        )),
     });
   }
 
@@ -1572,10 +1579,21 @@ export class Combat {
         c.alerted = true;
         if (this.denied(c)) { this.announceDenial(c); continue; }
 
-        // A move AND an attack, not one or the other. A body two tiles out closes
-        // and swings in the same round, so its threat range is 2 rather than 1 and
-        // backing off no longer costs it a turn to re-close.
-        if (d > 1) this.stepToward(e, px, py);
+        /**
+         * A move AND an attack, not one or the other. A body two tiles out closes
+         * and swings in the same round, so its threat range is 2 rather than 1 and
+         * backing off no longer costs it a turn to re-close.
+         *
+         * `e.speed` steps, not one. A fast body closes two tiles a round, which is
+         * what makes it impossible to kite: a walker can be held at arm's length
+         * forever, because stepping away preserves the gap. Re-checked between steps
+         * so a body that arrives on its first tile does not walk past the player on
+         * its second.
+         */
+        for (let s = 0; s < e.speed; s++) {
+          if (Math.abs(e.sprite.tx - px) + Math.abs(e.sprite.ty - py) <= 1) break;
+          this.stepToward(e, px, py);
+        }
         if (Math.abs(e.sprite.tx - px) + Math.abs(e.sprite.ty - py) <= 1) {
           faceToward(e, px, py);
           e.sprite.play('attack');
