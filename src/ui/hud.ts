@@ -2283,11 +2283,28 @@ export class Hud {
      * competes for the top of the screen.
      */
     const gap = 10;
-    const topH = Math.round(H * 0.26);
+    // Big. The face and the page are the screen's whole job, so they take the room the
+    // prose gave back when it went down to one sentence.
+    /**
+     * THE ROW FILLS WHAT IS LEFT, and the whole block is CENTRED.
+     *
+     * Laying this out from a fixed top at a fixed size left half the screen empty three
+     * times running, and the reason is structural rather than a bad number: with a fixed
+     * top and fixed heights the leftover has to go somewhere, and it always went to the
+     * bottom. So the copy and the buttons declare what they need, the portrait and the page
+     * take everything that remains, and if the WIDTH clamp then caps the row the surplus is
+     * split top and bottom instead of dumped under the button.
+     */
+    const RESERVE = 190;
+    const aspectSum = PORTRAIT_ASPECT + CARD_W / CARD_H;
+    const maxRow = W - 24 - gap;
+    let topH = Math.max(90, H - 24 - RESERVE);
+    if (topH * aspectSum > maxRow) topH = Math.floor(maxRow / aspectSum);
     const pw = Math.round(topH * PORTRAIT_ASPECT);
     const cardW = Math.round(topH * (CARD_W / CARD_H));
     const rowW = pw + gap + cardW;
-    const px = Math.round((W - rowW) / 2), py = 14;
+    const px = Math.round((W - rowW) / 2);
+    const py = Math.max(12, Math.round((H - (topH + RESERVE)) / 2));
     const cardX = px + pw + gap;
 
     ctx.save();
@@ -2331,7 +2348,7 @@ export class Hud {
       ctx.fillText(this.startSpell.name.toUpperCase(), kcx, cy - 2);
       ctx.font = '10px ui-monospace, monospace';
       ctx.fillStyle = 'rgba(196,210,228,0.85)';
-      this.wrapped(ctx, this.startSpell.effect, kcx, cy + 14, cardW + 6, 14);
+      this.wrapped(ctx, this.startSpell.effect, kcx, cy + 14, cardW - 4, 14);
     }
 
     /**
@@ -2341,20 +2358,22 @@ export class Hud {
      * having, but they do not belong on the screen you are trying to get off. A profile
      * that has to be read is a profile that gets skipped.
      */
-    let y = py + topH + 62;
+    let y = py + topH + 58;
     ctx.font = '12px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(236,226,204,0.94)';
-    y = this.wrapped(ctx, w.reason, W / 2, y, W - 44, 18, H - 104);
+    y = this.wrapped(ctx, w.reason, W / 2, y, W - 44, 18, H - 88);
     y += 10;
     ctx.font = '11px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(205,195,220,0.78)';
-    this.wrapped(ctx, `“${w.line}”`, W / 2, y, W - 44, 16, H - 104);
+    y = this.wrapped(ctx, `“${w.line}”`, W / 2, y, W - 44, 16, H - 88);
 
     // CHOOSE, or the reason you cannot.
     const label = locked ? (freed ? `FREED BY ${freed}` : 'LOCKED') : 'CHOOSE';
     ctx.font = 'bold 11px ui-monospace, monospace';
     const bw = Math.max(ctx.measureText(label).width + 44, 150);
-    const bx = (W - bw) / 2, by = H - 96;
+    // Under the copy, not pinned to the bottom of the screen. Pinned left a dead band
+    // most of the screen tall once the prose came down to a sentence.
+    const bx = (W - bw) / 2, by = Math.min(H - 56, y + 20);
     rr(ctx, bx, by, bw, 32, 8);
     ctx.fillStyle = locked ? 'rgba(22,20,26,0.95)' : 'rgba(38,26,12,0.96)';
     ctx.fill();

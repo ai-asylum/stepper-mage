@@ -86,8 +86,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'fire',
     name: 'ASH',
     title: 'the Firewizard',
-    reason: 'A demon burned his town and left him alive in the ashes. Hate has kept him '
-      + 'warm ever since.',
+    reason: 'A demon scorched his town from the map and left him in the ashes.',
     backstory: 'Ash was a hedge-mage\'s apprentice in Hallow, a town that is no longer on '
       + 'any map. He was down in the cellar fetching lamp oil when the thing came through '
       + 'the square. He heard it. He never saw it, and he has never forgiven himself for '
@@ -118,8 +117,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'frost',
     name: 'KELA',
     title: 'the Wintermaiden',
-    reason: 'A demon hunter by trade. Something she killed came back — and frost does not '
-      + 'kill, it KEEPS, so she means to put it in ice where it will stay.',
+    reason: 'The demon she buried climbed back out. She is taking it somewhere colder.',
     backstory: 'Kela has killed eleven demons for money and buried all eleven properly. '
       + 'The seventh came back. She found it wearing the face of the man who had paid her '
       + 'to remove it, sitting at his own table, and she understood that killing is not a '
@@ -141,8 +139,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'spark',
     name: 'ZEL',
     title: 'the Stormwright',
-    reason: 'Nobody sent her and nothing was taken from her. There is power down there '
-      + 'and she intends to have it.',
+    reason: 'The deep floors hold a charge nothing living should hold. She is going to take it.',
     backstory: 'Zel was thrown out of two academies, the second one on fire. She is not '
       + 'grieving anybody and nothing was taken from her; she simply worked out, younger '
       + 'than was good for her, that the deep floors of the library hold charges nothing '
@@ -162,8 +159,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'gust',
     name: 'VANE',
     title: 'the Windwalker',
-    reason: 'Nobody sent him and nothing was taken from him. It looked like fun. He is the '
-      + 'only one down here enjoying himself.',
+    reason: 'A wind comes up from a depth that should have no air. He is going to find what breathes.',
     backstory: 'Vane has no dead to speak of and no debt anybody is collecting. He walks, '
       + 'and he has walked most places worth walking, and one afternoon he noticed a '
       + 'draught coming up out of a hole in a drowned library — a real wind, from a depth '
@@ -185,7 +181,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'rot',
     name: 'VESS',
     title: 'the Plaguebound',
-    reason: 'The rot is already in him. The cure is under the library, or there is no cure.',
+    reason: 'The rot has his arms to the elbow. The cure is in the deep library or nowhere.',
     backstory: 'Vess was the physician the town sent for, and he was good at it, right up '
       + 'until the thing he was treating started treating him back. The black is in his '
       + 'arms to the elbow now and climbing. He has read every book above ground on the '
@@ -205,8 +201,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'plant',
     name: 'YEW',
     title: 'the Greenwarden',
-    reason: 'Something is growing up out of the dark into the world above. She came down to '
-      + 'find the root of it.',
+    reason: 'The green above ground started growing downward. She followed it in to find the root.',
     backstory: 'Yew is the youngest person to go down, and she went because nobody older '
       + 'would listen. She keeps the green on the surface — it is the only work she has '
       + 'ever wanted — and this spring it started coming up wrong: roots in the wrong '
