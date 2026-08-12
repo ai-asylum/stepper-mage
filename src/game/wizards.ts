@@ -117,7 +117,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'frost',
     name: 'KELA',
     title: 'the Wintermaiden',
-    reason: 'She is carrying a demon she has already buried once back down to somewhere cold enough to keep it.',
+    reason: 'She hunts demons. The deepest ones are down here.',
     backstory: 'Kela has killed eleven demons for money and buried all eleven properly. '
       + 'The seventh came back. She found it wearing the face of the man who had paid her '
       + 'to remove it, sitting at his own table, and she understood that killing is not a '
@@ -139,7 +139,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'spark',
     name: 'ZEL',
     title: 'the Stormwright',
-    reason: 'Nobody sent her — she just wants what the deep floors are holding.',
+    reason: 'There is power down there and she means to have it.',
     backstory: 'Zel was thrown out of two academies, the second one on fire. She is not '
       + 'grieving anybody and nothing was taken from her; she simply worked out, younger '
       + 'than was good for her, that the deep floors of the library hold charges nothing '
@@ -159,7 +159,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'gust',
     name: 'VANE',
     title: 'the Windwalker',
-    reason: 'He found a wind coming out of a hole that should not have any air in it, and he simply had to know.',
+    reason: 'He came to see what is down here.',
     backstory: 'Vane has no dead to speak of and no debt anybody is collecting. He walks, '
       + 'and he has walked most places worth walking, and one afternoon he noticed a '
       + 'draught coming up out of a hole in a drowned library — a real wind, from a depth '
@@ -181,12 +181,12 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'rot',
     name: 'VESS',
     title: 'the Plaguebound',
-    reason: 'He is rotting from the elbows inward, and the only cure anyone ever wrote down is under the library.',
+    reason: 'He is rotting. The cure is somewhere at the bottom.',
     backstory: 'Vess was the physician the town sent for, and he was good at it, right up '
       + 'until the thing he was treating started treating him back. The black is in his '
       + 'arms to the elbow now and climbing. He has read every book above ground on the '
-      + 'subject, written two of them, and concluded there is nothing up there — which '
-      + 'leaves the library. He is not frightened. He has simply run out of other places '
+      + 'subject, written two of them, and concluded there is nothing up there at all — '
+      + 'which leaves the bottom. He is not frightened. He has simply run out of other places '
       + 'to look, and he is on a clock he can read better than anybody.',
     whyPlay: 'The patient wizard, and the only one who out-totals fire. Decay pays out '
       + 'slowly and for longer, so Vess buys with TIME what Ash buys with damage: light a '
@@ -201,7 +201,7 @@ export const WIZARDS: readonly Wizard[] = [
     id: 'plant',
     name: 'YEW',
     title: 'the Greenwarden',
-    reason: 'The green started growing downward this spring and she is the only one who went to look.',
+    reason: 'The world above is corrupting. This is the source.',
     backstory: 'Yew is the youngest person to go down, and she went because nobody older '
       + 'would listen. She keeps the green on the surface — it is the only work she has '
       + 'ever wanted — and this spring it started coming up wrong: roots in the wrong '
