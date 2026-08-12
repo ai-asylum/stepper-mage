@@ -192,6 +192,12 @@ export type UiAction =
   | { kind: 'bestiary' }
   /** Open or close the settings panel — see `Hud.drawSettings`. */
   | { kind: 'settings' }
+  /** Look at a wizard on the roster screen. Opens their profile; does NOT pick them. */
+  | { kind: 'wizardPeek'; id: string }
+  /** Commit to the wizard whose profile is open. The CHOOSE button, and only that. */
+  | { kind: 'wizardPick'; id: string }
+  /** Back out of a profile to the roster. */
+  | { kind: 'wizardBack' }
   /**
    * Wipe the save. Fires only on the SECOND tap of the reset row, because the first
    * one arms it — see `Hud.resetArmed`. A single tap that deletes every star a player
@@ -515,6 +521,29 @@ export class Hud {
    * one moment the vitals block has no name to put over the bar.
    */
   wizard: Wizard | null = null;
+  /**
+   * The roster screen. Non-null only at the dungeon mouth, before a run has a wizard.
+   *
+   * Its own screen rather than a set of `offers`, and that is the whole point of this
+   * pass: an offer is a CARD — a page with a title, a sigil well and a rules line — and a
+   * portrait pasted into a card's sigil well looks exactly like a portrait pasted into a
+   * card's sigil well. A person is not a page, so this draws none of that furniture.
+   *
+   * Every wizard is always here, in chain order, locked ones included and greyed. A
+   * roster that hides what you have not earned cannot answer "what am I working toward",
+   * which is half the reason it exists.
+   */
+  roster: readonly { wizard: Wizard; locked: boolean; freedBy: string | null }[] | null = null;
+  /** The wizard whose profile is open over the roster, or null for the grid itself. */
+  rosterPeek: Wizard | null = null;
+  /**
+   * The page the peeked wizard begins with, pushed in by `main.ts`.
+   *
+   * Handed over rather than looked up here, because the HUD does not import the spell
+   * tables and should not start — the roster screen is the only place that needs to say
+   * what a wizard casts, and `main.ts` already holds `SPELL_BY_ID`.
+   */
+  startSpell: { name: string; effect: string } | null = null;
 
   /**
    * Where the compass points, or null when nothing does.
@@ -884,6 +913,9 @@ export class Hud {
     if (this.candidates.length > 1) this.drawCycle(ctx, W);
     if (this.descendReady) this.drawDescend(ctx, W);
     if (this.offers) this.drawOffers(ctx, W, H);
+    // Before the bestiary and the cog, because at the dungeon mouth the roster is the
+    // only thing on screen and nothing else may be reachable underneath it.
+    if (this.roster) this.drawRoster(ctx, W, H);
     if (this.bestiaryOpen) this.drawBestiary(ctx, W, H);
     // Last, so it covers everything including the bestiary. The cog is hidden while
     // the bestiary is up, so the two can never both be open — but drawing order is
@@ -2103,6 +2135,268 @@ export class Hud {
     ctx.fillText(close, W / 2, by + 15);
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     this.hits.push({ rect: [bx, by, tw, 30], action: { kind: 'settings' } });
+  }
+
+  /**
+   * THE ROSTER: six faces, two rows of three, and nothing else on the screen.
+   *
+   * No card, no page, no sigil well. The portrait IS the button, drawn whole at its own
+   * aspect so nothing is cropped, and the only chrome is a one-pixel frame that goes gold
+   * when the wizard is yours and stays dead grey when they are not.
+   *
+   * Locked faces are DRAWN, at a fraction of their brightness, with the name of whoever
+   * frees them underneath. That is the difference between a roster and a menu: a menu
+   * shows you your options, a roster shows you the cast and which of them you have met.
+   */
+  private drawRoster(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    const list = this.roster;
+    if (!list) return;
+    ctx.fillStyle = 'rgba(6,4,9,0.96)';
+    ctx.fillRect(0, 0, W, H);
+
+    if (this.rosterPeek) { this.drawWizardProfile(ctx, W, H, this.rosterPeek); return; }
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 20px ui-monospace, monospace';
+    ctx.fillStyle = GOLD;
+    ctx.fillText('WHO GOES DOWN', W / 2, 14);
+    ctx.font = '13px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.5)';
+    ctx.fillText('one only · the rest are found below', W / 2, 38);
+
+    /**
+     * TWO COLUMNS, THREE ROWS, filling the screen.
+     *
+     * 3x2 was tried and left the bottom half of a portrait phone empty, which on the one
+     * screen that has to sell six strangers is the worst place in the game to waste. The
+     * grid is sized off the AVAILABLE HEIGHT and the portraits take whatever that gives
+     * them, rather than being sized off the column width and leaving the remainder blank.
+     */
+    const COLS = 2, ROWS = 3;
+    const gap = 8;
+    const y0 = 58;
+    const bottom = 12;
+    /**
+     * The caption sits ON the portrait, not under it.
+     *
+     * Which is what lets the faces be as big as the screen allows: reserving a strip under
+     * each one for two lines of text spent a sixth of the grid on chrome. Drawn over the
+     * bottom of the picture with an OUTLINE rather than a gradient scrim — the same trick
+     * the depth label uses over the world, and a gradient here would be a soft edge laid
+     * across pixel art that has none anywhere else.
+     */
+    const rowH = Math.floor((H - y0 - bottom) / ROWS);
+    let ch = rowH - gap;
+    let cw = Math.round(ch * PORTRAIT_ASPECT);
+    // Clamped by width too, so a wide viewport does not produce columns that overlap.
+    const maxW = Math.floor((W - 24 - gap * (COLS - 1)) / COLS);
+    if (cw > maxW) { cw = maxW; ch = Math.round(cw / PORTRAIT_ASPECT); }
+    const x0 = Math.round((W - (cw * COLS + gap * (COLS - 1))) / 2);
+    const pitch = rowH;
+
+    list.forEach((row, i) => {
+      const cx = x0 + (i % COLS) * (cw + gap);
+      const cy = y0 + Math.floor(i / COLS) * pitch;
+
+      ctx.save();
+      ctx.beginPath();
+      rr(ctx, cx, cy, cw, ch, 3);
+      ctx.fillStyle = 'rgba(10,7,13,0.95)';
+      ctx.fill();
+      ctx.clip();
+      /**
+       * Locked faces are DESATURATED, not dimmed away.
+       *
+       * They were at 26% alpha and that hid the character, which defeats the point of
+       * showing the whole cast — you are meant to look at Vess and want him. Greyscale
+       * says "not yours yet" while leaving every feature legible, and the slight alpha is
+       * only there to push them behind the one face that IS yours.
+       */
+      if (row.locked) { ctx.filter = 'grayscale(1)'; ctx.globalAlpha = 0.8; }
+      drawPortrait(ctx, row.wizard.portrait, cx, cy, cw, ch);
+      ctx.filter = 'none';
+      ctx.globalAlpha = 1;
+      ctx.restore();
+
+      rr(ctx, cx, cy, cw, ch, 3);
+      ctx.strokeStyle = row.locked ? 'rgba(140,132,150,0.5)' : 'rgba(255,207,92,0.85)';
+      ctx.lineWidth = row.locked ? 1 : 2;
+      ctx.stroke();
+
+      const ink = (text: string, ty: number, fill: string, font: string) => {
+        ctx.font = font;
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(6,4,8,0.85)';
+        ctx.strokeText(text, cx + cw / 2, ty);
+        ctx.fillStyle = fill;
+        ctx.fillText(text, cx + cw / 2, ty);
+      };
+      ink(row.wizard.name, cy + ch - 34,
+        row.locked ? 'rgba(198,192,208,0.9)' : '#fff4dc', 'bold 15px ui-monospace, monospace');
+      ctx.font = '11px ui-monospace, monospace';
+      ctx.fillStyle = row.locked ? 'rgba(170,164,180,0.8)' : 'rgba(255,207,92,0.85)';
+      // Locked: say who frees them. That one line is the whole progression system on
+      // screen, and it costs nothing because `Wizard.frees` already knows.
+      const sub = row.locked
+        ? (row.freedBy ? `FREED BY ${row.freedBy}` : 'LOCKED') : row.wizard.title;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(6,4,8,0.85)';
+      ctx.strokeText(sub, cx + cw / 2, cy + ch - 17);
+      ctx.fillText(sub, cx + cw / 2, cy + ch - 17);
+
+      // Locked cards still take the tap. A face you cannot use that also does not respond
+      // reads as a broken button rather than as a locked one.
+      this.hits.push({
+        rect: [cx, cy, cw, ch],
+        action: { kind: 'wizardPeek', id: row.wizard.id },
+      });
+    });
+    ctx.textAlign = 'left';
+  }
+
+  /**
+   * One wizard, full height, with their reason and their own words — and a CHOOSE button
+   * that is the ONLY thing in this flow that starts a run.
+   *
+   * Split from the grid because picking a character off a thumbnail is picking a colour.
+   * The profile is where the three questions actually get answered, so it is the screen
+   * that has to exist before the run begins, and the grid is just the way in.
+   */
+  private drawWizardProfile(
+    ctx: CanvasRenderingContext2D, W: number, H: number, w: Wizard,
+  ): void {
+    const locked = !!this.roster?.find((r) => r.wizard.id === w.id)?.locked;
+    const freed = this.roster?.find((r) => r.wizard.id === w.id)?.freedBy ?? null;
+
+    const ph = Math.round(H * 0.30);
+    const pw = Math.round(ph * PORTRAIT_ASPECT);
+    const px = Math.round((W - pw) / 2), py = 14;
+
+    ctx.save();
+    ctx.beginPath();
+    rr(ctx, px, py, pw, ph, 4);
+    ctx.fillStyle = 'rgba(10,7,13,0.95)';
+    ctx.fill();
+    ctx.clip();
+    if (locked) { ctx.filter = 'grayscale(1)'; ctx.globalAlpha = 0.85; }
+    drawPortrait(ctx, w.portrait, px, py, pw, ph);
+    ctx.filter = 'none';
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    rr(ctx, px, py, pw, ph, 4);
+    ctx.strokeStyle = locked ? 'rgba(120,112,130,0.4)' : 'rgba(255,207,92,0.8)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    let y = py + ph + 10;
+    ctx.font = 'bold 24px ui-monospace, monospace';
+    ctx.fillStyle = '#fff4dc';
+    ctx.fillText(w.name, W / 2, y);
+    y += 26;
+    ctx.font = '13px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(255,207,92,0.85)';
+    ctx.fillText(w.title.toUpperCase(), W / 2, y);
+    y += 22;
+
+    /**
+     * WHAT YOU START WITH, named. The profile did not say this at all, which made it a
+     * character sheet with the only mechanical fact about the character missing — you
+     * cannot choose between six people if the choice is secretly about which page you
+     * spend the next hour casting.
+     */
+    if (this.startSpell) {
+      ctx.font = 'bold 13px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(180,220,255,0.95)';
+      ctx.fillText(`STARTS WITH ${this.startSpell.name.toUpperCase()}`, W / 2, y);
+      y += 18;
+      ctx.font = '12px ui-serif, Georgia, serif';
+      ctx.fillStyle = 'rgba(190,205,225,0.8)';
+      y = this.wrapped(ctx, this.startSpell.effect, W / 2, y, W - 44, 16);
+      y += 10;
+    }
+
+    /**
+     * FIXED body size, and a hard floor the copy may not cross.
+     *
+     * It was `H * 0.030`, which is how a tall viewport ended up with a 30px serif running
+     * straight under the CHOOSE button and off the bottom of the screen. Deriving a font
+     * size from the viewport is the wrong instinct here: this is a page of prose, and prose
+     * has a size that is comfortable to read regardless of how much room is going spare.
+     *
+     * `wrapped` is bounded by `floor` so an over-long backstory is CLIPPED rather than
+     * allowed to draw over the only button on the screen. A profile that scrolls is a
+     * better answer and a bigger change; this at least cannot lie about where the button is.
+     */
+    const body = 13;
+    const lh = 17;
+    const floor = H - 104;
+    ctx.font = `${body}px ui-serif, Georgia, serif`;
+    ctx.fillStyle = 'rgba(236,226,204,0.94)';
+    y = this.wrapped(ctx, w.backstory, W / 2, y, W - 44, lh, floor);
+    y += 8;
+    ctx.font = `italic ${body}px ui-serif, Georgia, serif`;
+    ctx.fillStyle = 'rgba(205,195,220,0.8)';
+    y = this.wrapped(ctx, `“${w.line}”`, W / 2, y, W - 44, lh, floor);
+    y += 8;
+    // Why you would PLAY them, which is the other half of a selection screen and the half
+    // most rosters leave out.
+    ctx.font = `${body}px ui-serif, Georgia, serif`;
+    ctx.fillStyle = 'rgba(255,225,170,0.88)';
+    y = this.wrapped(ctx, w.whyPlay, W / 2, y, W - 44, lh, floor);
+
+    // CHOOSE, or the reason you cannot.
+    const label = locked ? (freed ? `FREED BY ${freed}` : 'LOCKED') : 'CHOOSE';
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    const bw = Math.max(ctx.measureText(label).width + 44, 150);
+    const bx = (W - bw) / 2, by = H - 96;
+    rr(ctx, bx, by, bw, 32, 8);
+    ctx.fillStyle = locked ? 'rgba(22,20,26,0.95)' : 'rgba(38,26,12,0.96)';
+    ctx.fill();
+    ctx.strokeStyle = locked ? 'rgba(120,112,130,0.4)' : 'rgba(255,207,92,0.9)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = locked ? 'rgba(150,144,160,0.65)' : '#fff4dc';
+    ctx.fillText(label, W / 2, by + 16);
+    ctx.textBaseline = 'top';
+    if (!locked) {
+      this.hits.push({ rect: [bx, by, bw, 32], action: { kind: 'wizardPick', id: w.id } });
+    }
+
+    const back = 'BACK';
+    ctx.font = '10px ui-monospace, monospace';
+    const kw = ctx.measureText(back).width + 32;
+    const kx = (W - kw) / 2, ky = by + 38;
+    ctx.fillStyle = 'rgba(200,190,210,0.7)';
+    ctx.fillText(back, W / 2, ky + 6);
+    this.hits.push({ rect: [kx, ky, kw, 20], action: { kind: 'wizardBack' } });
+    ctx.textAlign = 'left';
+  }
+
+  /**
+   * Centre-wrapped paragraph, bounded below. Returns the y under the last line drawn.
+   *
+   * `maxY` is not optional decoration — it is what stops a long paragraph drawing through
+   * whatever sits under it. Callers pass the top of the next fixed element.
+   */
+  private wrapped(
+    ctx: CanvasRenderingContext2D, text: string, cx: number, y: number,
+    maxW: number, lh: number, maxY = Infinity,
+  ): number {
+    const words = text.split(' ');
+    let line = '';
+    for (const word of words) {
+      const next = line ? `${line} ${word}` : word;
+      if (ctx.measureText(next).width > maxW && line) {
+        if (y + lh > maxY) return y;
+        ctx.fillText(line, cx, y);
+        y += lh;
+        line = word;
+      } else line = next;
+    }
+    if (line && y + lh <= maxY) { ctx.fillText(line, cx, y); y += lh; }
+    return y;
   }
 
   private drawCompass(ctx: CanvasRenderingContext2D, W: number): void {

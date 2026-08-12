@@ -1061,8 +1061,8 @@
       "kind": "portrait",
       "height": 96,
       "colors": 32,
-      "seed": 20001,
-      "prompt": "ASH THE FIREWIZARD: a lean young man with a hard closed face and burn scars up the left side of his jaw. Cropped black hair singed short. WARM TAN SKIN. Ember-orange key light on his left cheek, and a COOL TEAL-BLUE rim light on his right shoulder and hair from behind. He wears a DEEP CRIMSON mantle lining over blackened leather, with a BRASS buckle catching a highlight. Grim and patient. Full colour, warm and cool together, not a single-hue image."
+      "seed": 20011,
+      "prompt": "ASH THE FIREWIZARD: a HARD, MEAN, BRUTAL-LOOKING man in his late twenties, FULL OF HATE. UGLY THICK BURN SCARS covering the whole left side of his face, jaw and neck — raw, ropey, puckered scar tissue, one eyebrow burned away. Crooked broken nose. SNARLING, teeth slightly bared, brows drawn down hard, eyes narrowed to furious slits. WEATHERED SUN-DAMAGED TAN SKIN, stubble, dirt and soot ground into his face. Hair hacked short and uneven, singed. He wears a DEEP CRIMSON mantle over blackened battered leather with a BRASS buckle. Harsh ember-orange light on the scarred side, COOL TEAL rim light behind. He looks like a violent man who has lost everything. ABSOLUTELY NOT handsome, NOT pretty, NOT smooth-skinned, NOT a vampire, NOT elegant, no pale flawless skin."
     },
     {
       "id": "portrait_kela",
@@ -1077,8 +1077,8 @@
       "kind": "portrait",
       "height": 96,
       "colors": 32,
-      "seed": 20003,
-      "prompt": "ZEL THE STORMWRIGHT: a wiry sharp-featured young woman with a hungry delighted grin, wild dark hair standing half on end with static. Thin WHITE-VIOLET arcs of electricity crawl between COPPER rings in her hair and a copper torc at her throat. WARM OLIVE SKIN. She wears a PLUM-PURPLE coat over a MUSTARD YELLOW collar. Violet key light, warm copper and gold accents, deep blue shadow. Full colour, not a single-hue image."
+      "seed": 20013,
+      "prompt": "ZEL THE STORMWRIGHT: a young woman CRACKLING WITH ENERGY, wide-eyed and grinning with reckless delight, mid-laugh. BRIGHT and HIGH-KEY lighting, her face well lit and clearly visible, NOT in shadow. FIERY COPPER-ORANGE hair standing up and outward with static. BRILLIANT ELECTRIC YELLOW and WHITE-HOT lightning arcs crackling around her head and across her shoulders, throwing bright yellow light onto her cheeks and forehead. Warm fair freckled skin, flushed cheeks, sparks reflected as tiny highlights in her eyes. She wears a BRIGHT COBALT BLUE coat with GOLD buttons and a WHITE collar. YELLOW, GOLD, WHITE and BLUE — vivid, saturated, high contrast and FULL OF LIGHT. She looks thrilled and completely alive. NOT dark, NOT gloomy, NOT purple, NOT a shadowed face."
     },
     {
       "id": "portrait_vane",
@@ -1101,8 +1101,8 @@
       "kind": "portrait",
       "height": 96,
       "colors": 32,
-      "seed": 20006,
-      "prompt": "YEW THE GREENWARDEN: a weathered older man, deeply lined RUDDY SUN-BROWNED face, short grey beard. VIVID EMERALD GREEN moss and a bright living shoot in his grey hair, with several clearly visible SCARLET RED berries. He wears a strong DEEP BLUE wool cloak over a WARM OCHRE-GOLD shirt — strongly coloured clothing. Warm GOLDEN dappled light from the upper right, COOL BLUE shadow on the left. BLUE AND GOLD complementary colour scheme with green and red accents, vivid and saturated, definitely NOT an olive or monochrome image."
+      "seed": 20016,
+      "prompt": "YEW THE GREENWARDEN: a YOUNG GIRL, about fourteen, the youngest person to go down. Round open face, wide curious hazel eyes, freckles across her nose, a small determined set to her mouth. Messy sun-bleached light brown hair full of leaves, with VIVID EMERALD GREEN moss, tiny WHITE flowers and a few SCARLET RED berries tangled in it, and one small living green shoot curling up from behind her ear. Warm freckled sun-tanned skin. She wears a WARM OCHRE-GOLD smock with a DEEP BLUE scarf and a woven grass cord at her throat. Bright dappled golden-green woodland light from the upper right, cool blue shadow. Whimsical, natural, hopeful, a bit scruffy — a child who looks after growing things. NOT an old man, NOT an adult, NOT a beard, NOT stern, NOT a businessman."
     }
   ]
 }

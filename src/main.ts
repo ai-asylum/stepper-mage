@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { Engine } from './core/engine';
 import { Floor, isCastableObject, type Entity } from './game/floor';
 import { Stepper, PITCH } from './game/stepper';
-import { WIZARD_BY_ID, type Wizard } from './game/wizards';
+import {
+  WIZARDS, WIZARD_BY_ID, FIRST_WIZARD, freedBy,
+  type Wizard, type WizardElement,
+} from './game/wizards';
 import {
   Combat, DENIAL_STATUSES, targetsInView, MAX_RANK, type PlayerState,
 } from './game/combat';
@@ -153,6 +156,15 @@ interface Meta {
    * turns the dungeon inside out — see `clampFov`.
    */
   fov: number;
+  /**
+   * The wizards this save has unlocked, in no particular order.
+   *
+   * NOT a count and not a high-water mark: the roster is a chain (`Wizard.frees`) and a
+   * player can only have freed the people they actually reached, so the owned SET is the
+   * only shape that survives. Always contains `FIRST_WIZARD` — a save that unlocked
+   * nobody would have nothing selectable and no way to start.
+   */
+  wizards: WizardElement[];
 }
 
 const META_KEY = 'stepper-mage.meta.v1';
@@ -172,6 +184,22 @@ const META_KEY = 'stepper-mage.meta.v1';
 const FOV_MIN = 85;
 const FOV_MAX = 120;
 const DEFAULT_FOV = 100;
+/**
+ * The unlocked roster off a save, guarded the way `pinned` is: by membership, not by
+ * counting. A hand-edited save naming a wizard that does not exist would otherwise put a
+ * card on the selection screen with no portrait behind it.
+ *
+ * `FIRST_WIZARD` is forced in. A save that somehow unlocked nobody must still be able to
+ * begin a run, and "you own the head of the chain" is a rule rather than a stored fact.
+ */
+function sanitizeWizards(v: unknown): WizardElement[] {
+  const ids = new Set<WizardElement>([FIRST_WIZARD]);
+  if (Array.isArray(v)) {
+    for (const x of v) if (WIZARD_BY_ID[x as string]) ids.add(x as WizardElement);
+  }
+  return [...ids];
+}
+
 const clampFov = (v: unknown): number => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.min(FOV_MAX, Math.max(FOV_MIN, Math.round(n))) : DEFAULT_FOV;
@@ -268,12 +296,14 @@ function loadMeta(): Meta {
         // A save from before the slider has no fov; `clampFov` reads undefined as the
         // default, so an old save opens at the new 100 rather than at a NaN frustum.
         fov: clampFov(m.fov),
+        wizards: sanitizeWizards(m.wizards),
       });
     }
   } catch { /* corrupt or unavailable storage: fall through to defaults */ }
   return applyTree({
     stars: 0, loadout: [...DEFAULT_LOADOUT], slots: 0, handSize: 0, best: 0, nodes: [],
     giftedPage: null, pinned: null, bestiary: [], bossKills: [], fov: DEFAULT_FOV,
+    wizards: [FIRST_WIZARD],
   });
 }
 
@@ -2004,32 +2034,38 @@ async function boot(): Promise<void> {
       return false;
     }
     /**
-     * WHO ARE YOU, not which page.
+     * WHO ARE YOU, not which page — and ALL of them, every time.
      *
-     * Exactly the same choice and exactly the same data — a wizard IS their starting
-     * element — but asked as a person. The mechanical version of this question could not
-     * answer "what am I supposed to be doing", because "Frost: freezes the target solid"
-     * tells you what a page does and nothing about why you are holding it.
+     * The roster is deliberately not built from `menu`. `startPageMenu` answers "which
+     * pages may this save begin with", which was the right question while this screen was
+     * a random draw of three cards and is the wrong one now: a cast list that shows only
+     * what you have earned cannot tell you what you are working toward. So every wizard is
+     * here in chain order, and ownership becomes a `locked` flag rather than a filter.
      */
-    hud.offerTitle = 'WHO GOES DOWN';
-    hud.offerSubtitle = 'one only · the rest are found below';
-    hud.offers = menu.map((id) => {
-      const sp = SPELL_BY_ID[id];
-      const wz = WIZARD_BY_ID[id];
+    hud.roster = WIZARDS.map((wizard) => {
+      const by = freedBy(wizard.id);
       return {
-        kind: 'startPage' as const, id,
-        // The NAME is the person and the tag is their epithet; the page's own name has
-        // moved into the detail line, because the element is now a fact about them
-        // rather than the thing being chosen.
-        name: wz ? wz.name : sp.name,
-        tag: wz ? wz.title.replace(/^the /, '').toUpperCase() : '',
-        colour: sp.colour,
-        detail: wz ? `${sp.name}. ${wz.reason}` : sp.effect,
-        portrait: wz?.portrait,
-        cost: null, amount: 0, rank: 1, toRank: 0, maxRank: MAX_RANK, golden: false,
+        wizard,
+        locked: !meta.wizards.includes(wizard.id),
+        freedBy: by ? (WIZARD_BY_ID[by]?.name ?? null) : null,
       };
     });
+    hud.rosterPeek = null;
     return true;
+  };
+
+  /**
+   * Commit to a wizard. The one door out of the roster screen.
+   *
+   * Refuses a locked pick rather than trusting the button not to be there — the hit region
+   * is built by the drawing code, and a screen that is safe only because of what it drew
+   * last frame is a screen one layout change away from handing out the whole cast.
+   */
+  const pickWizard = (id: string): void => {
+    if (!meta.wizards.includes(id as WizardElement)) return;
+    hud.roster = null;
+    hud.rosterPeek = null;
+    grantStartPage(id);
   };
 
   const chooseOffer = (o: AltarOffer): void => {
@@ -3694,6 +3730,17 @@ async function boot(): Promise<void> {
         hud.resetArmed = false;
         break;
       case 'resetProgress': resetProgress(); break;
+      // Looking is free and picking is not, which is why they are two actions. A tap on a
+      // face used to START A RUN, and a roster you can begin a run by brushing is a roster
+      // nobody reads.
+      case 'wizardPeek': {
+        hud.rosterPeek = WIZARD_BY_ID[a.id] ?? null;
+        const sp = SPELL_BY_ID[a.id];
+        hud.startSpell = sp ? { name: sp.name, effect: sp.effect } : null;
+        break;
+      }
+      case 'wizardBack': hud.rosterPeek = null; break;
+      case 'wizardPick': pickWizard(a.id); break;
       case 'altar': takeFromAltar(a.entity); break;
       case 'harvest': harvestFrom(a.entity); break;
       case 'belt': takeIngredient(a.id); break;
@@ -3803,6 +3850,7 @@ async function boot(): Promise<void> {
   const UI_CONTROLS: ReadonlySet<string> = new Set([
     'cast', 'clear', 'descend', 'cycle', 'altar', 'chest', 'harvest',
     'belt', 'card', 'tree', 'bestiary', 'settings', 'resetProgress',
+    'wizardPeek', 'wizardPick', 'wizardBack',
   ]);
 
   /**
@@ -3948,7 +3996,7 @@ async function boot(): Promise<void> {
      * this handler and stepped the player through a dungeon they cannot see. The panel is
      * a full-screen fill, so anything landing on it is meant for it.
      */
-    if (hud.settingsOpen) { act(hud.hit(x, y)); return; }
+    if (hud.settingsOpen || hud.roster) { act(hud.hit(x, y)); return; }
     // A finished run resolves its tap through the HUD, so the run-end card's door to
     // the tree is a real control — and `act` sends every other tap the same way.
     if (dead) { act(hud.hit(x, y)); return; }
