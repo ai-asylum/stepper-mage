@@ -2406,8 +2406,17 @@ export class Hud {
      * pixels out of step, and the gaps below them came off a third set of numbers again. Both
      * columns hang off NAME_Y and SUB_Y now, and everything under them measures from those.
      */
-    const NAME_Y = py + topH + 12;
-    const SUB_Y = NAME_Y + 18;
+    /**
+     * BASELINE SET EXPLICITLY, and a real gap under the art.
+     *
+     * These captions were drawing up into the frames above them, and the gap was only half the
+     * cause — `textBaseline` is left on 'alphabetic' by code that runs earlier, so a caption
+     * placed at NAME_Y grew UPWARD from that line instead of downward off it. Every other block
+     * in this file that sits under something sets it; this one assumed.
+     */
+    ctx.textBaseline = 'top';
+    const NAME_Y = py + topH + 20;
+    const SUB_Y = NAME_Y + 22;
 
     ctx.font = 'bold 17px ui-monospace, monospace';
     ctx.fillStyle = '#fff4dc';
@@ -2432,7 +2441,7 @@ export class Hud {
      * having, but they do not belong on the screen you are trying to get off. A profile
      * that has to be read is a profile that gets skipped.
      */
-    let y = SUB_Y + 42;
+    let y = SUB_Y + 40;
     ctx.font = '12px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(236,226,204,0.94)';
     y = this.wrapped(ctx, w.reason, W / 2, y, W - 44, 18, H - 88);
