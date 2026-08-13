@@ -2268,6 +2268,31 @@ function label(e: Entity): string {
 function clearLine(grid: Grid, x0: number, y0: number, x1: number, y1: number): boolean {
   const dx = x1 - x0, dy = y1 - y0;
   const n = Math.max(Math.abs(dx), Math.abs(dy));
+
+  /**
+   * A SHUT GATE IS ABSOLUTE, and it is sampled FINER than everything below.
+   *
+   * Two separate reasons this is its own pass.
+   *
+   * NO CORNER GRACE. The three-way test below is deliberately permissive — a line
+   * grazing the join between two tiles passes if either is open — so a reticle does not
+   * flicker off a body you can plainly see round a doorframe. Against a portcullis that
+   * grace is simply a hole. A doorframe is a shape you look round; a gate is a rule you
+   * are meant to solve.
+   *
+   * AND FOUR SAMPLES A TILE. The wall walk takes one sample per tile of the longer axis,
+   * which is plenty for a wall because walls come in slabs. A portcullis is ONE tile, and
+   * a long diagonal can cross the corner of its square without any whole-tile sample
+   * landing inside it: measured at 1 floor in 477, and the one place a miss costs is a
+   * boss shot dead through the bars. Rounding maps a sample to the tile whose square
+   * holds it, so a hit here means the line really does pass through the gate.
+   */
+  const fine = n * 4;
+  for (let i = 1; i < fine; i++) {
+    const t = i / fine;
+    if (grid.shutGate(Math.round(x0 + dx * t), Math.round(y0 + dy * t))) return false;
+  }
+
   let murk = 0;
   for (let i = 1; i < n; i++) {
     const t = i / n;
@@ -2276,17 +2301,6 @@ function clearLine(grid: Grid, x0: number, y0: number, x1: number, y1: number): 
     // and what the minimap admits you have seen stay the same claim.
     if (grid.surfaceAt(Math.round(px), Math.round(py)) === Surface.Fog) murk++;
     if (murk > FOG_SIGHT) return false;
-    /**
-     * A SHUT GATE IS ABSOLUTE — no corner grace.
-     *
-     * The three-way test below is deliberately permissive: a line grazing the join
-     * between two tiles passes if either is open, so a reticle does not flicker off a
-     * body you can plainly see round a doorframe. Against a portcullis that grace is
-     * a hole — a diagonal slipped past the bars on 4 floors in 360 — and unlike a
-     * doorframe a gate is a RULE the player is meant to solve, not a shape they are
-     * looking round. It fails on the sampled tile alone.
-     */
-    if (grid.shutGate(Math.round(px), Math.round(py))) return false;
     // `shootThrough`, not `seeThrough`: a shut portcullis is a grille you can look
     // through and must not be able to shoot through. See the note on it in `grid.ts`.
     if (grid.shootThrough(Math.round(px), Math.round(py))) continue;
