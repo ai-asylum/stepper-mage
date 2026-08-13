@@ -3775,8 +3775,18 @@ export class Hud {
     ctx.fill();
 
     const ix = px + 2, iy = py + 2, iw = pw - 4, ih = ph - 4;
-    // The drained band, measured from the top: what you have LOST.
+    /**
+     * The drained band — what you have LOST — and it rises from the BOTTOM.
+     *
+     * It used to hang from the top edge and drain downward, which is the intuitive
+     * reading of a meter and the wrong one for a portrait: the first thing damage ate
+     * was the face, so a wizard on half health had no head. Baldur's Gate fills its
+     * portraits the other way round for exactly that reason — the red climbs out of the
+     * bottom of the frame and the face is the last thing to go under, which also means
+     * the closer you are to dying the more obviously wrong the picture looks.
+     */
     const lost = Math.round(ih * (1 - frac));
+    const lostTop = iy + ih - lost;
 
     ctx.save();
     ctx.beginPath();
@@ -3789,19 +3799,20 @@ export class Hud {
       // absence rather than as a red light shining on a healthy face.
       ctx.save();
       ctx.beginPath();
-      ctx.rect(ix, iy, iw, lost);
+      ctx.rect(ix, lostTop, iw, lost);
       ctx.clip();
       ctx.filter = 'grayscale(1)';
       drawPortrait(ctx, w.portrait, ix, iy, iw, ih);
       ctx.filter = 'none';
       ctx.fillStyle = 'rgba(120,14,10,0.5)';
-      ctx.fillRect(ix, iy, iw, lost);
+      ctx.fillRect(ix, lostTop, iw, lost);
       ctx.fillStyle = 'rgba(4,2,6,0.42)';
-      ctx.fillRect(ix, iy, iw, lost);
+      ctx.fillRect(ix, lostTop, iw, lost);
       ctx.restore();
-      // The waterline, so the level is readable even at a glance.
+      // The waterline, so the level is readable even at a glance. On the TOP edge of the
+      // band now, because that is the edge that moves.
       ctx.fillStyle = 'rgba(255,90,60,0.9)';
-      ctx.fillRect(ix, iy + lost - 1, iw, 1.5);
+      ctx.fillRect(ix, lostTop, iw, 1.5);
     }
     ctx.restore();
 
