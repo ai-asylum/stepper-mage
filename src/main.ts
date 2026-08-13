@@ -3541,7 +3541,21 @@ async function boot(): Promise<void> {
       // Forward is (-sin yaw, -cos yaw) — see `Stepper.eye`, where the pullback pushes
       // the eye BACKWARD along (+sin, +cos). So the yaw facing an offset is atan2(-dx,-dz).
       const off = angleDelta(stepper.yaw(), Math.atan2(-dx, -dz));
-      if (Math.abs(off) > edge) continue;
+      /**
+       * Against the body's OWN WIDTH, not against its centre.
+       *
+       * A tile is a unit across, so it subtends 27 degrees at one pace and six at five.
+       * Testing the centre alone was wrong in precisely the case that matters most: a
+       * body closing on you gets larger and more obviously on screen while its centre
+       * swings OUTSIDE the frustum, so the lean cut out at the moment the thing
+       * arrived — target it, hit it, watch it step in, and the camera lets go of it
+       * while it is still plainly there at the edge of the picture.
+       *
+       * Measured: a body one pace ahead and one to the side has its centre 45 degrees
+       * off, outside a 38-degree half-frame, and is unmistakably in shot.
+       */
+      const half = Math.atan(0.5 / Math.max(0.5, Math.hypot(dx, dz)));
+      if (Math.abs(off) - half > edge) continue;
       bestD = d; bestOff = off;
     }
     return Math.min(LEAN_MAX, Math.max(-LEAN_MAX, bestOff * LEAN_FRAC));
