@@ -8,7 +8,7 @@
  * open middle (they are what you have to get through).
  */
 import { Rng } from '../core/rng';
-import { Grid, DIR_VEC, Surface, type Room } from '../dungeon/grid';
+import { Grid, DIR_VEC, Surface, Tile, type Room } from '../dungeon/grid';
 import type { Theme } from '../art/theme';
 import { ROOM_ENEMIES_BASE, ROOM_ENEMIES_MAX, roomEnemyChance } from './tuning';
 
@@ -74,6 +74,33 @@ export function populate(
   const taken = new Set<number>();
 
   const claim = (x: number, y: number) => taken.add(grid.idx(x, y));
+
+  /**
+   * The tiles given to FURNITURE, as distinct from the tiles given to anything.
+   *
+   * `taken` stops two things sharing a tile and holds bodies as well as scenery. The
+   * blocking tests below must not: a creature standing in a doorway walks out of it on
+   * its first turn, and counting one as a wall while validating makes the whole floor
+   * behind it look already-unreachable — which then lets a shelf that really does cut
+   * that region through, because the region was "lost" before the shelf was asked
+   * about. Only things that never move belong in here.
+   */
+  const fixed = new Set<number>();
+  const furnish = (x: number, y: number) => { claim(x, y); fixed.add(grid.idx(x, y)); };
+
+  /**
+   * THE LEVERS GO IN FIRST, before a single room is furnished.
+   *
+   * Their entities are emitted at the very bottom of this function, off `Surface.Lever`,
+   * which meant every prop in every room was validated by a floor that did not yet know
+   * a lever was standing anywhere. Two solid things, each checked against a world without
+   * the other, and between them a sealed room. Their TILES are decided in generation, so
+   * there is nothing to choose here — only something to declare, and it has to be
+   * declared before anything is asked about width or reachability.
+   */
+  for (let i = 0; i < grid.surface.length; i++) {
+    if (grid.surface[i] === Surface.Lever) { taken.add(i); fixed.add(i); }
+  }
   const free = (x: number, y: number) =>
     grid.walkable(x, y) && !taken.has(grid.idx(x, y)) &&
     !(x === grid.start.x && y === grid.start.y);
@@ -90,7 +117,7 @@ export function populate(
     let open = 0;
     for (const [dx, dy] of DIR_VEC) {
       const nx = x + dx, ny = y + dy;
-      if (!grid.walkable(nx, ny) || taken.has(grid.idx(nx, ny))) continue;
+      if (!grid.walkable(nx, ny) || fixed.has(grid.idx(nx, ny))) continue;
       open++;
     }
     return open;
@@ -109,6 +136,72 @@ export function populate(
   const roomToPass = (x: number, y: number): boolean => ways(x, y) >= 3;
 
   /**
+   * Everything you can still walk to, with the furniture placed so far standing.
+   *
+   * GATES COUNT AS OPEN, and this is the whole difference between this working and
+   * not. A gate is shut while the floor is being furnished and it is a thing the player
+   * LIFTS — so validating against a shut one makes every region behind it look already
+   * unreachable, and a shelf dropped in the neck of such a room passes the test by
+   * cutting off something the test had already written off. It then cuts it for real the
+   * moment the lever is thrown. Measured: props were the culprit in 143 of 150 severed
+   * floors, and this was why.
+   */
+  const reach = (extra: number): Uint8Array => {
+    const seen = new Uint8Array(grid.w * grid.h);
+    const open = (x: number, y: number): boolean => {
+      if (!grid.inside(x, y)) return false;
+      const i = grid.idx(x, y);
+      if (fixed.has(i) || i === extra) return false;
+      // A BLOCK STAYS A WALL here, unlike a gate. A gate is lifted by a lever and is
+      // then open for good; a block is shoved, one tile, only if there is somewhere for
+      // it to go — so "the player can get past it" is not a promise this pass can make.
+      // Counting them open was measured and was worse: 1637 tiles cut across 800 floors,
+      // against none when they are treated as the wall they are until someone moves them.
+      return grid.at(x, y) === Tile.Door || grid.walkable(x, y);
+    };
+    if (!open(grid.start.x, grid.start.y)) return seen;
+    const q = [grid.idx(grid.start.x, grid.start.y)];
+    seen[q[0]] = 1;
+    for (let qi = 0; qi < q.length; qi++) {
+      const i = q[qi], x = i % grid.w, y = (i / grid.w) | 0;
+      for (const [dx, dy] of DIR_VEC) {
+        const nx = x + dx, ny = y + dy;
+        if (!open(nx, ny) || !grid.canClimb(x, y, nx, ny)) continue;
+        const ni = grid.idx(nx, ny);
+        if (seen[ni]) continue;
+        seen[ni] = 1;
+        q.push(ni);
+      }
+    }
+    return seen;
+  };
+
+  /**
+   * WOULD SOMETHING STANDING HERE CUT ANYBODY OFF?
+   *
+   * `roomToPass` is the cheap half and it is not sufficient: a T-junction has three ways
+   * out and is still the only link between them, so counting exits accepts a tile whose
+   * furniture severs the floor. `generate.ts` learned this for levers and pairs its width
+   * test with a flood; this is the same pair, for the furniture `populate` owns.
+   *
+   * Asked in that order, so the flood only runs for tiles that already look wide enough.
+   */
+  const strands = (x: number, y: number): boolean => {
+    const before = reach(-1);
+    const i = grid.idx(x, y);
+    if (!before[i]) return false;            // already unreachable; not our doing
+    const after = reach(i);
+    for (let j = 0; j < before.length; j++) {
+      if (before[j] && !after[j] && j !== i) return true;
+    }
+    return false;
+  };
+
+  /** May something SOLID stand here at all: wide enough, and it strands nobody. */
+  const canFurnish = (x: number, y: number): boolean =>
+    roomToPass(x, y) && !strands(x, y);
+
+  /**
    * Tiles of a room that touch a wall — where scenery belongs.
    *
    * A doorway tile touches wall on BOTH sides and was therefore a perfect candidate,
@@ -118,7 +211,7 @@ export function populate(
    */
   const wallTiles = (room: Room) =>
     room.tiles.filter(([x, y]) =>
-      free(x, y) && roomToPass(x, y)
+      free(x, y) && canFurnish(x, y)
       && DIR_VEC.some(([dx, dy]) => !grid.walkable(x + dx, y + dy)));
 
   /** Tiles with room to move — where creatures belong. */
@@ -138,24 +231,38 @@ export function populate(
   let captivePlaced = !captive || grid.captiveRoom < 0;
   for (const room of grid.rooms) {
     if (!captivePlaced && captive && room.id === grid.captiveRoom) {
-      const spot = openTiles(room)[0];
+      const spot = openTiles(room).find(([x, y]) => canFurnish(x, y)) ?? openTiles(room)[0];
       if (spot) {
         out.push({
           kind: 'captive', sprite: captive.sprite, x: spot[0], y: spot[1],
           ox: 0, oz: 0, hover: 0, roomId: room.id, captiveId: captive.id,
         });
-        claim(spot[0], spot[1]);
+        furnish(spot[0], spot[1]);
         captivePlaced = true;
       }
     }
 
     // ---- the room's signature fixture --------------------------------------
     if (room.kind === 'altar') {
+      /**
+       * The centre unless the centre is a doorway.
+       *
+       * An altar is `SOLID` like everything else and this took `room.cx, room.cy` with
+       * no test at all — fine in a room, and a room's "centre" in an L-shaped or
+       * two-tile-wide one can be its own neck. The nearest tile to the centre that can
+       * hold furniture is the same fallback the boss already uses, and for the same
+       * reason: framing survives being one tile off, and being walled out does not.
+       */
+      const spot = room.tiles.filter(([x, y]) => free(x, y) && canFurnish(x, y))
+        .sort((a, b) =>
+          (Math.abs(a[0] - room.cx) + Math.abs(a[1] - room.cy))
+          - (Math.abs(b[0] - room.cx) + Math.abs(b[1] - room.cy)))[0]
+        ?? [room.cx, room.cy];
       out.push({
-        kind: 'altar', sprite: 'altar', x: room.cx, y: room.cy,
+        kind: 'altar', sprite: 'altar', x: spot[0], y: spot[1],
         ox: 0, oz: 0, hover: 0, roomId: room.id,
       });
-      claim(room.cx, room.cy);
+      furnish(spot[0], spot[1]);
     } else if (room.kind === 'boss') {
       /**
        * THE BOSS STANDS IN THE MIDDLE.
@@ -204,7 +311,7 @@ export function populate(
        * and only to a raw tile if the room has nowhere passable at all.
        */
       const wall = wallTiles(room);
-      const mid = openTiles(room);
+      const mid = room.tiles.filter(([x, y]) => free(x, y) && canFurnish(x, y));
       const spot = rng.pick(wall.length ? wall : mid.length ? mid : room.tiles);
       out.push({
         kind: 'chest', sprite: 'chest', x: spot[0], y: spot[1],
@@ -214,7 +321,7 @@ export function populate(
         golem: 'g_chest',
         ox: 0, oz: 0, hover: 0, roomId: room.id,
       });
-      claim(spot[0], spot[1]);
+      furnish(spot[0], spot[1]);
     }
 
     // ---- props: the spell components ---------------------------------------
@@ -231,11 +338,11 @@ export function populate(
      * left open. `roomToPass` counts furniture already placed, so asking it again at the
      * moment of placing is what makes the shelves aware of each other.
      */
-    const spots = rng.shuffle(wallTiles(room)).filter(([x, y]) => roomToPass(x, y));
+    const spots = rng.shuffle(wallTiles(room));
     let put = 0;
     for (let i = 0; i < spots.length && put < wants; i++) {
       const [x, y] = spots[i];
-      if (!roomToPass(x, y)) continue;
+      if (!canFurnish(x, y)) continue;
       put++;
       const pi = rng.int(0, theme.props.length - 1);
       out.push({
@@ -249,7 +356,7 @@ export function populate(
         hover: 0,
         roomId: room.id,
       });
-      claim(x, y);
+      furnish(x, y);
     }
 
     // ---- enemies ----------------------------------------------------------
