@@ -171,6 +171,7 @@ export class Engine {
   private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private postMat: THREE.ShaderMaterial;
 
+  private appEl: HTMLElement;
   private stageEl: HTMLElement;
   private viewEl: HTMLCanvasElement;
   private uiEl: HTMLCanvasElement;
@@ -225,6 +226,7 @@ export class Engine {
   constructor(opts: EngineOpts = {}) {
     this.internalHeight = opts.internalHeight ?? 400;
 
+    this.appEl = document.getElementById('app') as HTMLElement;
     this.stageEl = document.getElementById('stage') as HTMLElement;
     this.viewEl = document.getElementById('view') as HTMLCanvasElement;
     this.uiEl = document.getElementById('ui') as HTMLCanvasElement;
@@ -355,11 +357,30 @@ export class Engine {
     );
   }
 
+  /**
+   * The box the stage is allowed to fill: the viewport minus the safe-area padding
+   * that `#app` carries (see the note on it in `index.html`).
+   *
+   * Measured off the element rather than computed here because `env(safe-area-inset-*)`
+   * is only legal in a stylesheet — the padding is already the device's answer, and
+   * reading it back resolves it to px. A page that sets no padding, like the ad
+   * playable, gets the raw viewport exactly as before.
+   */
+  private safeBox(): { w: number; h: number } {
+    const el = this.appEl;
+    if (!el) return { w: window.innerWidth, h: window.innerHeight };
+    const cs = getComputedStyle(el);
+    const px = (v: string): number => parseFloat(v) || 0;
+    return {
+      w: Math.max(80, el.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight)),
+      h: Math.max(80, el.clientHeight - px(cs.paddingTop) - px(cs.paddingBottom)),
+    };
+  }
+
   private resize(): void {
-    // Portrait stage: fill the viewport, but never exceed a phone-ish aspect on
+    // Portrait stage: fill the safe box, but never exceed a phone-ish aspect on
     // desktop — a 21:9 monitor should letterbox, not stretch the dungeon.
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    const { w: vw, h: vh } = this.safeBox();
     const maxAspect = 0.52;   // widest we allow (roughly 9:17)
     const minAspect = 0.42;   // narrowest (roughly 9:21)
     let sw = vw, sh = vh;

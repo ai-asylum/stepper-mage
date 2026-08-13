@@ -31,10 +31,29 @@
     touch-action: none; user-select: none; -webkit-user-select: none;
     overscroll-behavior: none;
   }
+  /* The stage is inset from the physical screen edges instead of bleeding to them.
+     On an iPhone the top strip belongs to the camera housing and every corner is cut
+     by a ~50px radius, so the cog — drawn 6px from the stage's top-right corner —
+     sat both under the status bar and outside the visible rectangle: painted, and
+     untappable. The whole stage moves rather than the HUD, because the world, the
+     book and the HUD are one box and one inset clears all three.
+
+     `env()` is the device's own measurement and is exact where it is reported (59px
+     of Dynamic Island, 34px of home indicator). The floors are for everywhere it
+     reports nothing — a Capacitor WebView, a desktop browser — where a rounded
+     display corner is still real. The camera buffer is ADDED to the top inset rather
+     than folded into its floor: the inset already clears the housing, and this is the
+     difference between not clipped and not crowded. */
   #app {
     position: fixed; inset: 0;
     display: flex; align-items: center; justify-content: center;
     background: #000;
+    --corner-buffer: 12px;
+    --camera-buffer: 8px;
+    padding-top: calc(max(env(safe-area-inset-top, 0px), var(--corner-buffer)) + var(--camera-buffer));
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--corner-buffer));
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
   }
   /* The stage is a fixed-aspect portrait box, letterboxed on wide screens. */
   #stage {
