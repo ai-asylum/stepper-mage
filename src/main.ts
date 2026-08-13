@@ -7,7 +7,7 @@ import {
   type Wizard, type WizardElement,
 } from './game/wizards';
 import {
-  Combat, DENIAL_STATUSES, targetsInView, clearLine, MAX_RANK, type PlayerState,
+  Combat, DENIAL_STATUSES, targetsInView, MAX_RANK, type PlayerState,
 } from './game/combat';
 import { CastFx } from './spells/vfx';
 import { StunView } from './dungeon/stunView';
@@ -3460,29 +3460,31 @@ async function boot(): Promise<void> {
    *    gating the camera on it meant the head never turned toward the thing you were
    *    walking into, only toward the thing already coming for you. A sleeper you can
    *    see is exactly what a glance is for.
-   *  - NOT THROUGH A WALL. `clearLine`, the same question `targetsInView` asks.
+   *  - ACTUALLY BEING DRAWN. `sprite.group.visible` is set by `Floor.cull` off
+   *    `visibleTiles`, and it is the game's one answer to "is this on screen" — the
+   *    outline pass and the minimap both ask it, so a body the camera leans at is a
+   *    body with a sprite and a dot. It is STRICTER than a clear line and that is the
+   *    whole point: `clearLine` is permissive at corners and knows nothing about the
+   *    corridor-and-room rule, so it passes bodies standing round the far side of a
+   *    wall the player is looking straight down. Two attempts at this clause missed,
+   *    both by inventing a new test instead of asking the one that already decides
+   *    what gets rendered.
    *  - AT TARGETABLE RANGE. `THREAT_REACH + 2` is four tiles: the lean only existed
    *    once something was nearly on top of you. `ENGAGE_RADIUS` is the distance the
    *    game already calls "close enough to matter".
-   *  - AND ON SCREEN. This is the clause a clear line does NOT give you, and leaving
-   *    it out is what made the camera swing toward bodies at the player's back: there
-   *    is nothing between you and the thing behind you either. A glance toward
-   *    something off-frame is not a tell, it is the view being yanked away from what
-   *    the player is looking at for a reason they cannot see.
+   *  - AND IN FRAME. Being drawn is not the same as being in the picture: the cull is
+   *    about the floor's geometry and says nothing about where the lens points. The
+   *    frame edge is DERIVED rather than written down, because the field of view is a
+   *    setting the player drags — `camera.fov` is vertical, the frame is portrait, and
+   *    the horizontal half-angle falls out of the aspect (~25 degrees at the default
+   *    90). This is also why the 45-degree targeting cone was the wrong bound to
+   *    borrow: a reticle can sit on things well outside the picture.
    *
-   * The frame edge is DERIVED, not a constant, because the field of view is a setting
-   * the player drags. `camera.fov` is vertical, the frame is portrait, and the
-   * horizontal half-angle falls out of the aspect — about 25 degrees at the default
-   * 90, which is why the 45-degree targeting cone was never the right bound here. You
-   * can put a reticle on things well outside the picture.
-   *
-   * Measured off `stepper.yaw()` and not off the live camera, deliberately: the lean
-   * is part of the camera's own yaw, so gating it on where the camera currently points
-   * would feed back on itself — leaning a body into frame would keep it qualifying,
-   * and leaning it out would drop it. Facing is the stable thing to ask.
-   *
-   * `clearLine` walks the grid, so it is asked last and only of a body that has already
-   * beaten the current best — typically once or twice, not once per entity per tick.
+   * The frame angle is measured off `stepper.yaw()` and not off the live camera,
+   * deliberately: the lean IS part of the camera's own yaw, so gating it on where the
+   * camera currently points would feed back on itself — leaning a body into frame
+   * would keep it qualifying, and leaning one out would drop it. Facing is the stable
+   * thing to ask.
    */
   const leanTarget = (): number => {
     // Horizontal half-FOV: hfov/2 = atan(tan(vfov/2) * aspect).
@@ -3492,7 +3494,7 @@ async function boot(): Promise<void> {
     let bestOff = 0;
     let bestD = Infinity;
     for (const e of floor.entities) {
-      if (!e.alive || !e.hostile) continue;
+      if (!e.alive || !e.hostile || !e.sprite.group.visible) continue;
       const dx = e.sprite.tx - stepper.x, dz = e.sprite.ty - stepper.y;
       if (!dx && !dz) continue;
       const d = Math.abs(dx) + Math.abs(dz);
@@ -3501,7 +3503,6 @@ async function boot(): Promise<void> {
       // the eye BACKWARD along (+sin, +cos). So the yaw facing an offset is atan2(-dx,-dz).
       const off = angleDelta(stepper.yaw(), Math.atan2(-dx, -dz));
       if (Math.abs(off) > edge) continue;
-      if (!clearLine(floor.grid, stepper.x, stepper.y, e.sprite.tx, e.sprite.ty)) continue;
       bestD = d; bestOff = off;
     }
     return Math.min(LEAN_MAX, Math.max(-LEAN_MAX, bestOff * LEAN_FRAC));
