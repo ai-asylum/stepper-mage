@@ -1106,6 +1106,13 @@ async function boot(): Promise<void> {
    * Slerped on the same eased `k` the position uses, so the look leaves and returns
    * with the move rather than beside it.
    */
+  /**
+   * The flight, as world points: the eye, the tiles it walks, the vantage.
+   *
+   * One array for both directions — `cineWalk` reads it forwards on the way out and
+   * backwards on the way home, so the return can never disagree with the departure.
+   */
+  const cinePath: THREE.Vector3[] = [];
   const cineFromQ = new THREE.Quaternion();
   const cineToQ = new THREE.Quaternion();
   /**
@@ -1223,9 +1230,107 @@ async function boot(): Promise<void> {
     }
     cineEye.y = Math.min(cineEye.y, hi * STEP_H + WALL_H - 0.18);
 
+    /**
+     * THE FLIGHT IS A WALK, along tiles the player could actually take.
+     *
+     * It was a straight line from the eye to the vantage, which in a dungeon means
+     * through however much masonry lies between — the camera left the room through a
+     * wall, crossed the stone, and arrived. Fixing where it LANDS did nothing about the
+     * journey, and the journey is most of what the player sees.
+     *
+     * So the path is pathfound, on the same terms the player's feet get: `walkable`, and
+     * nothing solid standing on it. That buys two things at once. The camera cannot clip
+     * anything on the way, and the shot now SHOWS THE ROUTE — it leaves down the corridor
+     * you have to walk, turns the corners you have to turn, and arrives at the gate. The
+     * cut stopped being "here is a door somewhere" and became "here is the way".
+     *
+     * Flooded from the VANTAGE so the descent from the player's tile is a shortest path,
+     * and the same polyline is walked backwards on the return, so the way home is the way
+     * out in reverse rather than a second guess at it.
+     */
+    cinePath.length = 0;
+    cinePath.push(cineFrom.clone());
+    /**
+     * FURNITURE-FREE FIRST, WALLS-ONLY SECOND, straight line last.
+     *
+     * A route that dodges the barrels is the one to want, but it can genuinely not
+     * exist — a corridor with a chest in it has no furniture-free path through, and
+     * falling straight back to a line through the masonry throws away the corridor as
+     * well as the barrel. Walls-only still follows the passages the player walks; it just
+     * clips a cask on the way, which is a far smaller lie than crossing a wall.
+     *
+     * The player's own tile is admitted whatever it says, because they are standing on it.
+     */
+    const here = g0.idx(stepper.x, stepper.y);
+    const passClear = (px: number, py: number): boolean =>
+      g0.idx(px, py) === here || (g0.walkable(px, py) && !floor.solidAt(px, py));
+    const passWalls = (px: number, py: number): boolean =>
+      g0.idx(px, py) === here || g0.walkable(px, py);
+    let dmap = g0.flood(vx, vz, g0.w * g0.h, passClear);
+    if (!g0.inside(stepper.x, stepper.y) || dmap[here] < 0) {
+      dmap = g0.flood(vx, vz, g0.w * g0.h, passWalls);
+    }
+    let cx = stepper.x, cy = stepper.y;
+    if (g0.inside(cx, cy) && dmap[g0.idx(cx, cy)] >= 0) {
+      // Downhill on the distance field, one tile at a time. Guarded because a malformed
+      // field would otherwise spin here, and a hang inside a cutscene is unrecoverable.
+      for (let guard = 0; (cx !== vx || cy !== vz) && guard < 400; guard++) {
+        let bd = dmap[g0.idx(cx, cy)];
+        let nx = -1, ny = -1;
+        for (const [ddx, ddy] of DIR_VEC) {
+          const ax = cx + ddx, ay = cy + ddy;
+          if (!g0.inside(ax, ay)) continue;
+          const d = dmap[g0.idx(ax, ay)];
+          if (d < 0 || d >= bd) continue;
+          bd = d; nx = ax; ny = ay;
+        }
+        if (nx < 0) break;
+        cx = nx; cy = ny;
+        cinePath.push(new THREE.Vector3(cx, 0, cy));
+      }
+    }
+    // The last tile IS the vantage, so it becomes the vantage rather than a point beside
+    // it — otherwise the flight ends on a needless vertical hop.
+    if (cinePath.length > 1) cinePath.pop();
+    cinePath.push(cineEye.clone());
+    /**
+     * Height is spread along the whole flight rather than taken at the end: the eye
+     * rises out of the player's head and settles into the vantage's lift as it travels,
+     * which is what makes it read as a camera lifting away rather than a camera being
+     * teleported upward at the door.
+     */
+    const total = cinePath.length - 1;
+    for (let j = 1; j < total; j++) {
+      cinePath[j].y = cineFrom.y + (cineEye.y - cineFrom.y) * (j / total);
+    }
+
     cine = { phase: 'out', t: 0, onArrive, onOpen };
     hud.cinema = true;
     hud.cinePrompt = null;
+  };
+
+  /**
+   * Where the camera is, a fraction `k` of the way along the flight.
+   *
+   * By ARC LENGTH and not by index, so the eye moves at one speed whatever shape the
+   * route is: paced per-segment, a flight round four short corners would crawl and a
+   * long straight run would sprint. `k` runs backwards on the return and needs no
+   * special case, which is the point of keeping one polyline for both directions.
+   */
+  const cineWalk = (k: number, out: THREE.Vector3): void => {
+    if (cinePath.length < 2) { out.copy(cineEye); return; }
+    let span = 0;
+    for (let j = 1; j < cinePath.length; j++) span += cinePath[j].distanceTo(cinePath[j - 1]);
+    if (span <= 1e-6) { out.copy(cinePath[cinePath.length - 1]); return; }
+    let want = Math.max(0, Math.min(1, k)) * span;
+    for (let j = 1; j < cinePath.length; j++) {
+      const seg = cinePath[j].distanceTo(cinePath[j - 1]);
+      if (want <= seg || j === cinePath.length - 1) {
+        out.lerpVectors(cinePath[j - 1], cinePath[j], seg > 1e-6 ? want / seg : 1);
+        return;
+      }
+      want -= seg;
+    }
   };
   /** End the hold. Any tap does this while the cut is parked on its subject. */
   const cineRelease = (): boolean => {
@@ -3734,7 +3839,8 @@ async function boot(): Promise<void> {
       }
 
       if (cine) {
-        engine.camera.position.lerpVectors(cineFrom, cineEye, k);
+        // Along the pathfound route, not through the wall between here and there.
+        cineWalk(k, engine.camera.position);
         /**
          * The tremble is added AFTER the vantage and is deliberately tiny — a couple
          * of centimetres and a hair of roll. Screen shake at the scale the game uses
