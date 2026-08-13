@@ -152,6 +152,24 @@ const BLADE_SWING: Record<HazardState, number> = { idle: 1, winding: 0.55, live:
 /** Full swing, radians. Wide enough that the arc clears the tile on both sides. */
 const BLADE_AMP = 1.15;
 /** How fast a hazard eases toward its target, per frame. */
+/**
+ * Which way the passage a gate hangs in runs, from the walls that flank it.
+ *
+ * `walkable(x-1) || walkable(x+1)` was the test, and on an L-bend that is a coin toss:
+ * open west and open north both satisfy it, so the bars were hung across x while the
+ * corridor left along z and the gate stood beside its own doorway with a gap. Generation
+ * refuses to put a gate on a bend at all now (`passageAxis` in `generate.ts`), and this
+ * asks the stricter question too — opposite pair, or fall back — so a gate that somehow
+ * lands on one is at least hung across the wider of the two rather than arbitrarily.
+ */
+function gateAcross(g: Grid, x: number, y: number): boolean {
+  const w = g.walkable(x - 1, y), e = g.walkable(x + 1, y);
+  const n = g.walkable(x, y - 1), s = g.walkable(x, y + 1);
+  if (w && e && !n && !s) return true;
+  if (n && s && !w && !e) return false;
+  return w || e;
+}
+
 /** How far a gate stands behind its own tile, away from the player. A tenth of a tile. */
 const GATE_PUSH = 0.1;
 
@@ -1139,9 +1157,7 @@ export class ClockView {
        * which is the axis — a gate rotated the other way would be a sheet of bars you
        * walk through the plane of.
        */
-      const across = g.walkable(x - 1, y) || g.walkable(x + 1, y);
-
-      this.drawDoor(g, d.i, x, y, e, across);
+      this.drawDoor(g, d.i, x, y, e, gateAcross(g, x, y));
       this.drawPlate(g, d);
     }
 
@@ -1204,8 +1220,7 @@ export class ClockView {
     if (bd) {
       const x = bd.i % g.w, y = (bd.i / g.w) | 0;
       const e = g.heightAt(x, y) * STEP_H;
-      const across = g.walkable(x - 1, y) || g.walkable(x + 1, y);
-      this.drawDoor(g, bd.i, x, y, e, across);
+      this.drawDoor(g, bd.i, x, y, e, gateAcross(g, x, y));
     }
 
     for (let i = this.live; i < this.pool.length; i++) this.pool[i].visible = false;

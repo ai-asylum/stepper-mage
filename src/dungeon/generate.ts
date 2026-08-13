@@ -880,9 +880,9 @@ function placeGate(g: Grid, rng: Rng): boolean {
       if (!g.walkable(x, y) || sacred.has(i)) continue;
       if (g.roomOf[i] !== 255 || g.surface[i] !== Surface.Plain) continue;
       if (g.hazards.some((h) => g.idx(h.x, h.y) === i)) continue;
-      let open = 0;
-      for (const [dx, dy] of DIR_VEC) if (g.walkable(x + dx, y + dy)) open++;
-      if (open === 2) corridors.push(i);          // a real passage, not a junction
+      // A STRAIGHT passage, not merely a tile with two ways out — see `passageAxis`.
+      if (!passageAxis(g, x, y)) continue;
+      corridors.push(i);
     }
   }
 
@@ -993,6 +993,31 @@ function plugs(g: Grid, i: number, before: Uint8Array): boolean {
  * somewhere a thing can stand and be walked past. `strew` has always asked this of its
  * loose blocks; the lever never did.
  */
+/**
+ * Is this tile a STRAIGHT one-wide passage — walls on both flanks, open front and back?
+ *
+ * "Exactly two open neighbours" is what both gate searches used to ask, and it is not
+ * the same question. An L-BEND has exactly two open neighbours as well, and they are
+ * ADJACENT rather than opposite: open west and open north, say. A portcullis hung there
+ * gets its rotation from whichever axis it happened to find first, spans that one, and
+ * leaves the other exit wide open beside it — a grille standing in mid-air with the
+ * corridor going round it, which is what shipped.
+ *
+ * So the two openings have to be OPPOSITE. That is a passage; anything else is a corner
+ * or a junction, and neither is somewhere a one-tile gate can seal.
+ *
+ * Returns which way the passage runs, or null. The caller needs the axis anyway to hang
+ * the bars along it, and deriving it here from the same test that accepted the tile is
+ * what stops the two disagreeing.
+ */
+function passageAxis(g: Grid, x: number, y: number): 'x' | 'z' | null {
+  const w = g.walkable(x - 1, y), e = g.walkable(x + 1, y);
+  const n = g.walkable(x, y - 1), s = g.walkable(x, y + 1);
+  if (w && e && !n && !s) return 'x';
+  if (n && s && !w && !e) return 'z';
+  return null;
+}
+
 function walkAround(g: Grid, i: number): boolean {
   const x = i % g.w, y = (i / g.w) | 0;
   let open = 0;
@@ -1047,12 +1072,12 @@ function lock(g: Grid, rng: Rng, depth: number): void {
        * the art was too narrow. The art is fine; it was being hung in a hole four
        * times its size.
        *
-       * Exactly two open neighbours is a passage. `placeGate` has always asked for
-       * this and `lock` never did.
+       * Exactly two open neighbours is NOT a passage, which is the correction: an
+       * L-bend has two as well and they are adjacent, so the gate spanned one axis and
+       * left the other exit open beside it. `passageAxis` wants them opposite.
        */
-      let open = 0;
-      for (const [dx, dy] of DIR_VEC) if (g.walkable(x + dx, y + dy)) open++;
-      if (open === 2) thresholds.push(i);
+      if (!passageAxis(g, x, y)) continue;
+      thresholds.push(i);
     }
   }
   if (!thresholds.length) return;
