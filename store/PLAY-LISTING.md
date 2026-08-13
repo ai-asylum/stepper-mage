@@ -26,8 +26,8 @@ Everything here is checked against the code as shipped, not against the design d
    that); total-clash's listing kit uses `hello@misaligned.games`. Pick one. If
    it is `hello@`, update [store/fakedoor.config.json](fakedoor.config.json) and
    regenerate the three legal pages.
-3. **No screenshots and no feature graphic yet** — see Graphics assets below.
-   Play will not let you publish a listing without them.
+3. ~~No screenshots and no feature graphic yet.~~ **Done** — 5 screenshots and a
+   feature graphic are in [store/](.); see Graphics assets below.
 
 ---
 
@@ -88,10 +88,30 @@ The first release of Unbound Descent. Tear pages out of your grimoire, fuse them
 | Asset | Spec | Status |
 |---|---|---|
 | App icon | 512×512, 32-bit PNG, ≤1 MB | ✅ [public/icons/icon-512.png](../public/icons/icon-512.png) |
-| Feature graphic | 1024×500 PNG/JPEG | ❌ **does not exist** |
-| Phone screenshots (2–8) | PNG/JPEG, 320–3840px/side, ratio 9:16–16:9 | ❌ **do not exist**. `_shots/` holds 562 dev captures at dev viewport from July — debug output, not listing art |
+| Feature graphic | 1024×500 PNG/JPEG | ✅ [store/feature-graphic.png](feature-graphic.png) |
+| Phone screenshots (2–8) | PNG/JPEG, 320–3840px/side, ratio no wider than 2:1 | ✅ 5 × 1040×2000 PNG (1:1.92) in [store/shots/](shots/) |
 
-Play rejects WebP; upload PNG or JPEG.
+Play rejects WebP; these are PNG.
+
+The five, in upload order — each one carries a different line from the
+description, which is why there are five and not two:
+
+| # | Shot | Sells |
+|---|---|---|
+| 01 | `01-descent.png` | first-person grid dungeon, a creature down the room |
+| 02 | `02-grimoire.png` | **the hero shot** — Flame + Frost torn out, fusing into STEAM BURST |
+| 03 | `03-altar.png` | the altar's three-way upgrade choice |
+| 04 | `04-startree.png` | the star tree, i.e. the reason to start another run |
+| 05 | `05-deep.png` | depth VI, a different palette and a lit enemy |
+
+Regenerate with `node tools/storeshots.mjs`. It is deterministic — the dungeon
+seed is pinned to `store-shots-2`, so a retake frames the same rooms. Three
+things it handles that a naive capture gets wrong, all of which produced a
+discarded set first: it shoots the `#stage` element (the viewport has letterbox
+bars), it clears `hud.hasMoved` before every frame (`enterFloor` rebuilds the
+HUD, so SWIPE TO MOVE comes back on each new floor), and it frames the deep shot
+on a creature at ≥4 tiles using the grid's own raycast (`bestViews()` optimises
+for sightline length, which reliably finds the emptiest room on the floor).
 
 ---
 

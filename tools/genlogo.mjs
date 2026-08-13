@@ -57,6 +57,41 @@ if (errors.length) {
   process.exitCode = 1;
 }
 
+/**
+ * The feature graphic is composed in the page, not in `art.ts`.
+ *
+ * The wordmark alone left the right 60% of a 1024×500 empty, which reads as
+ * unfinished rather than as spacious. The grimoire from the app icon fills it
+ * and is already the game's mark, so the banner and the launcher agree. The
+ * icon is a served PNG rather than something `Pix` can draw, which is why the
+ * compositing happens here where there is a real canvas and a real <img>.
+ */
+const featureUrl = await page.evaluate(async () => {
+  const art = await import('/src/playable/art.ts');
+  const base = art.buildFeature(1024, 500, 'UNBOUND', 'DESCENT');
+  const cv = document.createElement('canvas');
+  cv.width = 1024; cv.height = 500;
+  const ctx = cv.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(base, 0, 0);
+
+  const img = new Image();
+  img.src = '/icons/icon-512.png';
+  await img.decode();
+  // Right of the play-button overlay zone, and inset from the edge so a crop
+  // on a narrow listing card cannot clip the book in half.
+  // ADDITIVE, so the icon's own black square does not sit on the banner as a
+  // visible box. The art is a lit book on near-black, so compositing with
+  // 'lighter' keeps the glow and contributes nothing where the icon is dark —
+  // the seam that a straight drawImage leaves is the background showing its
+  // own edge, not a transparency problem to solve with alpha.
+  const s = 400;
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.drawImage(img, 1024 - s - 60, (500 - s) / 2, s, s);
+  ctx.globalCompositeOperation = 'source-over';
+  return cv.toDataURL('image/png');
+});
+
 const png = Buffer.from(dataUrl.split(',')[1], 'base64');
 // One image for both themes. The splash is already the manifest's dark
 // background, so a separate light variant would either be a different design or
@@ -65,6 +100,10 @@ for (const name of ['splash.png', 'splash-dark.png']) {
   writeFileSync(path.join(OUT, name), png);
   console.log(`  assets/${name}  ${SIZE}×${SIZE}  ${(png.length / 1024).toFixed(0)} KB`);
 }
+
+const feature = Buffer.from(featureUrl.split(',')[1], 'base64');
+writeFileSync(path.resolve('store/feature-graphic.png'), feature);
+console.log(`  store/feature-graphic.png  1024×500  ${(feature.length / 1024).toFixed(0)} KB`);
 
 // The icon is NOT redrawn. `art/_work/raw/appicon.png` is a designed grimoire
 // that reads at 48px, and a procedural wordmark would not — text is illegible

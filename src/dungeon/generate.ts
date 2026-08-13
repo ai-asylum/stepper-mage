@@ -40,7 +40,34 @@ export interface GenOpts {
    * a generator that cannot be run is a generator nobody can check.
    */
   layout?: LayoutId;
+  /**
+   * How many times this floor has already been thrown away and re-seeded.
+   *
+   * Internal. `lock` can fail on a hostile roll — there may simply be no chokepoint
+   * into the boss room with somewhere to stand and see it — and a boss room without a
+   * gate is now a floor that does not hold up its own rule, so the answer is a fresh
+   * seed rather than a floor that quietly skips the mechanic.
+   *
+   * Bounded, and that is the whole reason this exists. "Re-roll until it works" is one
+   * layout away from a generator that never returns, and the failure mode is the game
+   * hanging on the loading screen with no clue why. After `GATE_TRIES` the floor is
+   * accepted as it is: a boss room with no gate is a disappointment, and an infinite
+   * loop is a bug report.
+   */
+  tries?: number;
 }
+
+/** How many seeds to spend looking for a floor whose boss room can be locked. */
+const GATE_TRIES = 10;
+
+/**
+ * How far from a shallow floor's boss door its one lever may stand.
+ *
+ * The cap is what makes the sight line mean something. Without it the furthest visible
+ * tile was twenty-six away down a corridor — a straight line the engine calls visible
+ * and a player reads as two unrelated rooms.
+ */
+const SHALLOW_SIGHT = 10;
 
 export function generate(opts: GenOpts): Grid {
   const rng = new Rng(opts.seed);
@@ -76,6 +103,22 @@ export function generate(opts: GenOpts): Grid {
     raise(g, rng, opts.depth);
     wind(g, rng, opts.depth, !!opts.wantCaptiveRoom);
     lock(g, rng, opts.depth);
+    /**
+     * EVERY BOSS ROOM IS LOCKED, or this floor is not the floor.
+     *
+     * `lock` is allowed to fail — it needs a chokepoint into the boss room and, on a
+     * shallow floor, somewhere to stand that can see it — and it used to fail silently,
+     * which meant the rule was "most boss rooms have a gate". A rule the player meets
+     * four times out of five is not a rule they can learn; it is a thing that sometimes
+     * happens. So a floor that could not be locked is thrown away and re-seeded.
+     *
+     * Before `strew`, so a floor about to be discarded does not pay for its own props,
+     * and bounded by `GATE_TRIES` — see the note on `tries`.
+     */
+    const tries = opts.tries ?? 0;
+    if (!g.bossDoor && g.rooms.some((r) => r.kind === 'boss') && tries < GATE_TRIES) {
+      return generate({ ...opts, seed: `${opts.seed}g`, tries: tries + 1 });
+    }
     strew(g, rng, opts.depth);
   }
   placeLights(g, rng);
@@ -916,8 +959,49 @@ function placeGate(g: Grid, rng: Rng): boolean {
  *  - THE DOOR ACTUALLY GATES THE BOSS. If the room has a second way in, the lock is
  *    scenery and the walk is optional, which is the one thing it must not be.
  */
+/**
+ * Is the straight line between two tiles free of anything you cannot see past?
+ *
+ * The same shape as `Combat`'s sight test and deliberately not shared with it: that
+ * one spends a fog allowance and answers "may the player put a reticle on this",
+ * which is a question about a run in progress. This one is asked once, at generation,
+ * about two tiles of geometry. Endpoints excluded — the door tile is a door and the
+ * lever tile is where somebody will be standing.
+ */
+function sees(g: Grid, x0: number, y0: number, x1: number, y1: number): boolean {
+  const dx = x1 - x0, dy = y1 - y0;
+  const n = Math.max(Math.abs(dx), Math.abs(dy));
+  for (let i = 1; i < n; i++) {
+    const t = i / n;
+    const px = x0 + dx * t, py = y0 + dy * t;
+    if (g.seeThrough(Math.round(px), Math.round(py))) continue;
+    if (g.seeThrough(Math.floor(px), Math.floor(py))) continue;
+    if (g.seeThrough(Math.ceil(px), Math.ceil(py))) continue;
+    return false;
+  }
+  return true;
+}
+
+/**
+ * THE FIRST GATES ARE TAUGHT, THE LATER ONES ARE WORK.
+ *
+ * A gate on floor eight is a reason to walk the map: three levers in three rooms, and
+ * finding them is the content. The same shape on floor one teaches nothing, because a
+ * player who has never seen a portcullis does not know that the thing they are looking
+ * for is a lever, or that a lever has anything to do with the door two rooms back.
+ *
+ * So a shallow floor gets ONE lever and it has to be visible from the door it opens.
+ * Standing at the gate you can see the handle; standing at the handle you can see the
+ * gate come up. The mechanic explains itself in one screen with no text, and the space
+ * that has to exist in front of the boss room for both to be in shot at once is the
+ * antechamber — it is not carved as a special room, it is what the sight line demands
+ * of whichever threshold gets picked.
+ */
+function shallowGate(depth: number): boolean {
+  return depth < 4;
+}
+
 function lock(g: Grid, rng: Rng, depth: number): void {
-  if (depth < 4) return;
   const boss = g.rooms.find((r) => r.kind === 'boss');
   if (!boss) return;
 
@@ -990,26 +1074,67 @@ function lock(g: Grid, rng: Rng, depth: number): void {
      * Levers go in ROOMS, one per room, as far from each other as the floor allows —
      * spread by taking the rooms that are furthest from the boss first, so filling the
      * sockets means crossing the map rather than sweeping one wing of it.
+     *
+     * EXCEPT ON A SHALLOW FLOOR, where it is the exact opposite: one lever, as close to
+     * the door as the room allows, and it must SEE the door. See `shallowGate`.
      */
-    const fromBoss = g.flood(boss.cx, boss.cy, g.w * g.h);
-    const candidates = g.rooms
-      .filter((r) => r.kind !== 'boss')
-      .map((r) => {
-        const tiles = r.tiles
-          .map(([x, y]) => g.idx(x, y))
-          .filter((j) => shut[j] && g.surface[j] === Surface.Plain
-            && j !== g.idx(r.cx, r.cy) && j !== g.idx(g.start.x, g.start.y)
-            && !g.hazards.some((h) => g.idx(h.x, h.y) === j));
-        return { r, tiles, far: fromBoss[g.idx(r.cx, r.cy)] };
-      })
-      .filter((c) => c.tiles.length > 0)
-      .sort((a, b) => b.far - a.far);
-
-    const wanted = depth >= 8 ? 3 : 2;
-    if (candidates.length < wanted) { g.tiles[i] = was; g.setDoorLift(i, 0); continue; }
-
+    const dx0 = i % g.w, dy0 = (i / g.w) | 0;
     const levers: number[] = [];
-    for (const c of candidates.slice(0, wanted)) levers.push(rng.pick(c.tiles));
+
+    if (shallowGate(depth)) {
+      /**
+       * ONE LEVER, IN THE SPACE THE DOOR LOOKS OUT ON.
+       *
+       * Not "in a room", which is what the deep rule asks and what this asked first:
+       * on a third of floors the space in front of the boss room is a corridor or a
+       * junction rather than anything the generator calls a room, so requiring one
+       * threw away nine tenths of the seeds and left a boss room with no gate on it —
+       * which is the exact failure this pass now re-rolls to avoid.
+       *
+       * Any tile that can SEE the door will do. That is the whole requirement, and
+       * whatever shape holds it is the antechamber: what matters is that the player
+       * standing at the gate can see the handle, and standing at the handle can watch
+       * the gate come up.
+       */
+      const spots: { j: number; d: number }[] = [];
+      const startI = g.idx(g.start.x, g.start.y);
+      for (let j = 0; j < shut.length; j++) {
+        if (!shut[j] || j === startI || g.surface[j] !== Surface.Plain) continue;
+        if (g.hazards.some((h) => g.idx(h.x, h.y) === j)) continue;
+        if (g.doors.some((d) => d.i === j || d.plate === j)) continue;
+        const lx = j % g.w, ly = (j / g.w) | 0;
+        const d = Math.abs(lx - dx0) + Math.abs(ly - dy0);
+        // Two clear of the door, because a lever hung on the portcullis is the same
+        // object twice. And no further than the room in front can be — a sight line
+        // down thirty tiles of corridor is technically visible and teaches nothing.
+        if (d < 2 || d > SHALLOW_SIGHT) continue;
+        if (!sees(g, lx, ly, dx0, dy0)) continue;
+        spots.push({ j, d });
+      }
+      if (!spots.length) { g.tiles[i] = was; g.setDoorLift(i, 0); continue; }
+      // The furthest tile that can still see the door. Standing back is what puts the
+      // handle and the gate in the same view; standing on top of the gate does not.
+      spots.sort((a, b) => b.d - a.d);
+      levers.push(spots[0].j);
+    } else {
+      const fromBoss = g.flood(boss.cx, boss.cy, g.w * g.h);
+      const candidates = g.rooms
+        .filter((r) => r.kind !== 'boss')
+        .map((r) => {
+          const tiles = r.tiles
+            .map(([x, y]) => g.idx(x, y))
+            .filter((j) => shut[j] && g.surface[j] === Surface.Plain
+              && j !== g.idx(r.cx, r.cy) && j !== g.idx(g.start.x, g.start.y)
+              && !g.hazards.some((h) => g.idx(h.x, h.y) === j));
+          return { r, tiles, far: fromBoss[g.idx(r.cx, r.cy)] };
+        })
+        .filter((c) => c.tiles.length > 0)
+        .sort((a, b) => b.far - a.far);
+
+      const wanted = depth >= 8 ? 3 : 2;
+      if (candidates.length < wanted) { g.tiles[i] = was; g.setDoorLift(i, 0); continue; }
+      for (const c of candidates.slice(0, wanted)) levers.push(rng.pick(c.tiles));
+    }
     for (const j of levers) g.surface[j] = Surface.Lever;
     g.bossDoor = { i, levers, pulled: new Set() };
     restore();

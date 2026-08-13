@@ -246,6 +246,33 @@ export function buildLogo(title: string, sub: string): HTMLCanvasElement {
  * background is the manifest's `background_color`, so the native splash, the
  * web boot screen and the PWA card are all the same dark.
  */
+/**
+ * The Play feature graphic: 1024×500, and the one store asset with a play
+ * button stamped over the middle of it.
+ *
+ * So the wordmark sits LEFT of centre rather than centred, and nothing goes in
+ * the middle third — Google overlays a circular play control there on any
+ * listing with a promo video, and a centred logo would be photographed with a
+ * triangle through it. No transparency either; Play rejects an alpha channel.
+ */
+export function buildFeature(w: number, h: number, title: string, sub: string): HTMLCanvasElement {
+  const logo = logoPix(title, sub);
+  const scale = Math.max(1, Math.floor((w * 0.42) / logo.w));
+  const art = logo.scale(scale);
+
+  const out = new Pix(w, h, hex(0x0a0710));
+  // A few darker bands across the back, so a 1024-wide flat is not a blank
+  // swatch at listing size. Hard-edged on purpose: this is the same pixel grid
+  // the wordmark is on, and a soft gradient would sit off it.
+  const band = new Ramp([0x0a0710, 0x140b1c, 0x1c1026]);
+  for (let j = 0; j < h; j++) {
+    const t = 1 - Math.abs(j / (h - 1) - 0.5) * 2;
+    out.rect(0, j, w, 1, band.step(Math.max(0, Math.min(0.999, t))));
+  }
+  out.blit(art, Math.round(w * 0.07), Math.round((h - art.h) / 2));
+  return out.toCanvas();
+}
+
 export function buildSplash(size: number, title: string, sub: string): HTMLCanvasElement {
   const logo = logoPix(title, sub);
   // A third of the frame, so the wordmark survives the crop to the narrowest
