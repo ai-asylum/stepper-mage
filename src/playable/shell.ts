@@ -22,7 +22,16 @@
  * way to the game's own listeners, never by disabling them.
  */
 import { THEMES } from '../art/theme';
-import { buildCtaPlate, buildDismissPlate, buildLogo, fitScale } from './art';
+import { buildCtaPlate, buildDismissPlate, fitScale } from './art';
+/**
+ * THE GAME'S LOGO, the generated one — not a wordmark drawn here.
+ *
+ * Imported as a URL so the single-file build inlines it with every other asset.
+ * It is the 512² palette-quantised cut (`tools/genplayablelogo.py`) rather than
+ * `store/logo.png`: the full 1024² is ~1.2 MB and the creative has a hard 5 MB
+ * budget, for a mark that is never drawn wider than about 460 CSS px.
+ */
+import logoUrl from './logo.png';
 
 /**
  * The real Play listing, injected by `scripts/build-playable.mjs`.
@@ -32,9 +41,6 @@ import { buildCtaPlate, buildDismissPlate, buildLogo, fitScale } from './art';
  */
 declare const __PLAYABLE_STORE_URL__: string | undefined;
 
-/** The shipping name, matching `capacitor.config.ts` and the Play listing. */
-const TITLE = 'UNBOUND';
-const SUBTITLE = 'DESCENT';
 
 interface AdContainer {
   ALPlayableAnalytics?: { trackEvent?: (event: string) => void };
@@ -150,10 +156,9 @@ export function installShell(): void {
   // ---- pixel art -------------------------------------------------------
   const ctaArt = buildCtaPlate(58, 15);
   const dismissArt = buildDismissPlate(42, 8);
-  const mark = buildLogo(TITLE, SUBTITLE);
   ctaBtn.style.backgroundImage = `url(${ctaArt.toDataURL()})`;
   dismissBtn.style.backgroundImage = `url(${dismissArt.toDataURL()})`;
-  logo.style.backgroundImage = `url(${mark.toDataURL()})`;
+  logo.style.backgroundImage = `url(${logoUrl})`;
 
   ctaBtn.addEventListener('click', openStore);
   (document.getElementById('ec-cta') as HTMLButtonElement).addEventListener('click', openStore);
@@ -184,9 +189,32 @@ export function installShell(): void {
    */
   function layout(): void {
     const sw = w.__game?.engine?.sw ?? window.innerWidth;
-    size(logo, mark, fitScale(mark.width, sw));
-    size(ctaBtn, ctaArt, fitScale(ctaArt.width, sw, 6));
-    size(dismissBtn, dismissArt, fitScale(dismissArt.width, sw, 5));
+    /**
+     * The logo is GENERATED art, not a chunky plate, so it is sized as a
+     * fraction of the stage rather than by a whole-number upscale. `fitScale`
+     * exists because an integer factor is the only way to upscale authored
+     * pixel art without destroying it; this mark is 512² being drawn smaller,
+     * which is a downscale, and the rule does not apply.
+     */
+    const lw = Math.round(Math.min(sw * 0.86, 460));
+    logo.style.width = `${lw}px`;
+    logo.style.height = `${lw}px`;
+
+    const ctaScale = fitScale(ctaArt.width, sw, 6);
+    const dismissScale = fitScale(dismissArt.width, sw, 5);
+    size(ctaBtn, ctaArt, ctaScale);
+    size(dismissBtn, dismissArt, dismissScale);
+    /**
+     * Scale the LABELS with their plates.
+     *
+     * The plate grows with the stage and the font was a fixed 17px, so on a
+     * wide stage the button rendered three times its authored size with the
+     * same small caption rattling around inside it. Tied to the art's own
+     * height (15px and 8px) so the caption keeps the proportion it was drawn
+     * at, whatever the upscale.
+     */
+    ctaBtn.style.fontSize = `${Math.round(ctaArt.height * ctaScale * 0.42)}px`;
+    dismissBtn.style.fontSize = `${Math.round(dismissArt.height * dismissScale * 0.44)}px`;
   }
 
   /**
