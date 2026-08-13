@@ -3454,43 +3454,57 @@ async function boot(): Promise<void> {
    * shoulder" and not "what should I worry about" — the second is the player's job and
    * a camera with an opinion about it would be arguing with them.
    *
-   * THREE CLAUSES, and each one used to be wrong in the same direction — the lean fired
-   * far too rarely to be a language the player could learn:
+   * FOUR CLAUSES, and the last one is the one that makes the other three safe:
    *
    *  - ANY hostile, not only an ALERTED one. Waking up is the creature's business, and
    *    gating the camera on it meant the head never turned toward the thing you were
    *    walking into, only toward the thing already coming for you. A sleeper you can
    *    see is exactly what a glance is for.
-   *  - IN LINE OF SIGHT. There was no wall test at all, so the camera leaned at bodies
-   *    through masonry — a tell that pointed at nothing the player could see, which is
-   *    worse than no tell. `clearLine` is the same question `targetsInView` asks, so
-   *    the head turns toward things the reticle would also accept.
+   *  - NOT THROUGH A WALL. `clearLine`, the same question `targetsInView` asks.
    *  - AT TARGETABLE RANGE. `THREAT_REACH + 2` is four tiles: the lean only existed
    *    once something was nearly on top of you. `ENGAGE_RADIUS` is the distance the
-   *    game already calls "close enough to matter", and it is the honest bound for a
-   *    glance.
+   *    game already calls "close enough to matter".
+   *  - AND ON SCREEN. This is the clause a clear line does NOT give you, and leaving
+   *    it out is what made the camera swing toward bodies at the player's back: there
+   *    is nothing between you and the thing behind you either. A glance toward
+   *    something off-frame is not a tell, it is the view being yanked away from what
+   *    the player is looking at for a reason they cannot see.
    *
-   * `clearLine` walks the grid, so it is asked only of a body that has already beaten
-   * the current best — typically once or twice, not once per entity per tick.
+   * The frame edge is DERIVED, not a constant, because the field of view is a setting
+   * the player drags. `camera.fov` is vertical, the frame is portrait, and the
+   * horizontal half-angle falls out of the aspect — about 25 degrees at the default
+   * 90, which is why the 45-degree targeting cone was never the right bound here. You
+   * can put a reticle on things well outside the picture.
+   *
+   * Measured off `stepper.yaw()` and not off the live camera, deliberately: the lean
+   * is part of the camera's own yaw, so gating it on where the camera currently points
+   * would feed back on itself — leaning a body into frame would keep it qualifying,
+   * and leaning it out would drop it. Facing is the stable thing to ask.
+   *
+   * `clearLine` walks the grid, so it is asked last and only of a body that has already
+   * beaten the current best — typically once or twice, not once per entity per tick.
    */
   const leanTarget = (): number => {
-    let best: Entity | null = null;
+    // Horizontal half-FOV: hfov/2 = atan(tan(vfov/2) * aspect).
+    const edge = Math.atan(
+      Math.tan((engine.camera.fov * Math.PI) / 360) * (engine.rw / engine.rh),
+    );
+    let bestOff = 0;
     let bestD = Infinity;
     for (const e of floor.entities) {
       if (!e.alive || !e.hostile) continue;
-      const d = Math.abs(e.sprite.tx - stepper.x) + Math.abs(e.sprite.ty - stepper.y);
+      const dx = e.sprite.tx - stepper.x, dz = e.sprite.ty - stepper.y;
+      if (!dx && !dz) continue;
+      const d = Math.abs(dx) + Math.abs(dz);
       if (d > ENGAGE_RADIUS || d >= bestD) continue;
+      // Forward is (-sin yaw, -cos yaw) — see `Stepper.eye`, where the pullback pushes
+      // the eye BACKWARD along (+sin, +cos). So the yaw facing an offset is atan2(-dx,-dz).
+      const off = angleDelta(stepper.yaw(), Math.atan2(-dx, -dz));
+      if (Math.abs(off) > edge) continue;
       if (!clearLine(floor.grid, stepper.x, stepper.y, e.sprite.tx, e.sprite.ty)) continue;
-      bestD = d; best = e;
+      bestD = d; bestOff = off;
     }
-    if (!best) return 0;
-    // Forward is (-sin yaw, -cos yaw) — see `Stepper.eye`, where the pullback pushes the
-    // eye BACKWARD along (+sin, +cos). So the yaw that faces an offset is atan2(-dx,-dz).
-    const dx = best.sprite.tx - stepper.x, dz = best.sprite.ty - stepper.y;
-    if (!dx && !dz) return 0;
-    const want = Math.atan2(-dx, -dz);
-    const off = angleDelta(stepper.yaw(), want) * LEAN_FRAC;
-    return Math.min(LEAN_MAX, Math.max(-LEAN_MAX, off));
+    return Math.min(LEAN_MAX, Math.max(-LEAN_MAX, bestOff * LEAN_FRAC));
   };
 
   engine.onUpdate = (dt) => {
