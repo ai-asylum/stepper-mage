@@ -38,7 +38,7 @@ import {
 } from './spells/belt';
 import { BELT_ENABLED } from './flags';
 import { Rng } from './core/rng';
-import { DIR_VEC, Surface, type Dir } from './dungeon/grid';
+import { DIR_VEC, Surface, sightLine, type Dir } from './dungeon/grid';
 import type { LayoutId } from './dungeon/layouts';
 import { STEP_H, WALL_H } from './art/tiles';
 import { THEMES } from './art/theme';
@@ -1137,17 +1137,56 @@ async function boot(): Promise<void> {
     cineFromQ.copy(engine.camera.quaternion);
     const dx = cineFrom.x - cineAt.x, dz = cineFrom.z - cineAt.z;
     const len = Math.max(0.001, Math.hypot(dx, dz));
-    cineEye.set(
-      cineAt.x + (dx / len) * 2.8,
-      cineAt.y + 1.3,
-      cineAt.z + (dz / len) * 2.8,
-    );
+
+    /**
+     * THE VANTAGE HAS TO BE ABLE TO SEE THE SUBJECT.
+     *
+     * It was one fixed offset: 2.8 units back along the line from the subject to the
+     * player. In a corridor — which is exactly where a portcullis hangs, because a
+     * portcullis needs a chokepoint — that lands the eye inside the wall beside the
+     * door, and the cut a player is shown for the one thing they just unlocked is a
+     * close-up of masonry.
+     *
+     * So the offset is now a SEARCH. The player's own bearing is tried first and every
+     * other angle is tried in order of how far it deviates from it, because the whole
+     * point of the swing is telling the player WHICH WAY the thing that moved is — a
+     * shot from a clear angle is worth more than a blocked one, but only just, and the
+     * original bearing wins whenever it works.
+     *
+     * Both halves are checked, because they fail differently: the eye must not be IN
+     * masonry (a vantage inside the wall), and the line from it to the subject must be
+     * clear (a vantage in the open with a wall between). The first is what the
+     * screenshot showed.
+     *
+     * If nothing is clear the original offset stands. A cut that shows a wall is worse
+     * than one that does not, and better than no cut: the turn and the sound still say
+     * which way the thing was, which is what the shot is for.
+     */
+    const g0 = floor.grid;
+    const sx = Math.round(cineAt.x), sz = Math.round(cineAt.z);
+    const base = Math.atan2(dx / len, dz / len);
+    let vx = cineAt.x + (dx / len) * 2.8, vz = cineAt.z + (dz / len) * 2.8;
+    // Fanned out from the player's bearing in both directions, nearest angle first.
+    const SPREAD = [0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2, 1.6, -1.6, 2.0, -2.0, 2.4, -2.4, Math.PI];
+    search: for (const off of SPREAD) {
+      const a = base + off;
+      // Pulling in as well as swinging round: in a short chamber the only clear view of
+      // the door is from closer to it than 2.8.
+      for (const r of [2.8, 2.2, 1.7]) {
+        const cx = cineAt.x + Math.sin(a) * r, cz = cineAt.z + Math.cos(a) * r;
+        const tx2 = Math.round(cx), tz2 = Math.round(cz);
+        if (!g0.inside(tx2, tz2) || !g0.seeThrough(tx2, tz2)) continue;
+        if (!sightLine(g0, tx2, tz2, sx, sz)) continue;
+        vx = cx; vz = cz;
+        break search;
+      }
+    }
+    cineEye.set(vx, cineAt.y + 1.3, vz);
     /**
      * UNDER THE CEILING, always. The vantage lifts to look down at the subject and
      * the lift was unbounded, so in any room with a normal roof the camera rose
      * straight through it and filmed the scene from inside the masonry.
      */
-    const g0 = floor.grid;
     let hi = 0;
     for (let j = -3; j <= 3; j++) {
       for (let i = -3; i <= 3; i++) {

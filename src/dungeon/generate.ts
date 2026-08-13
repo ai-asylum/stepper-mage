@@ -13,7 +13,7 @@
  */
 import { Rng } from '../core/rng';
 import {
-  Grid, Tile, Surface, DIR_VEC, bakeLight,
+  Grid, Tile, Surface, DIR_VEC, bakeLight, sightLine,
   type Room, type Dir, type LightSource, type HazardKind,
 } from './grid';
 import { WALL_H } from '../art/tiles';
@@ -960,29 +960,6 @@ function placeGate(g: Grid, rng: Rng): boolean {
  *    scenery and the walk is optional, which is the one thing it must not be.
  */
 /**
- * Is the straight line between two tiles free of anything you cannot see past?
- *
- * The same shape as `Combat`'s sight test and deliberately not shared with it: that
- * one spends a fog allowance and answers "may the player put a reticle on this",
- * which is a question about a run in progress. This one is asked once, at generation,
- * about two tiles of geometry. Endpoints excluded — the door tile is a door and the
- * lever tile is where somebody will be standing.
- */
-function sees(g: Grid, x0: number, y0: number, x1: number, y1: number): boolean {
-  const dx = x1 - x0, dy = y1 - y0;
-  const n = Math.max(Math.abs(dx), Math.abs(dy));
-  for (let i = 1; i < n; i++) {
-    const t = i / n;
-    const px = x0 + dx * t, py = y0 + dy * t;
-    if (g.seeThrough(Math.round(px), Math.round(py))) continue;
-    if (g.seeThrough(Math.floor(px), Math.floor(py))) continue;
-    if (g.seeThrough(Math.ceil(px), Math.ceil(py))) continue;
-    return false;
-  }
-  return true;
-}
-
-/**
  * THE FIRST GATES ARE TAUGHT, THE LATER ONES ARE WORK.
  *
  * A gate on floor eight is a reason to walk the map: three levers in three rooms, and
@@ -1108,7 +1085,7 @@ function lock(g: Grid, rng: Rng, depth: number): void {
         // object twice. And no further than the room in front can be — a sight line
         // down thirty tiles of corridor is technically visible and teaches nothing.
         if (d < 2 || d > SHALLOW_SIGHT) continue;
-        if (!sees(g, lx, ly, dx0, dy0)) continue;
+        if (!sightLine(g, lx, ly, dx0, dy0)) continue;
         spots.push({ j, d });
       }
       if (!spots.length) { g.tiles[i] = was; g.setDoorLift(i, 0); continue; }

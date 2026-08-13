@@ -725,6 +725,34 @@ export function bakeLight(g: Grid): void {
  * and the compass becomes the more useful of the two readouts. That last part is the
  * point of the surface rather than a side effect of it.
  */
+/**
+ * Is the straight line between two tiles free of anything you cannot see past?
+ *
+ * The geometric half of sight, and nothing else — no fog allowance, no room rule, no
+ * cone. `Combat` wraps it with those to answer "may the player put a reticle on this",
+ * which is a question about a run in progress; generation and the cutscene camera ask
+ * only about the masonry, and both used to carry their own copy of this loop.
+ *
+ * Endpoints excluded. Both callers are asking about a thing that STANDS on a tile — a
+ * lever, a portcullis, a camera — rather than about the tile itself, and a subject that
+ * occludes itself is never what is meant. Permissive at a corner, because a line that
+ * grazes the join between two tiles passes if either is open: sight leaking a tile round
+ * a doorframe is invisible, and refusing a view that is plainly there is not.
+ */
+export function sightLine(g: Grid, x0: number, y0: number, x1: number, y1: number): boolean {
+  const dx = x1 - x0, dy = y1 - y0;
+  const n = Math.max(Math.abs(dx), Math.abs(dy));
+  for (let i = 1; i < n; i++) {
+    const t = i / n;
+    const px = x0 + dx * t, py = y0 + dy * t;
+    if (g.seeThrough(Math.round(px), Math.round(py))) continue;
+    if (g.seeThrough(Math.floor(px), Math.floor(py))) continue;
+    if (g.seeThrough(Math.ceil(px), Math.ceil(py))) continue;
+    return false;
+  }
+  return true;
+}
+
 export function visibleTiles(g: Grid, px: number, py: number): Set<number> {
   const out = new Set<number>();
   const blind = g.surfaceAt(px, py) === Surface.Fog;
