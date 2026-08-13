@@ -1030,6 +1030,23 @@ async function boot(): Promise<void> {
    */
   const CINE_MOVE = 1.15;
   /**
+   * How long the flight takes, given how far it has to walk.
+   *
+   * `CINE_MOVE` was written for a straight hop of two or three tiles. The route is
+   * pathfound now and the measured median is FOURTEEN tiles with a tail out to
+   * fifty-six, and fourteen tiles in 1.15s is a corridor going past too fast to read —
+   * which defeats the entire reason for following the route, that the player is
+   * supposed to learn the way from it.
+   *
+   * So it is per-tile with a floor and a ceiling. The floor keeps a short hop feeling
+   * like the snap it always was; the ceiling stops a fifty-tile route becoming a
+   * sightseeing tour nobody asked for, and a long way round is then simply travelled
+   * faster than a short one, which is the right compromise when the alternative is a
+   * shot that outstays its welcome.
+   */
+  const cineMoveFor = (tiles: number): number =>
+    Math.max(CINE_MOVE, Math.min(CINE_MOVE * 2.6, 0.16 * tiles + 0.5));
+  /**
    * HOW LONG THE LOOK TAKES, which is NOT how long the move takes.
    *
    * Turning across the whole flight is the same mistake as not turning at all, one
@@ -1113,6 +1130,8 @@ async function boot(): Promise<void> {
    * backwards on the way home, so the return can never disagree with the departure.
    */
   const cinePath: THREE.Vector3[] = [];
+  /** This flight's duration, from `cineMoveFor`. The return reuses it, so it is symmetric. */
+  let cineMove = CINE_MOVE;
   const cineFromQ = new THREE.Quaternion();
   const cineToQ = new THREE.Quaternion();
   /**
@@ -1304,6 +1323,7 @@ async function boot(): Promise<void> {
       cinePath[j].y = cineFrom.y + (cineEye.y - cineFrom.y) * (j / total);
     }
 
+    cineMove = cineMoveFor(Math.max(0, cinePath.length - 2));
     cine = { phase: 'out', t: 0, onArrive, onOpen };
     hud.cinema = true;
     hud.cinePrompt = null;
@@ -3792,9 +3812,9 @@ async function boot(): Promise<void> {
       /** How hard the camera is trembling right now. Only the grind produces any. */
       let rumble = 0;
       if (cine.phase === 'out') {
-        k = ease(Math.min(1, cine.t / CINE_MOVE));
+        k = ease(Math.min(1, cine.t / cineMove));
         kLook = ease(Math.min(1, cine.t / CINE_LOOK));
-        if (cine.t >= CINE_MOVE) {
+        if (cine.t >= cineMove) {
           cine = { phase: 'beat', t: 0, onArrive: cine.onArrive, onOpen: cine.onOpen };
         }
       } else if (cine.phase === 'beat') {
@@ -3830,12 +3850,12 @@ async function boot(): Promise<void> {
           hud.cinePrompt = 'TAP TO CONTINUE';
         }
       } else if (cine.phase === 'back') {
-        k = 1 - ease(Math.min(1, cine.t / CINE_MOVE));
+        k = 1 - ease(Math.min(1, cine.t / cineMove));
         // The outward turn, reversed: it happens at the END of the move rather than
         // the start, so the lag is everything the turn does not need.
-        const lag = CINE_MOVE - CINE_LOOK;
+        const lag = cineMove - CINE_LOOK;
         kLook = 1 - ease(Math.min(1, Math.max(0, cine.t - lag) / CINE_LOOK));
-        if (cine.t >= CINE_MOVE) { cine = null; hud.cinema = false; hud.cinePrompt = null; }
+        if (cine.t >= cineMove) { cine = null; hud.cinema = false; hud.cinePrompt = null; }
       }
 
       if (cine) {
