@@ -113,18 +113,43 @@ export function isVolume(elements: readonly Element[]): boolean {
 }
 
 /**
+ * How many PAGES a cast must hold before it lays anything on the floor at all.
+ *
+ * A single page leaves the floor exactly as it found it — no fire, no ice, no
+ * bramble, no puddle. Ground is the most expensive thing in this game to be wrong
+ * about: it outlives the turn that made it, it stands between the player and where
+ * they were going, and the correct play against it is usually to WAIT, which is the
+ * one thing a player learning the game will not do. They walk through it and take
+ * the damage, and the lesson they draw is that the spell they cast hurt them.
+ *
+ * So it is not on the first spell anybody casts. It arrives at two pages, by which
+ * point the player is choosing to combine things and is ready to own the result.
+ */
+export const GROUND_MIN_PAGES = 2;
+
+/**
  * How many TILES a volume fills, by empowerment step.
  *
  * A budget of tiles rather than a radius, because a radius is a number nobody can
  * picture and a tile count is one you can see on the floor and read: 1 is the tile
  * it lands on, 9 is that tile and the ring around it, 25 is the ring after that.
  *
- * It starts at ONE on purpose. A plain Fireball filling a single tile is not a
- * disappointment — it is what makes the empowered one feel like something, and it
- * is why the self-hit is a late-game hazard rather than a tax the player pays from
- * the first cast. The volume has to be small before it is allowed to be dangerous.
+ * READ ONE RUNG LOW — see `GROUND_TIER_SHIFT`. The ladder is written as the shape it
+ * has always been, and the whole thing is entered a step later than it used to be.
  */
 export const VOLUME_TILES = [1, 9, 25] as const;
+
+/**
+ * The whole ground ladder, moved one page later.
+ *
+ * `GROUND_MIN_PAGES` alone would have deleted the bottom rung rather than moved it:
+ * a two-page cast would have jumped straight to the nine-tile pour that two pages
+ * buys today, so the first ground a player ever makes would be the big one. Shifting
+ * instead of gating keeps the shape of the progression — small, then large, then
+ * frightening — and simply starts it a page further in. What one page used to lay,
+ * two pages lays; what two laid, three lays.
+ */
+const GROUND_TIER_SHIFT = 1;
 
 /**
  * The same ladder, one rung short, for the small volumes.
@@ -143,7 +168,12 @@ function volumeTiles(elements: readonly Element[], step: number): number {
   const small = elements.some((e) => SMALL_VOLUME.has(e))
     && !elements.some((e) => VOLUME_ELEMENTS.has(e) && !SMALL_VOLUME.has(e));
   const table = small ? FROST_VOLUME_TILES : VOLUME_TILES;
-  return table[Math.min(step, table.length - 1)];
+  // Clamped at BOTH ends now. The shift can push the index below zero — a two-page
+  // cast of two different elements empowers nothing — and that floor is the bottom
+  // rung, not an absence: whether a cast lays ground at all is `GROUND_MIN_PAGES`,
+  // asked where the page count is known.
+  const rung = Math.max(0, Math.min(step - GROUND_TIER_SHIFT, table.length - 1));
+  return table[rung];
 }
 
 /** A non-volume cast fills the tile it lands on and no more. */

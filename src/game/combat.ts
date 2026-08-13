@@ -33,7 +33,7 @@ import { groundUse, type GroundUse, type Substance } from './ground';
 import { affinityMult, affinityOf, type Affinities } from './affinity';
 import {
   STATUS_META, displayName, harvestOf, isFixtureElement, resolveCast,
-  GROUND_ELEMENTS, SPELL_BY_ID,
+  GROUND_ELEMENTS, GROUND_MIN_PAGES, SPELL_BY_ID,
   type CastTarget, type Element, type ResolvedCast, type StatusId,
 } from '../spells/spells';
 import { BOSS_INGREDIENTS, rollDropCount, rollIngredient, type BeltState } from '../spells/belt';
@@ -715,6 +715,24 @@ export class Combat {
       const caughtCaster = filled.some((t) => t.i === onPlayer);
 
       /**
+       * MAY THIS CAST LAY NEW GROUND AT ALL — see `GROUND_MIN_PAGES`.
+       *
+       * Counted in PAGES the player threw, not in elements they ended up with. Rank
+       * multiplies a page into several copies of its element (`byRank`), so a rank-three
+       * Fireball is three fires off one card — and it is still one card, still the first
+       * spell a new player casts, and still must not carpet the floor.
+       *
+       * It gates what a cast CREATES and nothing else. Gust still clears at one page,
+       * which matters more than usual here: it is the answer to burning ground, and
+       * taking the answer away along with the problem would be the wrong half. Growth
+       * still feeds at one page too, because it can only act on a patch that already
+       * exists — and with creation gated, early ground is the room's own braziers, so
+       * feeding one is a thing the player went and did rather than a thing that happened
+       * to them.
+       */
+      const lays = pages.length >= GROUND_MIN_PAGES;
+
+      /**
        * The fill is thrown AWAY from the caster, so an open room takes the whole
        * volume down the room and never reaches back. What brings it back is the room
        * running out of anywhere else to put it — a dead end, a doorway you are
@@ -727,7 +745,9 @@ export class Combat {
       // you can lay ice over is an area you can be standing in. It is the smaller
       // volume (`FROST_VOLUME_TILES`) precisely so this stays a mistake you can make
       // rather than a tax on every cast.
-      if ((leaves === 'fire' || leaves === 'frost') && caughtCaster) this.burnCaster(cast);
+      // `lays`, because a cast that puts no fire down cannot set the caster alight with
+      // fire it never made. This is the self-hit following the ground, not a second rule.
+      if (lays && (leaves === 'fire' || leaves === 'frost') && caughtCaster) this.burnCaster(cast);
 
       /**
        * Gust CLEARS rather than covers — the other half of the loop, and the reason
@@ -802,6 +822,10 @@ export class Combat {
             : 'THE POOL SPREADS!',
           colour: cast.colour,
         });
+      } else if (!lays) {
+        // One page: the floor is left exactly as it was found. The cast still landed —
+        // its damage, its statuses and its shove all resolved above; only the residue
+        // it would have poured out is gone.
       } else if (leaves === 'fire') {
         this.floor.ground.ignite(filled);
       } else if (leaves === 'plant') {
