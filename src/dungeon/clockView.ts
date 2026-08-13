@@ -152,6 +152,9 @@ const BLADE_SWING: Record<HazardState, number> = { idle: 1, winding: 0.55, live:
 /** Full swing, radians. Wide enough that the arc clears the tile on both sides. */
 const BLADE_AMP = 1.15;
 /** How fast a hazard eases toward its target, per frame. */
+/** How far a gate stands behind its own tile, away from the player. A tenth of a tile. */
+const GATE_PUSH = 0.1;
+
 const EASE = 0.14;
 
 
@@ -564,6 +567,15 @@ export class ClockView {
    * why the old version looked wrong, and it only happened because the art has the
    * lintel baked into the same PNG.
    */
+  /**
+   * The gate meshes built by the last `sync`, and which way is "through" them.
+   *
+   * Kept so `update` can push them away from the camera every frame. It cannot be done
+   * in `drawDoor`, which is where they are built, because `sync` has no camera — and it
+   * has to be camera-relative, so it cannot be baked in at build time either.
+   */
+  private gates: { m: THREE.Mesh; x: number; y: number; alongX: boolean }[] = [];
+
   private drawDoor(g: Grid, i: number, x: number, y: number, e: number, across: boolean): void {
     const k = this.liftOf(g, i);
     const rot = across ? Math.PI / 2 : 0;
@@ -605,6 +617,9 @@ export class ClockView {
     m.position.set(x, e, y);
     m.scale.set(1, 1, 1);
     this.lit(m, g, x, y);
+    // Both quads, because the lintel z-fights a tall sprite as readily as the bars do.
+    this.gates.push({ m: l, x, y, alongX: across });
+    this.gates.push({ m, x, y, alongX: across });
     this.cropBars(m, k);
     this.barMesh.set(i, m);
   }
@@ -938,6 +953,8 @@ export class ClockView {
    * making a decision on exactly that reading.
    */
   sync(g: Grid): void {
+    // Rebuilt with the meshes; a stale entry would nudge a quad that is now a blade.
+    this.gates.length = 0;
     this.live = 0;
     this.barMesh.clear();
 
@@ -1206,6 +1223,28 @@ export class ClockView {
    */
   update(cam?: THREE.Vector3, u?: WorldUniforms): void {
     if (cam) this.refog(cam, u);
+    /**
+     * THE GATE STANDS A LITTLE BEHIND ITS OWN TILE, measured from the player.
+     *
+     * A body on the gate's tile and the bars hanging in it were interleaving — the boss
+     * cut into by a portcullis it was standing in front of. It is not a depth-buffer tie:
+     * these quads are `depthWrite: false`, so nothing here writes depth and the argument
+     * is settled by DRAW ORDER, which three resolves by sorting transparent objects on
+     * distance from the camera. Two things at the same distance sort arbitrarily, and
+     * arbitrarily is what flickers.
+     *
+     * So the gate is nudged away along the axis you walk through it, which puts it
+     * reliably behind anything standing in the doorway and changes where it appears not
+     * at all — `GATE_PUSH` is a tenth of a tile. Per frame and camera-relative, because
+     * "behind" is a fact about where the player is standing, and `sync` — which builds
+     * these — has no camera.
+     */
+    if (cam) {
+      for (const gt of this.gates) {
+        if (gt.alongX) gt.m.position.x = gt.x + (gt.x >= cam.x ? GATE_PUSH : -GATE_PUSH);
+        else gt.m.position.z = gt.y + (gt.y >= cam.z ? GATE_PUSH : -GATE_PUSH);
+      }
+    }
     /**
      * The plates, eased on the same curve as everything else on this clock.
      *

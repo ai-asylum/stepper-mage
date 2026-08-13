@@ -38,7 +38,7 @@ import {
 } from './spells/belt';
 import { BELT_ENABLED } from './flags';
 import { Rng } from './core/rng';
-import { DIR_VEC, Surface, sightLine, type Dir } from './dungeon/grid';
+import { DIR_VEC, Surface, type Dir } from './dungeon/grid';
 import type { LayoutId } from './dungeon/layouts';
 import { STEP_H, WALL_H } from './art/tiles';
 import { THEMES } from './art/theme';
@@ -1165,76 +1165,63 @@ async function boot(): Promise<void> {
     const len = Math.max(0.001, Math.hypot(dx, dz));
 
     /**
-     * THE VANTAGE IS A TILE, AND IT IS ALWAYS A TILE THE PLAYER COULD STAND ON.
+     * STAND IN FRONT OF IT AND LOOK AT IT. That is the whole rule now.
      *
-     * Two versions of this have now put the eye inside masonry. The first used one
-     * fixed offset — 2.8 units back along the line from the door to the player — which
-     * in a corridor, and a portcullis only ever hangs in a corridor, is solidly inside
-     * the wall beside it. The second swung the angle until the line was clear but kept
-     * placing the eye at an arbitrary POINT: a float position whose tile is open can
-     * still be a hand's width from a wall face, and at this field of view a wall a hand's
-     * width away is the entire frame. That is the screenshot.
+     * Three cleverer versions of this put the eye in a wall. A fixed offset along the
+     * line to the player sat inside the masonry beside the chokepoint. An angle search
+     * placed the eye at an arbitrary float point, and a float point whose tile is open
+     * can be a hand's width from a wall face. A scored tile search fixed the masonry and
+     * then filmed the shot from whatever oblique corner scored best — which is how a
+     * barrel, and then a wall, ended up filling the frame anyway.
      *
-     * So the search is over TILES and the camera goes to the tile's CENTRE. The centre
-     * of an open tile is half a tile from the nearest wall face in every direction, by
-     * construction — there is no arithmetic left that can land the eye in stone. Asked
-     * of `walkable` rather than `seeThrough`, because a pit is see-through and is not
-     * somewhere to film from.
+     * Every one of those was solving a harder problem than the shot needs. A portcullis
+     * hangs in a chokepoint; a chokepoint has exactly one way in from the player's side;
+     * that approach tile is, by construction, open, in the corridor, and looking straight
+     * down the axis at the gate. There is nothing to choose. Back off along that same
+     * axis while the corridor allows it, and the camera is in the passage the player
+     * walked, pointing at the thing that is about to move.
      *
-     * Scored, not ordered: the player's own bearing is what the swing is FOR — it says
-     * which way the thing that moved is — so deviation from it is the main term, with a
-     * gentle preference for standing about two and a half tiles back. The best tile
-     * wins outright rather than the first acceptable one.
-     *
-     * If the subject has no clear tile anywhere near it the old offset stands, and that
-     * is now the only path that can show a wall.
+     * No scoring, no fan of candidate angles, and therefore no oblique shot to go wrong.
      */
     const g0 = floor.grid;
     const sx = Math.round(cineAt.x), sz = Math.round(cineAt.z);
-    const base = Math.atan2(dx / len, dz / len);
-    let vx = cineAt.x + (dx / len) * 2.8, vz = cineAt.z + (dz / len) * 2.8;
 
     /**
-     * FURNITURE IS INVISIBLE TO THE GRID, and that is the third thing to block this shot.
-     *
-     * A barrel, a shelf, an altar — every one of them is an ENTITY standing on a tile the
-     * grid still calls open floor, so `sightLine` looks straight through a chest-high
-     * cask and reports a clear view. The screenshot is a barrel filling the bottom half
-     * of the frame from a vantage the wall test was perfectly happy with.
-     *
-     * `Floor.solidAt` is the same question the player's own feet ask, so the camera and
-     * the player agree about what is in the way.
+     * Which side of the gate the player is on, by path distance with the gate itself
+     * held shut — the neighbour they could actually walk to. Asked rather than assumed,
+     * because a threshold's two open neighbours are otherwise indistinguishable and
+     * guessing puts the camera inside the boss room half the time.
      */
-    const clearOf = (x0: number, z0: number): boolean => {
-      const ddx = sx - x0, ddz = sz - z0;
-      const n = Math.max(Math.abs(ddx), Math.abs(ddz));
-      for (let k = 1; k < n; k++) {
-        const t = k / n;
-        const px = Math.round(x0 + ddx * t), pz = Math.round(z0 + ddz * t);
-        if (floor.solidAt(px, pz)) return false;
-      }
-      return true;
-    };
-
-    let bestScore = Infinity;
-    for (let tz2 = sz - 4; tz2 <= sz + 4; tz2++) {
-      for (let tx2 = sx - 4; tx2 <= sx + 4; tx2++) {
-        if (!g0.inside(tx2, tz2) || !g0.walkable(tx2, tz2)) continue;
-        // Nothing standing where the camera goes, either — a vantage inside the barrel is
-        // the same shot as a vantage inside the wall.
-        if (floor.solidAt(tx2, tz2)) continue;
-        const ox = tx2 - sx, oz = tz2 - sz;
-        const dist = Math.hypot(ox, oz);
-        // Close enough to read as a shot OF the door, far enough to have it in frame.
-        if (dist < 1.5 || dist > 3.6) continue;
-        if (!sightLine(g0, tx2, tz2, sx, sz)) continue;
-        if (!clearOf(tx2, tz2)) continue;
-        const swing = Math.abs(angleDelta(base, Math.atan2(ox, oz)));
-        const score = swing + Math.abs(dist - 2.5) * 0.3;
-        if (score < bestScore) { bestScore = score; vx = tx2; vz = tz2; }
+    const away = g0.flood(stepper.x, stepper.y, g0.w * g0.h,
+      (qx, qy) => g0.walkable(qx, qy) && !(qx === sx && qy === sz));
+    let ax = 0, az = 0, bestD = Infinity;
+    for (const [ddx, ddz] of DIR_VEC) {
+      const nx = sx + ddx, nz = sz + ddz;
+      if (!g0.inside(nx, nz) || !g0.walkable(nx, nz)) continue;
+      const d = away[g0.idx(nx, nz)];
+      if (d < 0 || d >= bestD) continue;
+      bestD = d; ax = ddx; az = ddz;
+    }
+    // No reachable side at all — keep the old offset rather than film from nowhere.
+    let vx = cineAt.x + (dx / len) * 2.0, vz = cineAt.z + (dz / len) * 2.0;
+    if (bestD < Infinity) {
+      vx = sx + ax; vz = sz + az;
+      // One more step back if the corridor keeps going and nothing is standing in it, so
+      // the gate is framed rather than pressed against the lens.
+      const fx2 = sx + ax * 2, fz2 = sz + az * 2;
+      if (g0.inside(fx2, fz2) && g0.walkable(fx2, fz2) && !floor.solidAt(fx2, fz2)) {
+        vx = fx2; vz = fz2;
       }
     }
-    cineEye.set(vx, cineAt.y + 1.3, vz);
+    /**
+     * Nearly level with the gate rather than looking down on it.
+     *
+     * The old 1.3 lift was for a shot from across a room. From two tiles down a corridor
+     * it tips the frame into the floor and puts the top of the portcullis — the part that
+     * MOVES — at the very edge of the picture. A portcullis rises, so the camera wants to
+     * be looking at the middle of it.
+     */
+    cineEye.set(vx, cineAt.y + 0.75, vz);
     /**
      * UNDER THE CEILING, always. The vantage lifts to look down at the subject and
      * the lift was unbounded, so in any room with a normal roof the camera rose
