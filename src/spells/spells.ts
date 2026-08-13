@@ -168,12 +168,24 @@ function volumeTiles(elements: readonly Element[], step: number): number {
   const small = elements.some((e) => SMALL_VOLUME.has(e))
     && !elements.some((e) => VOLUME_ELEMENTS.has(e) && !SMALL_VOLUME.has(e));
   const table = small ? FROST_VOLUME_TILES : VOLUME_TILES;
+  /**
+   * GUST IS EXEMPT FROM THE SHIFT, because the shift is about what a cast LAYS and
+   * gust lays nothing — it is the eraser, and specifically the answer to ground that
+   * is burning. Moving the ground ladder later while quietly halving the reach of the
+   * one spell that cleans ground up would have made the exact complaint that started
+   * this worse, not better: fire is hard to deal with early.
+   *
+   * Only when it will actually CLEAR, though. `Combat` picks what a cast leaves by
+   * the order of `GROUND_ELEMENTS`, where fire comes first — so a cast holding both
+   * gust and fire ignites rather than sweeps, and takes the shift like any other fire.
+   */
+  const clears = elements.includes('gust') && !elements.includes('fire');
+  const shift = clears ? 0 : GROUND_TIER_SHIFT;
   // Clamped at BOTH ends now. The shift can push the index below zero — a two-page
   // cast of two different elements empowers nothing — and that floor is the bottom
   // rung, not an absence: whether a cast lays ground at all is `GROUND_MIN_PAGES`,
   // asked where the page count is known.
-  const rung = Math.max(0, Math.min(step - GROUND_TIER_SHIFT, table.length - 1));
-  return table[rung];
+  return table[Math.max(0, Math.min(step - shift, table.length - 1))];
 }
 
 /** A non-volume cast fills the tile it lands on and no more. */
