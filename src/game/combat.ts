@@ -2254,7 +2254,7 @@ function label(e: Entity): string {
 /**
  * Is the straight line between two tiles free of wall?
  *
- * Asked of SIGHT and not of footing, which is why it is `seeThrough` and not
+ * Asked of SIGHT and not of footing, which is why it is `shootThrough` and not
  * `walkable`: a creature across a chasm is a creature you can put a reticle on and
  * throw fire at. You just cannot walk over and hit it.
  *
@@ -2276,9 +2276,22 @@ function clearLine(grid: Grid, x0: number, y0: number, x1: number, y1: number): 
     // and what the minimap admits you have seen stay the same claim.
     if (grid.surfaceAt(Math.round(px), Math.round(py)) === Surface.Fog) murk++;
     if (murk > FOG_SIGHT) return false;
-    if (grid.seeThrough(Math.round(px), Math.round(py))) continue;
-    if (grid.seeThrough(Math.floor(px), Math.floor(py))) continue;
-    if (grid.seeThrough(Math.ceil(px), Math.ceil(py))) continue;
+    /**
+     * A SHUT GATE IS ABSOLUTE — no corner grace.
+     *
+     * The three-way test below is deliberately permissive: a line grazing the join
+     * between two tiles passes if either is open, so a reticle does not flicker off a
+     * body you can plainly see round a doorframe. Against a portcullis that grace is
+     * a hole — a diagonal slipped past the bars on 4 floors in 360 — and unlike a
+     * doorframe a gate is a RULE the player is meant to solve, not a shape they are
+     * looking round. It fails on the sampled tile alone.
+     */
+    if (grid.shutGate(Math.round(px), Math.round(py))) return false;
+    // `shootThrough`, not `seeThrough`: a shut portcullis is a grille you can look
+    // through and must not be able to shoot through. See the note on it in `grid.ts`.
+    if (grid.shootThrough(Math.round(px), Math.round(py))) continue;
+    if (grid.shootThrough(Math.floor(px), Math.floor(py))) continue;
+    if (grid.shootThrough(Math.ceil(px), Math.ceil(py))) continue;
     return false;
   }
   return true;

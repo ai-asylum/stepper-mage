@@ -396,6 +396,35 @@ export class Grid {
   }
 
   /**
+   * May a RETICLE or a SPELL cross this tile? A shut portcullis stops both.
+   *
+   * A third seam, and it exists because a portcullis answers the other two differently
+   * on purpose. `walkable` says no — it is as solid as the wall it hangs in. `seeThrough`
+   * says YES, and that is correct: it is a grille, you can look through it, and the room
+   * beyond is lit and drawn and legible. That is the whole appeal of a portcullis over a
+   * door.
+   *
+   * But being able to SEE a thing is not being able to reach it, and targeting was built
+   * on `seeThrough` — so the boss behind a shut gate could be given a reticle and shot to
+   * death through the bars by a player who never solved the lock. The gate was decoration
+   * with a health bar behind it.
+   *
+   * Deliberately NOT folded into `seeThrough`: that one also bakes the light and fills
+   * the fog of war, and a portcullis you cannot see past would be a wall with a grille
+   * painted on it.
+   */
+  shootThrough(x: number, y: number): boolean {
+    if (!this.seeThrough(x, y)) return false;
+    return !this.shutGate(x, y);
+  }
+
+  /** Is a portcullis hanging here, down? */
+  shutGate(x: number, y: number): boolean {
+    if (!this.inside(x, y) || this.at(x, y) !== Tile.Door) return false;
+    return this.doorOpen[this.idx(x, y)] !== 1;
+  }
+
+  /**
    * Is this tile part of the BUILDING, as opposed to something standing in it?
    *
    * The third question, and it exists because a block answers `seeThrough` like a
