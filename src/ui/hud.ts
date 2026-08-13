@@ -1972,26 +1972,15 @@ export class Hud {
     }
 
     /**
-     * On its own plate, because it lands on the floor of the room rather than on any
-     * panel and 8px parchment over a lit tile is not text.
+     * DELETED: the caption under the CAST key.
      *
-     * It named the ✕ badge, which no longer exists — a caption for a button that is not
-     * there is worse than no caption. The gesture it describes is unchanged and is now
-     * the only one: the card itself is the control.
+     * It read `✕ ON A CARD PUTS IT BACK`, naming a button that no longer exists, and
+     * rewording it to `TAP A CARD TO PUT IT BACK` was the wrong fix — the instruction
+     * itself is the clutter. Tapping a thing to pick it up and tapping it again to put
+     * it down needs no caption, it is the same gesture as every other toggle in the
+     * game, and a permanent line of 8px text under the one button the player presses
+     * every turn is a tutorial that never stops running.
      */
-    const note = 'TAP A CARD TO PUT IT BACK';
-    ctx.font = '8px ui-monospace, monospace';
-    const nw = ctx.measureText(note).width + 18;
-    rr(ctx, (W - nw) / 2, by + bh + 4, nw, 14, 7);
-    ctx.fillStyle = 'rgba(14,9,16,0.86)';
-    ctx.fill();
-    // Parchment rather than red now that it is not describing a destructive-looking
-    // button: it is a hint about a tap, and the band has no other red left in it.
-    ctx.strokeStyle = 'rgba(255,207,92,0.45)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(240,228,196,0.9)';
-    ctx.fillText(note, W / 2, by + bh + 11.5);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
   }
