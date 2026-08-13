@@ -382,6 +382,40 @@ const MAP_TOP = ROW_TOP + 17 + 10;
  */
 const STARS_RIGHT = (W: number): number => W - COG_SIZE - 26;
 
+/**
+ * Desaturate whatever was just drawn into this rect — WITHOUT `ctx.filter`.
+ *
+ * `ctx.filter` is the obvious way to write this and it does nothing on the platform
+ * the game ships to. Canvas filters landed in Safari only recently, so on a large
+ * share of iPhones every `grayscale(1)` in this file was silently a no-op: locked
+ * wizards on the roster came up in full colour, indistinguishable from the one the
+ * player owns, and it looked correct on every desktop it was ever checked on.
+ *
+ * The `saturation` blend mode is the portable equivalent and has been in Safari for
+ * years. Painting a zero-saturation grey through it keeps the backdrop's luminosity
+ * and takes its colour away, which is exactly what the filter did.
+ */
+function desaturate(
+  ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,
+): void {
+  const was = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'saturation';
+  ctx.fillStyle = 'hsl(0,0%,50%)';
+  ctx.fillRect(x, y, w, h);
+  ctx.globalCompositeOperation = was;
+}
+
+/** Lift what was just drawn, the same way and for the same reason. */
+function brighten(
+  ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, amount: number,
+): void {
+  const was = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = `rgba(255,255,255,${amount})`;
+  ctx.fillRect(x, y, w, h);
+  ctx.globalCompositeOperation = was;
+}
+
 /** Rounded rect path helper — the UI's one shape. */
 export function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   ctx.beginPath();
@@ -2397,9 +2431,9 @@ export class Hud {
        * says "not yours yet" while leaving every feature legible, and the slight alpha is
        * only there to push them behind the one face that IS yours.
        */
-      if (row.locked) { ctx.filter = 'grayscale(1)'; ctx.globalAlpha = 0.8; }
+      if (row.locked) ctx.globalAlpha = 0.8;
       drawPortrait(ctx, row.wizard.portrait, cx, cy, cw, ch);
-      ctx.filter = 'none';
+      if (row.locked) desaturate(ctx, cx, cy, cw, ch);
       ctx.globalAlpha = 1;
       ctx.restore();
 
@@ -2493,9 +2527,9 @@ export class Hud {
     ctx.fillStyle = 'rgba(10,7,13,0.95)';
     ctx.fill();
     ctx.clip();
-    if (locked) { ctx.filter = 'grayscale(1)'; ctx.globalAlpha = 0.85; }
+    if (locked) ctx.globalAlpha = 0.85;
     drawPortrait(ctx, w.portrait, px, py, pw, topH);
-    ctx.filter = 'none';
+    if (locked) desaturate(ctx, px, py, pw, topH);
     ctx.globalAlpha = 1;
     ctx.restore();
     rr(ctx, px, py, pw, topH, 4);
@@ -3815,9 +3849,9 @@ export class Hud {
        * way down to a sliver of health, and a single bright wash carries the red. One
        * pass that adds light beats two that remove it.
        */
-      ctx.filter = 'grayscale(1) brightness(1.5)';
       drawPortrait(ctx, w.portrait, ix, iy, iw, ih);
-      ctx.filter = 'none';
+      desaturate(ctx, ix, lostTop, iw, lost);
+      brighten(ctx, ix, lostTop, iw, lost, 0.16);
       ctx.fillStyle = 'rgba(216,62,48,0.44)';
       ctx.fillRect(ix, lostTop, iw, lost);
       ctx.restore();

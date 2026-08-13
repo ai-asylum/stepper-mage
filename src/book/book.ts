@@ -548,7 +548,17 @@ export class Book {
     this.rightMat.uniforms.uMapFront.value = cur.action;
     this.rightMat.uniforms.uProgress.value = 0.025;
     this.rightMat.uniforms.uReveal.value = 1.01;
-    this.leftMat.uniforms.uMapBack.value = this.artOf(this.spellAt(-1)).lore;
+    /**
+     * THE LEFT PAGE IS THE CURRENT SPELL'S LORE, like it is everywhere else.
+     *
+     * A spread is ONE spell: its lore on the left and its action on the right.
+     * `finishFlip`, `cancelFlip` and `tearAt` all hold that; this line alone reached
+     * for `spellAt(-1)` and put the PREVIOUS spell's lore beside the current one's
+     * action. And `refresh` is exactly what runs when the page list changes — so the
+     * spread went wrong the moment a new spell was learnt, and stayed wrong until the
+     * player happened to flip, which is what put it back.
+     */
+    this.leftMat.uniforms.uMapBack.value = this.artOf(this.currentSpell).lore;
     this.regrowT = -1;
   }
 
@@ -658,7 +668,9 @@ export class Book {
 
     // keep each visible page's sealed state current
     this.rightMat.uniforms.uSealed.value = this.isSealed(this.currentSpell) ? 1 : 0;
-    this.leftMat.uniforms.uSealed.value = this.isSealed(this.spellAt(-1)) ? 1 : 0;
+    // The same spell as the right page — see `refresh`. This asked the previous one,
+    // so a sealed spell beside an unsealed one wore the wrong seal on half the spread.
+    this.leftMat.uniforms.uSealed.value = this.isSealed(this.currentSpell) ? 1 : 0;
 
     this.group.position.y = BASE_POS.y + bobY - drop;
     this.group.rotation.x = BASE_TILT + this.closeT * 0.55;
