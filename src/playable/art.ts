@@ -38,7 +38,7 @@ const OUTLINE = hex(0x2a1420);
  * essentially pixel art — thresholding the alpha just removes the antialiasing
  * that would otherwise smear when upscaled.
  */
-function textMask(text: string, px: number, tracking: number): Pix {
+export function textMask(text: string, px: number, tracking: number): Pix {
   const font = `bold ${px}px ui-monospace, Menlo, Consolas, monospace`;
   const measure = document.createElement('canvas').getContext('2d');
   if (!measure) return new Pix(1, 1);
@@ -75,7 +75,7 @@ function textMask(text: string, px: number, tracking: number): Pix {
 }
 
 /** Trim a mask to its ink so stacked words sit tight. */
-function trimmed(p: Pix): Pix {
+export function trimmed(p: Pix): Pix {
   const b = p.bounds();
   if (b.w <= 0) return p;
   const out = new Pix(b.w, b.h);
@@ -87,7 +87,7 @@ function trimmed(p: Pix): Pix {
  * Paint a mask with a vertical ramp plus a lit top edge, and knock a hard
  * outline around it — the three things that make flat text read as a wordmark.
  */
-function emboss(
+export function emboss(
   mask: Pix,
   ramp: Ramp,
   top: number,
@@ -131,7 +131,7 @@ function emboss(
  * A ragged edge depth per index, walked rather than sampled independently —
  * uncorrelated noise reads as static, while a walk reads as torn fibre.
  */
-function ragged(rng: Rng, count: number, max: number): number[] {
+export function ragged(rng: Rng, count: number, max: number): number[] {
   const out: number[] = [];
   let d = Math.round(max / 2);
   for (let i = 0; i < count; i++) {
