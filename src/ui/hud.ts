@@ -308,6 +308,16 @@ export function hexCss(n: number, a = 1): string {
 const BELT_BAND = BELT_ENABLED ? 46 : 0;
 
 /**
+ * The room the deleted ✕ badge used to need above each card, given back.
+ *
+ * The badge perched outside a card's top corner, so everything stacked above the fan —
+ * the CAST key and its heading — was really clearing the BADGE and not the cards. With
+ * it gone that clearance is a gap, and the band drops by exactly what the badge was
+ * costing rather than by a number picked to look right.
+ */
+const CARD_BADGE_WAS = 14;
+
+/**
  * The strip's own geometry, all measured DOWN FROM the book's edge.
  *
  * `LAP` is the half of this that matters: the strap is drawn 5px past the book's top
@@ -1030,7 +1040,7 @@ export class Hud {
     this.drawCompass(ctx, W, H);
     this.drawMoveHint(ctx, W, H);
     this.drawEmptySlots(ctx, W);
-    this.drawFanCards(ctx, W);
+    this.drawFanCards();
     this.drawCastBar(ctx, W);
     this.drawBigCast(ctx, W);
     this.drawLog(ctx, W);
@@ -1869,7 +1879,7 @@ export class Hud {
       // A refusal is a sentence, not a button. It keeps the plain pill.
       ctx.font = '9.5px ui-monospace, monospace';
       const tw = Math.min(W - 32, ctx.measureText(hint).width + 44);
-      const bx = (W - tw) / 2, by = this.bookTop - BELT_BAND - 34;
+      const bx = (W - tw) / 2, by = this.bookTop - BELT_BAND - 34 + CARD_BADGE_WAS;
       rr(ctx, bx, by, tw, 32, 16);
       ctx.fillStyle = 'rgba(64,24,24,0.92)';
       ctx.fill();
@@ -1896,7 +1906,7 @@ export class Hud {
     // Anchored to the same edge the pill was, so nothing else in the band moves.
     // Lifted clear of the book. At `- 34` the key's bottom edge landed exactly on
     // the grimoire's top and read as one welded object rather than a control.
-    const by = this.bookTop - BELT_BAND - 84;
+    const by = this.bookTop - BELT_BAND - 84 + CARD_BADGE_WAS;
     // Stack: heading, then the key. `by` is the TOP of the group, and the button's
     // height is derived rather than assumed so the two cannot drift apart.
     this.drawCastHeading(ctx, W / 2, by + 10, cast.name.toUpperCase(), cast.colour);
@@ -1961,18 +1971,26 @@ export class Hud {
       lines.forEach((ln, i) => ctx.fillText(ln, W / 2, by + 44 + i * 13));
     }
 
-    // On its own plate, because it lands on the floor of the room rather than on any
-    // panel and 8px parchment over a lit tile is not text.
-    const note = '✕  ON A CARD PUTS IT BACK';
+    /**
+     * On its own plate, because it lands on the floor of the room rather than on any
+     * panel and 8px parchment over a lit tile is not text.
+     *
+     * It named the ✕ badge, which no longer exists — a caption for a button that is not
+     * there is worse than no caption. The gesture it describes is unchanged and is now
+     * the only one: the card itself is the control.
+     */
+    const note = 'TAP A CARD TO PUT IT BACK';
     ctx.font = '8px ui-monospace, monospace';
     const nw = ctx.measureText(note).width + 18;
     rr(ctx, (W - nw) / 2, by + bh + 4, nw, 14, 7);
     ctx.fillStyle = 'rgba(14,9,16,0.86)';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(198,50,34,0.7)';
+    // Parchment rather than red now that it is not describing a destructive-looking
+    // button: it is a hint about a tap, and the band has no other red left in it.
+    ctx.strokeStyle = 'rgba(255,207,92,0.45)';
     ctx.lineWidth = 1;
     ctx.stroke();
-    ctx.fillStyle = 'rgba(255,168,142,0.95)';
+    ctx.fillStyle = 'rgba(240,228,196,0.9)';
     ctx.fillText(note, W / 2, by + bh + 11.5);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -2842,16 +2860,15 @@ export class Hud {
     ctx.textBaseline = 'alphabetic';
   }
 
-  private drawFanCards(ctx: CanvasRenderingContext2D, W: number): void {
+  /**
+   * The hand's cards, as hit regions.
+   *
+   * Nothing is DRAWN here any more — the cards themselves are 3D, and the one thing
+   * this used to paint was the ✕ badge that is now gone. What is left is the tap
+   * target for each card, which is what removes it.
+   */
+  private drawFanCards(): void {
     if (this.offers) return;            // the modal owns every tap; see drawBelt
-    /**
-     * Bigger once the hand is FULL, which is the state the book is away in. At hand
-     * size 1 that is after every single tear, so leafing to a different page means
-     * cancelling first — the quietest control in the band becomes the only way back
-     * into the grimoire, and a quiet control is the wrong answer to that.
-     */
-    const full = this.handFull();
-    const r = full ? 11 : 8;
     for (const c of this.handCards) {
       /**
        * Pushed in FAN ORDER, which is what resolves an overlap: `slot()` steps each
@@ -2862,65 +2879,18 @@ export class Hud {
       this.hits.push({ rect: [c.x, c.y, c.w, c.h], action: { kind: 'card', index: c.index } });
 
       /**
-       * Pinned to the card's own top-right corner, which means following its TILT: the
-       * fan rolls every card by up to 0.18rad, and the rect here is the upright box, so
-       * a badge parked at the box's corner floats off the paper on the outer cards.
-       * Rotated and inset, it sits ON the card at any hand size.
-       */
-      // Sat ON the paper at a 10px inset before, where it read as part of the page's
-      // artwork. Perched just outside the corner it reads as something attached TO the
-      // card, which is what a remove control should look like.
-      const hw = c.w / 2 + 2, hh = c.h / 2 + 2;
-      const sn = Math.sin(c.rot), cs = Math.cos(c.rot);
-      // Clamped inside the stage: at 295px the outer card of a three-card fan hangs
-      // off the edge, and a badge drawn past it is a control that looks unreachable.
-      const bx = Math.min(W - 11, Math.max(11, c.x + c.w / 2 + hw * cs - hh * sn));
-      const by = c.y + c.h / 2 - (hw * sn + hh * cs);
-      /**
-       * The badge gets its OWN hit region, and a generous one.
+       * DELETED: the red ✕ badge.
        *
-       * Until this existed the only rect was the card's, and moving the badge outside
-       * the corner put the visible button outside the only thing that answered a tap —
-       * so the ✕ was unclickable while the card's middle still worked, which is worse
-       * than a plain failure because nothing tells you. 44px against an 8px disc: draw
-       * small, hit big, the same rule the belt pouches follow.
+       * A disc perched just outside each card's top-right corner, whose action was
+       * `{ kind: 'card' }` — the very same action the card's own rect already carries.
+       * It was a second button for a thing the card does when you tap it, drawn in the
+       * one colour on the screen that means destructive, hanging off the paper rather
+       * than on it. Removing a card is still exactly what tapping it does.
        *
-       * Pushed AFTER the card so it wins `hit`'s backward scan, and computed from the
-       * same live box in the same frame, so it tracks a card that is still flying in
-       * instead of lagging behind the drawn mark.
+       * It also cost the band its top: the badge sat ABOVE the card, so the CAST key
+       * and its heading had to clear the badge rather than the cards, and the space
+       * went back to them when it went — see `CARD_BADGE_WAS`.
        */
-      const bh = 22;
-      this.hits.push({
-        rect: [bx - bh, by - bh, bh * 2, bh * 2],
-        action: { kind: 'card', index: c.index },
-      });
-
-      // Red, because this is the only destructive control in the band and every other
-      // affordance on screen is gold or parchment. It reads as remove at a glance
-      // without having to be big — and it is the one mark here that must never be
-      // mistaken for "cast".
-      ctx.save();
-      if (full) {
-        ctx.shadowColor = 'rgba(255,146,116,0.7)';
-        ctx.shadowBlur = 7;
-      }
-      ctx.beginPath();
-      ctx.arc(bx, by, r, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(198,50,34,0.95)';
-      ctx.fill();
-      ctx.restore();
-      ctx.strokeStyle = 'rgba(255,146,116,0.85)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(bx, by, r, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.strokeStyle = '#fff0e6';
-      ctx.lineWidth = full ? 2 : 1.6;
-      const k = r * 0.38;
-      ctx.beginPath();
-      ctx.moveTo(bx - k, by - k); ctx.lineTo(bx + k, by + k);
-      ctx.moveTo(bx + k, by - k); ctx.lineTo(bx - k, by + k);
-      ctx.stroke();
     }
   }
 
