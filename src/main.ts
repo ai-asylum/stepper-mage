@@ -2696,7 +2696,9 @@ async function boot(): Promise<void> {
       if (cast.output === 'golem') {
         const t = targets[0];
         if (t) { entityPos(t, tmp); tmp.y = 0.05; fx.rise(tmp, cast.colour); }
-        return;
+        // A golem rising is the whole of that cast's animation, and it is worth a beat
+        // of its own — the thing stands up, and THEN the room answers.
+        return t ? 0.45 : 0;
       }
       /**
        * A bolt leaves the player's hands unless the cast names something else to
@@ -2707,15 +2709,25 @@ async function boot(): Promise<void> {
       const origin = from
         ? entityPos(from, new THREE.Vector3())
         : muzzle(new THREE.Vector3());
+      /**
+       * The LAST bolt's arrival, which is when this cast is over.
+       *
+       * Taken from `fx.bolt`'s own return rather than recomputed here: the flight time
+       * is a function of distance and belongs to the effects layer, and a second copy of
+       * the formula would drift the day the bolt speed changes. A volley staggers its
+       * bolts by 0.075s each, so the last one is the one that matters.
+       */
+      let lands = 0;
       targets.forEach((t, i) => {
         const to = entityPos(t, new THREE.Vector3());
-        fx.bolt(origin.clone(), to, cast.colour, {
+        lands = Math.max(lands, fx.bolt(origin.clone(), to, cast.colour, {
           delay: i * 0.075,
           size: 0.3 + Math.min(0.35, cast.damage * 0.012),
           onArrive: () => fx.burst(to, cast.colour, 0.9 + Math.min(1, cast.damage / 20)),
-        });
+        }));
       });
       engine.setFlash(0.16, cast.colour);
+      return lands;
     };
 
     /**

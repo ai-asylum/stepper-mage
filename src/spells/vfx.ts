@@ -178,7 +178,7 @@ export class CastFx {
   bolt(
     from: THREE.Vector3, to: THREE.Vector3, colour: number,
     opts: { size?: number; delay?: number; onArrive?: () => void } = {},
-  ): void {
+  ): number {
     const b = this.take('bolt');
     this.setTex(b);
     b.from.copy(from);
@@ -198,6 +198,17 @@ export class CastFx {
     f.size = 0.5; f.dur = 0.16; f.t = -(opts.delay ?? 0);
     f.mat.color.setHex(colour);
     this.bits.push(f);
+
+    /**
+     * WHEN THIS LANDS, in seconds, so a caller can wait for it.
+     *
+     * Returned rather than recomputed by the caller, because the flight time is
+     * `0.26 + distance * 0.03` and that number belongs here. `Combat` has to know when
+     * the player's attack has finished before it lets the room answer — see
+     * `TURN_GAP_MS` — and a second copy of this formula in `main.ts` would be a beat
+     * that silently drifts the day the bolt speed changes.
+     */
+    return (opts.delay ?? 0) + b.dur;
   }
 
   /**

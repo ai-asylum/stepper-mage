@@ -435,6 +435,16 @@ export const ROUND_PACE_MS = 60;
  */
 export const TURN_GAP_MS = 260;
 
+/**
+ * A moment after the player's attack LANDS before the beat above starts counting.
+ *
+ * The bolt's flight is waited out in full — that is the attack happening — and this is
+ * the bite of the impact on the end of it. Not the whole burst: the flash reads the
+ * instant it appears and its tail can happily overlap the beat, where waiting the full
+ * 300ms of it would put nearly a second between casting and being answered.
+ */
+export const CAST_LAND_MS = 120;
+
 // ---------------------------------------------------------------- attrition
 
 /**

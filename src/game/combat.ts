@@ -41,7 +41,8 @@ import { BELT_ENABLED } from '../flags';
 import {
   ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CHAIN_JUMP_MS,
   CHAIN_RANGE, CONDUCTION_MULT, DECAY_DOT, DEEP_FREEZE_MULT,
-  DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS, TURN_GAP_MS,
+  CAST_LAND_MS, DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS,
+  TURN_GAP_MS,
   FIRE_DETOUR, GROUND_FIRE_DOT, GROW_RING, bodyStars, fallDamage, REACTION_REACH, SPILL_VOLUME, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
   bossDamage, enemyDamage, FAST_DAMAGE_MULT,
 } from './tuning';
@@ -277,7 +278,20 @@ export class Combat {
 
   onEvent: (e: GameEvent) => void = () => {};
   /** Fired so the renderer can throw a projectile / burst. */
-  onCastFx: (cast: ResolvedCast, from: Entity | null, targets: Entity[]) => void = () => {};
+  /**
+   * Draw the cast, and say HOW LONG IT TAKES — seconds until the last bolt lands.
+   *
+   * The return value is what lets a turn read as two things. The room used to answer the
+   * moment the MODEL resolved, and the model resolves instantly: damage applied on the
+   * first millisecond, bolt still in the air for another four hundred. So the beat
+   * (`TURN_GAP_MS`) was spent while the player's own attack was still playing and the
+   * enemy's blow landed before the impact flash had finished — measured at 130ms BEFORE.
+   *
+   * Only the effects layer knows the flight time, so only it can answer. Zero from a
+   * cast with nothing to animate, which keeps those instant.
+   */
+  onCastFx: (cast: ResolvedCast, from: Entity | null, targets: Entity[]) => number =
+    () => 0;
   /**
    * Fired for each JUMP of a chain, so lightning can draw as lightning.
    *
@@ -633,12 +647,12 @@ export class Combat {
       const c = this.combatants.get(targetEntity)!;
       c.damage = cast.damage;
       c.infuse = cast.infuse;
-      this.onCastFx(cast, null, [targetEntity]);
+      const golemLands = this.onCastFx(cast, null, [targetEntity]);
       // Waking something is a cast, so it is a turn, so the room answers. Charged
       // here and not once at the bottom because the golem branch returns early —
       // and a summon that bought the player a free round would be the one cast in
       // the game worth spamming.
-      await this.enemyRound();
+      await this.settleThen(golemLands);
       return true;
     }
 
@@ -664,7 +678,7 @@ export class Combat {
     for (const h of hostiles) if (h !== targetEntity) order.push(h);
     const targets = order.slice(0, cast.count);
 
-    this.onCastFx(cast, null, targets);
+    const lands = this.onCastFx(cast, null, targets);
 
     for (let i = 0; i < targets.length; i++) {
       await this.applyCast(cast, targets[i], i === 0, targets);
@@ -839,7 +853,7 @@ export class Combat {
       this.syncGround();
     }
 
-    await this.enemyRound();
+    await this.settleThen(lands);
     return true;
   }
 
@@ -1589,6 +1603,56 @@ export class Combat {
    *
    * Returns true if anything was engaged.
    */
+  /**
+   * Is the room going to answer this turn at all?
+   *
+   * Asked so the wait for the player's own animation is only paid when there is
+   * something to separate it FROM. A cast into an empty room used to return the moment
+   * the bolt left the hand and it still does: holding input for four hundred
+   * milliseconds so that nothing can happen afterwards is pure latency, and casting
+   * while exploring is common.
+   *
+   * The same two gates `enemyRound` uses, in the same order, deliberately duplicated
+   * rather than factored out — a body that passes this and then does nothing would
+   * simply mean a wasted beat, where a body that fails this and then acts would be the
+   * bug this whole change is about.
+   */
+  private roomWillAnswer(): boolean {
+    const g = this.floor.grid;
+    const px = this.playerTile.x, py = this.playerTile.y;
+    for (const [e] of this.combatants) {
+      if (!e.alive) continue;
+      if (e.hostile) {
+        const d = Math.abs(e.sprite.tx - px) + Math.abs(e.sprite.ty - py);
+        if (g.roomAt(px, py)?.id === e.roomId || d <= ENGAGE_RADIUS) return true;
+      } else if (e.animated) {
+        const foe = this.nearestHostile(e);
+        if (!foe) continue;
+        const fd = Math.abs(e.sprite.tx - foe.sprite.tx)
+          + Math.abs(e.sprite.ty - foe.sprite.ty);
+        if (fd <= GOLEM_AGGRO) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Hold until the player's attack has finished landing, then let the room answer.
+   *
+   * This is the half of the beat that was missing. `TURN_GAP_MS` was always there and
+   * always spent in the wrong place — the model resolves on the first millisecond and
+   * the bolt is in the air for another four hundred, so the gap elapsed DURING the
+   * player's attack and the enemy's blow landed 130ms before the impact flash finished.
+   * Waiting for `lands` first is what puts the beat after the attack instead of inside
+   * it.
+   */
+  private async settleThen(lands: number): Promise<void> {
+    if (lands > 0 && this.roomWillAnswer()) {
+      await delay(lands * 1000 + CAST_LAND_MS);
+    }
+    await this.enemyRound();
+  }
+
   private async enemyRound(): Promise<boolean> {
     this.turns++;
     const g = this.floor.grid;
