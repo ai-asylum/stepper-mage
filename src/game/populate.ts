@@ -78,19 +78,52 @@ export function populate(
     grid.walkable(x, y) && !taken.has(grid.idx(x, y)) &&
     !(x === grid.start.x && y === grid.start.y);
 
-  /** Tiles of a room that touch a wall — where scenery belongs. */
+  /**
+   * How many ways out a tile has, counting furniture as the wall it is.
+   *
+   * `SOLID` lists prop, chest, altar and lever — every one of them occupies its tile
+   * for the whole run — so a tile whose only other exits are already furnished is a
+   * dead end even though the grid calls all of it floor. Counted against `taken`, which
+   * is the set of tiles this pass has already given to something solid.
+   */
+  const ways = (x: number, y: number): number => {
+    let open = 0;
+    for (const [dx, dy] of DIR_VEC) {
+      const nx = x + dx, ny = y + dy;
+      if (!grid.walkable(nx, ny) || taken.has(grid.idx(nx, ny))) continue;
+      open++;
+    }
+    return open;
+  };
+
+  /**
+   * MAY SOMETHING SOLID STAND HERE — is there room to walk past it?
+   *
+   * Three ways out. Two is a passage: a doorway, the neck of a room, the one tile round
+   * a pillar. Furniture in a passage is a wall, and the complaint was exact — a
+   * bookshelf standing in the mouth of a room, with the room behind it unreachable.
+   *
+   * This is the same rule `generate.ts` applies to levers (`walkAround`) and to its
+   * loose blocks. It was the one piece of furniture placement that never asked.
+   */
+  const roomToPass = (x: number, y: number): boolean => ways(x, y) >= 3;
+
+  /**
+   * Tiles of a room that touch a wall — where scenery belongs.
+   *
+   * A doorway tile touches wall on BOTH sides and was therefore a perfect candidate,
+   * which is how a shelf ended up filling the only way into a room. Touching a wall is
+   * where scenery looks right; having three ways out is what keeps it scenery rather
+   * than architecture.
+   */
   const wallTiles = (room: Room) =>
     room.tiles.filter(([x, y]) =>
-      free(x, y) && DIR_VEC.some(([dx, dy]) => !grid.walkable(x + dx, y + dy)));
+      free(x, y) && roomToPass(x, y)
+      && DIR_VEC.some(([dx, dy]) => !grid.walkable(x + dx, y + dy)));
 
   /** Tiles with room to move — where creatures belong. */
   const openTiles = (room: Room) =>
-    room.tiles.filter(([x, y]) => {
-      if (!free(x, y)) return false;
-      let open = 0;
-      for (const [dx, dy] of DIR_VEC) if (grid.walkable(x + dx, y + dy)) open++;
-      return open >= 3;
-    });
+    room.tiles.filter(([x, y]) => free(x, y) && roomToPass(x, y));
 
   /**
    * THE CAPTIVE, in the first room that is not the entrance, the altar, the boss or the
@@ -164,7 +197,15 @@ export function populate(
         ox: 0, oz: 0, hover: 0, roomId: room.id,
       });
     } else if (room.kind === 'treasure') {
-      const spot = rng.pick(wallTiles(room).length ? wallTiles(room) : room.tiles);
+      /**
+       * The fallback used to be `room.tiles` — ANY tile, doorway included. A chest is
+       * `SOLID` like a shelf, so a treasure room whose walls were all taken would put
+       * its chest in the only way in. It falls back to the middle of the room instead,
+       * and only to a raw tile if the room has nowhere passable at all.
+       */
+      const wall = wallTiles(room);
+      const mid = openTiles(room);
+      const spot = rng.pick(wall.length ? wall : mid.length ? mid : room.tiles);
       out.push({
         kind: 'chest', sprite: 'chest', x: spot[0], y: spot[1],
         // A SPENT chest is furniture, and every prop in this game is a spell
@@ -182,9 +223,20 @@ export function populate(
     const wants = room.kind === 'entrance' ? 1
       : room.kind === 'boss' ? 3
       : rng.int(2, 3);
-    const spots = rng.shuffle(wallTiles(room));
-    for (let i = 0; i < wants && i < spots.length; i++) {
+    /**
+     * RE-CHECKED AS THEY GO, because each one narrows the room for the next.
+     *
+     * `wallTiles` is computed once against the room as it stands, so three props taken
+     * off that one list can between them close a neck that each of them individually
+     * left open. `roomToPass` counts furniture already placed, so asking it again at the
+     * moment of placing is what makes the shelves aware of each other.
+     */
+    const spots = rng.shuffle(wallTiles(room)).filter(([x, y]) => roomToPass(x, y));
+    let put = 0;
+    for (let i = 0; i < spots.length && put < wants; i++) {
       const [x, y] = spots[i];
+      if (!roomToPass(x, y)) continue;
+      put++;
       const pi = rng.int(0, theme.props.length - 1);
       out.push({
         kind: 'prop',

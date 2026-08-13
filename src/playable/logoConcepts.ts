@@ -33,6 +33,231 @@ function dilate(mask: Pix): Pix {
 }
 
 /**
+ * E — OPEN BOOK. The grimoire spread open, with the four page elements
+ * breaking out of it.
+ *
+ * The other four directions all treat the title as the subject. This one makes
+ * the OBJECT the subject and hangs the title under it, which is the only way
+ * the four elements get to be in the mark at all — and they are the game's
+ * actual page list (fire, frost, gust, plant), not decorative flourishes.
+ *
+ * Composed in layers back-to-front so the elements read as coming from behind
+ * the book rather than being stuck on top of it: wind, then the four elements,
+ * then the book, then the wordmark.
+ */
+export function conceptOpenBook(title: string, sub: string): Pix {
+  const rng = new Rng('concept-openbook-2');
+
+  const FIRE = new Ramp([0x7d2405, 0xc9520b, 0xff8c1a, 0xffc862, 0xfff3cf]);
+  const ICE = new Ramp([0x16406b, 0x2b78b0, 0x5fb2e0, 0xa9e2f7, 0xeafbff]);
+  const WIND = new Ramp([0x3f6b67, 0x6fa6a0, 0xa8d4ce, 0xdff4f0]);
+  const LEAF = new Ramp([0x1e4a1a, 0x357026, 0x57a034, 0x8ec84e]);
+  const PARCH = new Ramp([0xa8814d, 0xc9a469, 0xe4cb98, 0xf6ead0]);
+
+  const W = 152;
+  const H = 126;
+  const out = new Pix(W, H);
+  const cx = Math.round(W / 2);
+  const cy = 48;
+
+  // ---- wind: two tight swirls curling over the shoulders of the book ------
+  // Short arcs near the object, not full-width lines: a line that crosses the
+  // whole mark reads as a scratch on the canvas rather than as moving air.
+  const swirl = (ox: number, oy: number, r: number, from: number, to: number, dir: number) => {
+    let prev: [number, number] | null = null;
+    const steps = 34;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const a = from + (to - from) * t;
+      // Radius SHRINKS along the sweep, so the stroke curls into itself. A
+      // constant-ish radius over half a turn is just an arc, and a pair of arcs
+      // at the top of a mark reads unmistakably as two seagulls.
+      // Shrinking radius over rather LESS than a full turn: past about 0.7 of a
+      // turn the stroke meets its own start and the gust becomes a closed loop —
+      // a balloon tied to the corner of the book.
+      const rr = r * (1.05 - t * 0.62);
+      const x = Math.round(ox + Math.cos(a) * rr * dir);
+      const y = Math.round(oy + Math.sin(a) * rr * 0.62);
+      if (prev) out.line(prev[0], prev[1], x, y, WIND.step(0.2 + t * 0.75));
+      prev = [x, y];
+    }
+    if (prev) out.taper(prev[0], prev[1], prev[0] + dir * 6, prev[1] - 3, 1.1, 0.4, WIND.step(0.9));
+  };
+  swirl(cx - 46, 30, 17, Math.PI * 1.02, Math.PI * 2.18, -1);
+  swirl(cx + 46, 30, 17, Math.PI * 1.02, Math.PI * 2.18, 1);
+  swirl(cx - 38, 17, 11, Math.PI * 1.05, Math.PI * 2.05, -1);
+  swirl(cx + 38, 17, 11, Math.PI * 1.05, Math.PI * 2.05, 1);
+
+  // ---- fire: tongues climbing the left ------------------------------------
+  /**
+   * Built column-by-column rather than as stacked ellipses.
+   *
+   * Ellipses per row bulge at the waist and the result reads as a root
+   * vegetable — the first pass at this looked like three carrots. A flame is a
+   * width FUNCTION: widest just above the base, pinching to nothing at the tip,
+   * with the whole tongue leaning as it rises.
+   */
+  const flame = (bx: number, by: number, hgt: number, w0: number, lean: number) => {
+    for (let j = 0; j < hgt; j++) {
+      const t = j / (hgt - 1);
+      // Widest at the BASE and pinching to the tip. An earlier version peaked
+      // at a third of the way up and went to zero at t=0, which drew a fat
+      // middle over a pointed bottom — three hanging droplets, fire upside down.
+      /**
+       * Fuller body, wavier edge, and a tip that wanders.
+       *
+       * With a 1.15 exponent and a tight flicker the tongues tapered in a
+       * straight line, which gave fire the SAME silhouette as the ice shards
+       * beside it — two crystals in different colours. Fire has to be the soft
+       * one: a fatter mid-body, an edge that ripples, and a tip that leans.
+       */
+      const flicker = 0.78 + 0.3 * Math.sin(t * 9.5 + bx * 1.7);
+      const half = Math.max(0.5, w0 * Math.pow(1 - t, 0.8) * flicker);
+      const x = bx + lean * t * t * 12 + Math.sin(t * 4.2 + bx) * 2.6 * t;
+      const y = by - j;
+      out.rect(Math.round(x - half), y, Math.max(1, Math.round(half * 2)), 1, FIRE.step(0.1 + t * 0.45));
+      if (half > 1.3) {
+        const ih = half * 0.5;
+        out.rect(Math.round(x - ih), y, Math.max(1, Math.round(ih * 2)), 1, FIRE.step(0.55 + t * 0.42));
+      }
+    }
+  };
+  flame(27, 96, 45, 6.8, -0.22);
+  flame(16, 92, 32, 5, -0.15);
+  flame(37, 90, 22, 3.8, -0.4);
+  for (let n = 0; n < 18; n++) {
+    out.set(rng.int(12, 40), rng.int(44, 84), FIRE.step(0.62 + rng.int(0, 34) / 100));
+  }
+
+  // ---- ice: shards climbing the right -------------------------------------
+  const shard = (bx: number, by: number, hgt: number, wid: number, lean: number) => {
+    const tx = bx + lean;
+    out.poly([[bx - wid, by], [bx + wid, by], [tx + wid * 0.2, by - hgt], [tx - wid * 0.2, by - hgt]], ICE.step(0.35));
+    out.taper(bx - wid * 0.5, by - 1, tx - wid * 0.15, by - hgt + 1, 1.2, 0.5, ICE.step(0.85));
+    out.taper(bx + wid * 0.6, by - 1, tx + wid * 0.15, by - hgt + 1, 0.9, 0.4, ICE.step(0.12));
+    out.set(Math.round(tx), by - hgt, ICE.step(0.98));
+  };
+  shard(W - 28, 96, 45, 6.2, 3);
+  shard(W - 17, 92, 32, 4.8, 2);
+  shard(W - 38, 90, 22, 3.8, -2);
+  for (let n = 0; n < 16; n++) {
+    out.set(rng.int(W - 42, W - 10), rng.int(44, 84), ICE.step(0.72 + rng.int(0, 28) / 100));
+  }
+
+  // ---- plants: vines climbing UP the outside of the book ------------------
+  /**
+   * Rooted at the bottom and curling outward-then-in, so they embrace the book
+   * rather than lying beside it. The first pass ran them horizontally and they
+   * read as pea pods floating in space — a vine has to start somewhere and
+   * reach for something.
+   */
+  const vine = (x0: number, y0: number, dir: number, n: number, reach: number, rise: number) => {
+    const pts: [number, number][] = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const x = x0 + dir * (Math.sin(t * Math.PI * 0.85) * reach);
+      const y = y0 - t * rise;
+      pts.push([x, y]);
+    }
+    for (let i = 1; i < pts.length; i++) {
+      const th = i < pts.length * 0.4 ? 1.4 : 0.9;
+      out.taper(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1], th, th * 0.8,
+        LEAF.step(0.2 + (i / pts.length) * 0.35));
+    }
+    for (let i = 2; i < pts.length - 1; i += 3) {
+      const [lx, ly] = pts[i];
+      const side = (i / 3) % 2 === 0 ? 1 : -1;
+      const r = 1.5 + Math.sin((i / pts.length) * Math.PI) * 2.1;
+      // Leaves are angled off the stem, not stuck on the side of it.
+      const ax = lx + side * r * 1.05;
+      const ay = ly - r * 0.55;
+      out.ellipse(ax, ay, r, r * 0.55, LEAF.step(0.6));
+      out.ellipse(ax + side * 0.3, ay - 0.5, r * 0.55, r * 0.3, LEAF.step(0.9));
+    }
+  };
+  // SHORT. The first pass reached 30 wide and 52 tall from each root and the
+  // pair closed into a heart around the whole mark — a wreath competing with
+  // the book instead of sitting under it, and it buried the fire and the ice.
+  vine(cx - 9, 92, -1, 13, 16, 22);
+  vine(cx + 9, 92, 1, 13, 16, 22);
+  vine(cx - 3, 90, -1, 8, 8, 12);
+  vine(cx + 3, 90, 1, 8, 8, 12);
+
+  // ---- the book -----------------------------------------------------------
+  /**
+   * Drawn COLUMN-WISE from the spine outward so the spread actually curves.
+   *
+   * The first attempt used two flat quads and read as a lectern: an open book's
+   * whole silhouette is the pair of wings lifting away from a low fold, and a
+   * straight top edge kills it. Each column gets its own top and bottom, rising
+   * outward, with the page stack drawn as a few offset rows at the far edge.
+   */
+  const span = 44;
+  const foldTop = cy - 2;
+  const foldBot = cy + 13;
+  const lift = 15;
+
+  const side = (sgn: number) => {
+    for (let k = 0; k <= span; k++) {
+      const t = k / span;
+      const x = cx + sgn * k;
+      const rise = Math.pow(t, 0.75) * lift;
+      const top = Math.round(foldTop - rise);
+      const bot = Math.round(foldBot - rise * 0.42);
+      // Cover: one row proud of the pages, and a touch deeper at the outside.
+      out.rect(x, top + 1, 1, bot - top + 3, hex(sgn < 0 ? 0x4a1622 : 0x5a1c2a));
+      // Pages, brighter toward the outer edge where the light gets in.
+      out.rect(x, top, 1, bot - top, PARCH.step(0.3 + t * 0.55));
+      // Ruled hint lines, skipped near the fold so they do not crowd it.
+      if (k > 6 && k % 7 === 0) {
+        out.rect(x - sgn, top + 3, 1, Math.max(1, bot - top - 5), rgba(120, 92, 54, 60));
+      }
+    }
+    // Page stack at the outer lip: three offset rows, which is what sells paper
+    // as a thing with thickness rather than a painted shape.
+    const xEdge = cx + sgn * span;
+    const rEnd = lift;
+    for (let s = 0; s < 3; s++) {
+      out.rect(xEdge - sgn * s, Math.round(foldBot - rEnd * 0.42) + s, 1, 2, PARCH.step(0.9 - s * 0.22));
+    }
+    out.rect(xEdge, Math.round(foldTop - rEnd), 1, Math.round(rEnd * 0.58) + 3, PARCH.step(0.98));
+  };
+  side(-1);
+  side(1);
+
+  // The fold itself, and the clasp.
+  out.rect(cx, foldTop, 1, foldBot - foldTop + 2, rgba(70, 46, 26, 170));
+  out.rect(cx - 1, foldTop + 1, 1, foldBot - foldTop, rgba(70, 46, 26, 90));
+  out.rect(cx - 2, foldBot + 1, 5, 4, hex(0xffc23e));
+  out.rect(cx - 1, foldBot + 2, 3, 2, hex(0x8a6212));
+
+  // A sigil lifting off the open spread — the reason it is open at all.
+  out.ellipseFrame(cx, foldTop - 9, 8, 3, rgba(190, 150, 255, 200));
+  out.ellipseFrame(cx, foldTop - 13, 5, 2, rgba(214, 186, 255, 160));
+  for (let n = 0; n < 16; n++) {
+    out.set(cx + rng.int(-10, 10), foldTop - rng.int(2, 18), rgba(210, 180, 255, rng.int(70, 200)));
+  }
+
+  // ---- wordmark under it --------------------------------------------------
+  const main = trimmed(textMask(title, 13, 1));
+  const small = trimmed(textMask(sub, 8, 5));
+  const put = (mask: Pix, oy: number, c: number, shadow: boolean) => {
+    const ox = Math.round((W - mask.w) / 2);
+    for (let j = 0; j < mask.h; j++) {
+      for (let i = 0; i < mask.w; i++) {
+        if (!mask.alpha(i, j)) continue;
+        if (shadow) out.set(ox + i + 1, oy + j + 2, rgba(0, 0, 0, 210), { mode: 'set' });
+        out.set(ox + i, oy + j, hex(c), { mode: 'set' });
+      }
+    }
+  };
+  const titleY = H - main.h - small.h - 4;
+  put(main, titleY, 0xffd977, true);
+  put(small, titleY + main.h + 2, 0xcbb68c, false);
+  return out;
+}
+
+/**
  * A — CHISELLED. The title cut into a stone slab.
  *
  * The inverse of the shipped mark's lighting: letters are cut INTO the surface,

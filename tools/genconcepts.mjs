@@ -46,6 +46,7 @@ const NAMES = [
   ['branded', 'conceptBranded', 'B — BRANDED'],
   ['seal', 'conceptSeal', 'C — SEAL'],
   ['falling', 'conceptFalling', 'D — FALLING'],
+  ['openbook', 'conceptOpenBook', 'E — OPEN BOOK'],
 ];
 
 const shots = await page.evaluate(async ({ names, scale }) => {
