@@ -7,7 +7,7 @@ import {
   type Wizard, type WizardElement,
 } from './game/wizards';
 import {
-  Combat, DENIAL_STATUSES, targetsInView, MAX_RANK, type PlayerState,
+  Combat, DENIAL_STATUSES, targetsInView, clearLine, MAX_RANK, type PlayerState,
 } from './game/combat';
 import { CastFx } from './spells/vfx';
 import { StunView } from './dungeon/stunView';
@@ -47,8 +47,8 @@ import { affinityOf } from './game/affinity';
 import type { Element as SpellElement } from './spells/spells';
 import { DEFAULT_STEP, setPixelStep } from './art/steps';
 import {
-  CATCH_UP_DRAWS, CHEST_HEAL_SPREAD, PLAYER_MAX_HP, THREAT_REACH, chestHealBase,
-  fallDamage, healable,
+  CATCH_UP_DRAWS, CHEST_HEAL_SPREAD, ENGAGE_RADIUS, PLAYER_MAX_HP, THREAT_REACH,
+  chestHealBase, fallDamage, healable,
 } from './game/tuning';
 import { setGilded, setPageRanks } from './book/pageTexture';
 import {
@@ -3389,10 +3389,25 @@ async function boot(): Promise<void> {
   /** Screen px of drag that reaches the cap. */
   const PEEK_SPAN = 220;
   const PEEK_EASE = 11;
-  const LEAN_MAX = 0.11;          // ~6 degrees
-  const LEAN_EASE = 3.5;
+  /**
+   * THE LEAN, and it is meant to be seen.
+   *
+   * It was ~6 degrees taken at a third of the angle, which is a lean you can only find
+   * by looking for it — the head barely moved and the tell it exists to give was doing
+   * no work. 16 degrees at 0.6 of the angle is a head genuinely turning toward the
+   * thing, and the ease is faster so it arrives while the body is still worth looking
+   * at rather than drifting there over most of a second.
+   *
+   * The cap is still a cap, and this is what bounds it: the camera's yaw is
+   * `stepper.yaw() + peekYaw + enemyLean`, and the targeting cone is 45 degrees to the
+   * side (`side > ahead` in `targetsInView`). A full lean stacked on a full peek is
+   * ~39 degrees, so the camera can still never point at something it is not allowed to
+   * put a reticle on. That is the invariant to hold if these are pushed further.
+   */
+  const LEAN_MAX = 0.28;          // ~16 degrees
+  const LEAN_EASE = 6;
   /** How much of the angle to a body the camera actually takes. */
-  const LEAN_FRAC = 0.35;
+  const LEAN_FRAC = 0.6;
 
   let peekYaw = 0, peekPitch = 0, peekYawTarget = 0, peekPitchTarget = 0;
   let enemyLean = 0;
@@ -3432,22 +3447,43 @@ async function boot(): Promise<void> {
   };
 
   /**
-   * Where the lean wants to be: a fraction of the angle to the nearest AWAKE hostile,
-   * clamped, and zero when there is nothing to lean at.
+   * Where the lean wants to be: a fraction of the angle to the nearest hostile the
+   * player can SEE, clamped, and zero when there is nothing to lean at.
    *
    * Nearest rather than most dangerous, because the lean is answering "what is at my
    * shoulder" and not "what should I worry about" — the second is the player's job and
    * a camera with an opinion about it would be arguing with them.
+   *
+   * THREE CLAUSES, and each one used to be wrong in the same direction — the lean fired
+   * far too rarely to be a language the player could learn:
+   *
+   *  - ANY hostile, not only an ALERTED one. Waking up is the creature's business, and
+   *    gating the camera on it meant the head never turned toward the thing you were
+   *    walking into, only toward the thing already coming for you. A sleeper you can
+   *    see is exactly what a glance is for.
+   *  - IN LINE OF SIGHT. There was no wall test at all, so the camera leaned at bodies
+   *    through masonry — a tell that pointed at nothing the player could see, which is
+   *    worse than no tell. `clearLine` is the same question `targetsInView` asks, so
+   *    the head turns toward things the reticle would also accept.
+   *  - AT TARGETABLE RANGE. `THREAT_REACH + 2` is four tiles: the lean only existed
+   *    once something was nearly on top of you. `ENGAGE_RADIUS` is the distance the
+   *    game already calls "close enough to matter", and it is the honest bound for a
+   *    glance.
+   *
+   * `clearLine` walks the grid, so it is asked only of a body that has already beaten
+   * the current best — typically once or twice, not once per entity per tick.
    */
   const leanTarget = (): number => {
     let best: Entity | null = null;
     let bestD = Infinity;
     for (const e of floor.entities) {
-      if (!e.alive || !e.hostile || !combat.isAlerted(e)) continue;
+      if (!e.alive || !e.hostile) continue;
       const d = Math.abs(e.sprite.tx - stepper.x) + Math.abs(e.sprite.ty - stepper.y);
-      if (d < bestD) { bestD = d; best = e; }
+      if (d > ENGAGE_RADIUS || d >= bestD) continue;
+      if (!clearLine(floor.grid, stepper.x, stepper.y, e.sprite.tx, e.sprite.ty)) continue;
+      bestD = d; best = e;
     }
-    if (!best || bestD > THREAT_REACH + 2) return 0;
+    if (!best) return 0;
     // Forward is (-sin yaw, -cos yaw) — see `Stepper.eye`, where the pullback pushes the
     // eye BACKWARD along (+sin, +cos). So the yaw that faces an offset is atan2(-dx,-dz).
     const dx = best.sprite.tx - stepper.x, dz = best.sprite.ty - stepper.y;

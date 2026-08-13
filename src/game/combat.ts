@@ -2215,7 +2215,7 @@ function label(e: Entity): string {
  * doorframe is invisible, and a marker blinking off a creature you can plainly see
  * reads as the targeting system being broken.
  */
-function clearLine(grid: Grid, x0: number, y0: number, x1: number, y1: number): boolean {
+export function clearLine(grid: Grid, x0: number, y0: number, x1: number, y1: number): boolean {
   const dx = x1 - x0, dy = y1 - y0;
   const n = Math.max(Math.abs(dx), Math.abs(dy));
   let murk = 0;
