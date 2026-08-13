@@ -960,6 +960,47 @@ function placeGate(g: Grid, rng: Rng): boolean {
  *    scenery and the walk is optional, which is the one thing it must not be.
  */
 /**
+ * Would something SOLID standing here cut somebody off?
+ *
+ * A lever is furniture you TAP, not a tile you stand on — see `SOLID` in `game/floor.ts`
+ * — so it occupies its tile for the rest of the run. `Grid.walkable` knows nothing about
+ * that, because a lever is written as a SURFACE and only becomes a body in `populate`,
+ * so every reachability test generation ran said a lever tile was open floor. That is how
+ * one ends up plugging a one-wide corridor: nothing in the pipeline ever asked.
+ *
+ * The same question `strew` asks before it lays a block, against the reachable set the
+ * caller is already holding — which matters, because `lock` asks this with the gates shut
+ * and "unreachable" then includes everything legitimately behind one.
+ */
+function plugs(g: Grid, i: number, before: Uint8Array): boolean {
+  if (!before[i]) return true;
+  const was = g.tiles[i];
+  g.tiles[i] = Tile.Wall;
+  const after = reachable(g);
+  g.tiles[i] = was;
+  for (let j = 0; j < before.length; j++) {
+    if (before[j] && !after[j] && j !== i) return true;
+  }
+  return false;
+}
+
+/**
+ * Is there room to walk AROUND something standing here?
+ *
+ * The cheap half of the question, and the one the complaint was actually about: a tile
+ * with two open neighbours is a passage, and furniture in a passage is a wall whatever
+ * the connectivity graph says about loops. Three is a junction or the middle of a room —
+ * somewhere a thing can stand and be walked past. `strew` has always asked this of its
+ * loose blocks; the lever never did.
+ */
+function walkAround(g: Grid, i: number): boolean {
+  const x = i % g.w, y = (i / g.w) | 0;
+  let open = 0;
+  for (const [dx, dy] of DIR_VEC) if (g.walkable(x + dx, y + dy)) open++;
+  return open >= 3;
+}
+
+/**
  * THE FIRST GATES ARE TAUGHT, THE LATER ONES ARE WORK.
  *
  * A gate on floor eight is a reason to walk the map: three levers in three rooms, and
@@ -1086,13 +1127,18 @@ function lock(g: Grid, rng: Rng, depth: number): void {
         // down thirty tiles of corridor is technically visible and teaches nothing.
         if (d < 2 || d > SHALLOW_SIGHT) continue;
         if (!sightLine(g, lx, ly, dx0, dy0)) continue;
+        // A lever is furniture and furniture in a passage is a wall — see `walkAround`.
+        if (!walkAround(g, j)) continue;
         spots.push({ j, d });
       }
       if (!spots.length) { g.tiles[i] = was; g.setDoorLift(i, 0); continue; }
       // The furthest tile that can still see the door. Standing back is what puts the
       // handle and the gate in the same view; standing on top of the gate does not.
+      // `plugs` is the expensive half and is asked in that order, so it usually runs once.
       spots.sort((a, b) => b.d - a.d);
-      levers.push(spots[0].j);
+      const pick = spots.find((s) => !plugs(g, s.j, shut));
+      if (!pick) { g.tiles[i] = was; g.setDoorLift(i, 0); continue; }
+      levers.push(pick.j);
     } else {
       const fromBoss = g.flood(boss.cx, boss.cy, g.w * g.h);
       const candidates = g.rooms
@@ -1102,7 +1148,9 @@ function lock(g: Grid, rng: Rng, depth: number): void {
             .map(([x, y]) => g.idx(x, y))
             .filter((j) => shut[j] && g.surface[j] === Surface.Plain
               && j !== g.idx(r.cx, r.cy) && j !== g.idx(g.start.x, g.start.y)
-              && !g.hazards.some((h) => g.idx(h.x, h.y) === j));
+              && !g.hazards.some((h) => g.idx(h.x, h.y) === j)
+              // A room has narrow necks too — the tile in its doorway is a room tile.
+              && walkAround(g, j));
           return { r, tiles, far: fromBoss[g.idx(r.cx, r.cy)] };
         })
         .filter((c) => c.tiles.length > 0)
@@ -1110,7 +1158,30 @@ function lock(g: Grid, rng: Rng, depth: number): void {
 
       const wanted = depth >= 8 ? 3 : 2;
       if (candidates.length < wanted) { g.tiles[i] = was; g.setDoorLift(i, 0); continue; }
-      for (const c of candidates.slice(0, wanted)) levers.push(rng.pick(c.tiles));
+      /**
+       * Shuffled and then confirmed, rather than picked and hoped: `plugs` is a flood
+       * per candidate, and taking the first that passes usually costs exactly one.
+       *
+       * EACH ONE IS ASKED WITH THE PREVIOUS ONES ALREADY STANDING. Two levers can shut a
+       * region between them that neither closes alone — the measured case was eleven
+       * tiles behind a pair on a depth-six floor — so a lever that has been chosen is
+       * held as wall while the next is judged, and the baseline is re-flooded with it in
+       * place. Testing them independently is testing a floor that never exists.
+       */
+      let short = false;
+      let base = shut;
+      const held: Tile[] = [];
+      for (const c of candidates.slice(0, wanted)) {
+        const j = rng.shuffle([...c.tiles]).find((k) => walkAround(g, k) && !plugs(g, k, base));
+        if (j === undefined) { short = true; break; }
+        levers.push(j);
+        held.push(g.tiles[j]);
+        g.tiles[j] = Tile.Wall;
+        base = reachable(g);
+      }
+      // The wall was scaffolding for the test; the lever goes on as a SURFACE below.
+      levers.forEach((j, k) => { g.tiles[j] = held[k]; });
+      if (short) { g.tiles[i] = was; g.setDoorLift(i, 0); continue; }
     }
     for (const j of levers) g.surface[j] = Surface.Lever;
     g.bossDoor = { i, levers, pulled: new Set() };
@@ -1163,14 +1234,41 @@ function strew(g: Grid, rng: Rng, depth: number): void {
     return g.at(x, y) === Tile.Floor && g.surface[i] === Surface.Plain && !sacred.has(i);
   };
 
-  /** Write one in, and take it straight back out if it cost anybody a route. */
+  /**
+   * Write one in, and take it straight back out if it cost anybody a route.
+   *
+   * WITH THE LEVERS STANDING, because they are solid and this pass runs after `lock`.
+   * A block laid beside a lever narrows the tile the lever is on, and `lock` had already
+   * checked that tile against the floor as it was a moment earlier — so the two passes
+   * each made a sound decision and the pair of them walled the handle in. The levers are
+   * held as wall for the duration of the test, which is what they will be to the player.
+   */
+  const leverTiles = g.bossDoor ? g.bossDoor.levers : [];
+  const withLevers = <T>(f: () => T): T => {
+    const was = leverTiles.map((j) => g.tiles[j]);
+    for (const j of leverTiles) g.tiles[j] = Tile.Wall;
+    const out = f();
+    leverTiles.forEach((j, k) => { g.tiles[j] = was[k]; });
+    return out;
+  };
+
   const put = (i: number): boolean => {
-    const before = reachable(g);
+    const before = withLevers(() => reachable(g));
     if (!before[i]) return false;
     g.tiles[i] = Tile.Block;
-    const after = reachable(g);
+    const after = withLevers(() => reachable(g));
     for (let j = 0; j < before.length; j++) {
       if (before[j] && !after[j] && j !== i) { g.tiles[i] = Tile.Floor; return false; }
+    }
+    /**
+     * AND IT MUST NOT NARROW A LEVER, which connectivity alone does not catch: where the
+     * floor loops, walling a handle into a two-neighbour slot strands nobody and still
+     * leaves the player walking the long way round a switch. `lock` asked `walkAround`
+     * of these tiles against the floor as it stood a pass ago; a block dropped next to
+     * one is what changes the answer afterwards.
+     */
+    for (const j of leverTiles) {
+      if (!walkAround(g, j)) { g.tiles[i] = Tile.Floor; return false; }
     }
     return true;
   };

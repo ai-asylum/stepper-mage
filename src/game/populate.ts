@@ -227,8 +227,12 @@ export function populate(
    * from the boss, which are reachable with the door shut. Re-deriving that here from
    * room kinds would be a second opinion about the same question.
    *
-   * It does NOT claim its tile. You throw a lever by standing on it, so a lever that
-   * blocked its own tile would be a lever nobody can reach.
+   * It DOES claim its tile — `SOLID` in `game/floor.ts` lists it. That was not always
+   * true: a lever used to be a tile you stood on, and this note used to say the
+   * opposite. It became a thing you tap (`main.ts`, the `target` case) and solid with
+   * it, and nothing in generation was told — which is how one ended up plugging a
+   * one-wide corridor. `walkAround` and `plugs` in `generate.ts` are where that is now
+   * answered, and they are the reason this comment has to stay accurate.
    */
   for (let i = 0; i < grid.surface.length; i++) {
     if (grid.surface[i] !== Surface.Lever) continue;
