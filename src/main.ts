@@ -1167,15 +1167,42 @@ async function boot(): Promise<void> {
     const sx = Math.round(cineAt.x), sz = Math.round(cineAt.z);
     const base = Math.atan2(dx / len, dz / len);
     let vx = cineAt.x + (dx / len) * 2.8, vz = cineAt.z + (dz / len) * 2.8;
+
+    /**
+     * FURNITURE IS INVISIBLE TO THE GRID, and that is the third thing to block this shot.
+     *
+     * A barrel, a shelf, an altar — every one of them is an ENTITY standing on a tile the
+     * grid still calls open floor, so `sightLine` looks straight through a chest-high
+     * cask and reports a clear view. The screenshot is a barrel filling the bottom half
+     * of the frame from a vantage the wall test was perfectly happy with.
+     *
+     * `Floor.solidAt` is the same question the player's own feet ask, so the camera and
+     * the player agree about what is in the way.
+     */
+    const clearOf = (x0: number, z0: number): boolean => {
+      const ddx = sx - x0, ddz = sz - z0;
+      const n = Math.max(Math.abs(ddx), Math.abs(ddz));
+      for (let k = 1; k < n; k++) {
+        const t = k / n;
+        const px = Math.round(x0 + ddx * t), pz = Math.round(z0 + ddz * t);
+        if (floor.solidAt(px, pz)) return false;
+      }
+      return true;
+    };
+
     let bestScore = Infinity;
     for (let tz2 = sz - 4; tz2 <= sz + 4; tz2++) {
       for (let tx2 = sx - 4; tx2 <= sx + 4; tx2++) {
         if (!g0.inside(tx2, tz2) || !g0.walkable(tx2, tz2)) continue;
+        // Nothing standing where the camera goes, either — a vantage inside the barrel is
+        // the same shot as a vantage inside the wall.
+        if (floor.solidAt(tx2, tz2)) continue;
         const ox = tx2 - sx, oz = tz2 - sz;
         const dist = Math.hypot(ox, oz);
         // Close enough to read as a shot OF the door, far enough to have it in frame.
         if (dist < 1.5 || dist > 3.6) continue;
         if (!sightLine(g0, tx2, tz2, sx, sz)) continue;
+        if (!clearOf(tx2, tz2)) continue;
         const swing = Math.abs(angleDelta(base, Math.atan2(ox, oz)));
         const score = swing + Math.abs(dist - 2.5) * 0.3;
         if (score < bestScore) { bestScore = score; vx = tx2; vz = tz2; }
