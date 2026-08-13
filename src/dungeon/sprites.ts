@@ -721,6 +721,20 @@ export class Sprite {
    * Y-only billboarding is what keeps this reading as 2.5D: sprites never tilt
    * with the camera, so verticals stay vertical and the world stays solid.
    */
+  /**
+   * A permanent nudge along the view axis, positive toward the camera.
+   *
+   * Two things standing on one tile are at one distance from the camera, and three
+   * sorts transparent objects by exactly that — so a tie is broken arbitrarily and
+   * arbitrarily is what flickers. Nothing here writes depth, so this is the only lever:
+   * separate them in space and the sort has an answer.
+   *
+   * It is a property of WHAT THE THING IS rather than of where it stands. Fire belongs
+   * in front of a body standing in it; a staircase is a hole in the floor and belongs
+   * behind everything that stands on it. Set once, at build time.
+   */
+  depthBias = 0;
+
   update(dt: number, time: number, cam: THREE.Vector3): void {
     // one-shot animations advance a normalised clock
     const dur = this.state === 'attack' ? 0.52
@@ -745,12 +759,16 @@ export class Sprite {
     const yaw = Math.atan2(cam.x - bx, cam.z - bz);
     this.mesh.rotation.set(0, yaw, p.roll, 'YXZ');
 
-    // push is toward the camera along the ground plane
+    /**
+     * Push is toward the camera along the ground plane, and `depthBias` is a STANDING
+     * one — see the field.
+     */
     const dx = Math.sin(yaw), dz = Math.cos(yaw);
+    const push = p.push + this.depthBias;
     this.mesh.position.set(
-      p.slide * Math.cos(yaw) + dx * p.push,
+      p.slide * Math.cos(yaw) + dx * push,
       this.hover + p.lift,
-      -p.slide * Math.sin(yaw) + dz * p.push,
+      -p.slide * Math.sin(yaw) + dz * push,
     );
     this.mesh.scale.set(p.sx, p.sy, 1);
 

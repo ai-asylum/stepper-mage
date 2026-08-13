@@ -70,6 +70,9 @@ export interface Entity {
 }
 
 /** Kinds that physically occupy their tile. Stairs are walk-on by design. */
+/** How far behind its tile a staircase stands, to lose every sort tie on it. */
+const STAIRS_BACK = 0.12;
+
 const SOLID: ReadonlySet<string> = new Set(['altar', 'chest', 'prop', 'enemy', 'boss', 'lever']);
 
 /**
@@ -310,7 +313,16 @@ export class Floor {
     this.group.add(sprite.group);
 
     // Stairs stay hidden until the boss falls.
-    if (p.kind === 'stairs') sprite.group.visible = false;
+    /**
+     * THE STAIRCASE STANDS BEHIND WHATEVER IS ON IT, and fire in front.
+     *
+     * Both sit on the same tile as a body at the same distance from the camera, and
+     * three sorts transparent objects on exactly that — a tie resolves arbitrarily and
+     * flickers. A staircase is a hole in the floor, so nothing should ever draw behind
+     * it; fire is a thing burning in the air, so nothing standing in it should draw in
+     * front. See `Sprite.depthBias`.
+     */
+    if (p.kind === 'stairs') { sprite.depthBias = -STAIRS_BACK; sprite.group.visible = false; }
   }
 
   /**

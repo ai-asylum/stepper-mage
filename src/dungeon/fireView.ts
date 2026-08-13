@@ -53,6 +53,14 @@ const CARD_H = 0.85;
 
 /** A card is invisible inside this radius of the camera and fully drawn a band
  *  beyond it — see the fade in `update`. */
+/**
+ * How far in front of its own tile a flame card stands, toward the camera.
+ *
+ * Enough to lose every sort tie with a body on the same tile and small enough that the
+ * fire still reads as being ON that tile — a tenth of one.
+ */
+const CARD_FORWARD = 0.1;
+
 const CARD_FADE_IN = 0.55;
 const CARD_FADE_BAND = 0.7;
 
@@ -176,6 +184,9 @@ export class FireView {
   private cardPool: THREE.Mesh[] = [];
   private live = 0;
   private phase: number[] = [];
+  /** The tile each flame card belongs to, so `update` can offset from it — see CARD_FORWARD. */
+  private cardX: number[] = [];
+  private cardZ: number[] = [];
   /** What each pooled quad is currently showing, so `update` picks the right frames. */
   private kind: Substance[] = [];
 
@@ -236,6 +247,8 @@ export class FireView {
         const k = CARD_LEVEL[level - 1];
         card.scale.set(1, k, 1);
         card.position.set(x, (CARD_H * k) / 2, y);
+        // The tile, kept so `update` can offset from it without drifting.
+        this.cardX[i] = x; this.cardZ[i] = y;
         card.visible = true;
       } else {
         card.visible = false;
@@ -302,7 +315,23 @@ export class FireView {
       const card = this.cardPool[i];
       const g = Math.floor(time * 9 + this.phase[i] * 5) % FRAMES;
       (card.material as THREE.MeshBasicMaterial).map = this.cards[g];
-      card.rotation.set(0, Math.atan2(cam.x - card.position.x, cam.z - card.position.z), 0);
+      /**
+       * PULLED TOWARD THE CAMERA off its own tile — see `CARD_FORWARD`.
+       *
+       * A flame and a body standing in it are on the same tile, so they are the same
+       * distance from the camera, and three sorts transparent objects by distance: the
+       * tie breaks arbitrarily and the creature and the fire interleave frame to frame.
+       * Nothing here writes depth, so separating them in space is the only lever, and
+       * fire wins the tie because it is burning in the air in front of whatever stands
+       * in it.
+       *
+       * Rebuilt from the TILE each frame rather than added to the live position, which
+       * would walk the card across the room one nudge at a time.
+       */
+      const yaw = Math.atan2(cam.x - this.cardX[i], cam.z - this.cardZ[i]);
+      card.position.x = this.cardX[i] + Math.sin(yaw) * CARD_FORWARD;
+      card.position.z = this.cardZ[i] + Math.cos(yaw) * CARD_FORWARD;
+      card.rotation.set(0, yaw, 0);
 
       /**
        * Fade the card out as the camera reaches it, and drop it entirely on the
