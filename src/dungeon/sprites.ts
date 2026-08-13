@@ -206,29 +206,68 @@ export function spriteUrl(id: string, step = stepArt().spritePpu): string {
   return step === 144 ? `art/${id}.png` : `art/s${step}/${id}.png`;
 }
 
-/** Load one sprite PNG as a nearest-filtered texture (cached per step). */
+/**
+ * A visible stand-in for art that is not there. Magenta check, the oldest convention
+ * there is, because the one thing it must never be is subtle.
+ */
+const missingTex = (): THREE.Texture => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 8;
+  const x = c.getContext('2d')!;
+  for (let j = 0; j < 8; j++) {
+    for (let i = 0; i < 8; i++) {
+      x.fillStyle = (i + j) % 2 ? '#ff00ff' : '#1a001a';
+      x.fillRect(i, j, 1, 1);
+    }
+  }
+  return new THREE.CanvasTexture(c);
+};
+
+/** Ids already complained about, so a missing sprite logs once and not once a frame. */
+const moaned = new Set<string>();
+
+/**
+ * Load one sprite PNG as a nearest-filtered texture (cached per step).
+ *
+ * TWO FALLBACKS, and the crash that earned them: `hero_kela.png` ships in the flat 144
+ * roster and was never downscaled into `s72`/`s36`, so at any other step it 404s — and
+ * this rejected, the rejection killed the floor build, and entering depth 3 took the
+ * whole game down. A captive is the only thing on that floor that needed it.
+ *
+ * So a step-specific miss falls back to the 144 roster, which is the canonical one and
+ * where every sprite exists by definition. A sprite missing THERE too resolves to a
+ * magenta check and a console line, because a floor with one wrong-looking body on it
+ * is a bug report and a floor that will not load is a dead game. This function no
+ * longer rejects at all.
+ */
 export function loadSprite(id: string, step = stepArt().spritePpu): Promise<THREE.Texture> {
   const key = `${step}/${id}`;
   const hit = texCache.get(key);
   if (hit) return Promise.resolve(hit);
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const loader = new THREE.TextureLoader();
-    loader.load(
-      // Inside the playable-ad bundle this resolves to an embedded data URI;
-      // on web/Android the path falls through untouched.
-      assetUrl(spriteUrl(id, step)),
-      (tex) => {
-        tex.magFilter = THREE.NearestFilter;
-        tex.minFilter = THREE.NearestFilter;
-        tex.generateMipmaps = false;
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-        texCache.set(key, tex);
-        resolve(tex);
-      },
-      undefined,
-      () => reject(new Error(`sprite failed to load: ${spriteUrl(id, step)}`)),
-    );
+    const finish = (tex: THREE.Texture): void => {
+      tex.magFilter = THREE.NearestFilter;
+      tex.minFilter = THREE.NearestFilter;
+      tex.generateMipmaps = false;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      texCache.set(key, tex);
+      resolve(tex);
+    };
+    const giveUp = (): void => {
+      if (!moaned.has(id)) {
+        moaned.add(id);
+        console.error(`[art] missing sprite "${id}" — drawing the placeholder`);
+      }
+      finish(missingTex());
+    };
+    // Inside the playable-ad bundle this resolves to an embedded data URI;
+    // on web/Android the path falls through untouched.
+    loader.load(assetUrl(spriteUrl(id, step)), finish, undefined, () => {
+      if (step === 144) { giveUp(); return; }
+      loader.load(assetUrl(spriteUrl(id, 144)), finish, undefined, giveUp);
+    });
   });
 }
 
