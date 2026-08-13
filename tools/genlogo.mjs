@@ -1,119 +1,141 @@
 /**
- * Render the store art from the game's own procedural wordmark.
+ * Format the GENERATED art into the sizes the store and the shell need.
  *
  *   node tools/genlogo.mjs
  *
- * Writes `assets/splash.png` and `assets/splash-dark.png` (2732², the size
- * `capacitor-assets` wants) plus `assets/icon.png`, which is the existing
- * 1024 app icon copied into place rather than redrawn.
+ * Inputs (all generated through Scenario, never drawn here):
+ *   store/logo.png              the square logo
+ *   art/_work/raw/feature-a.png the wide banner
+ *   art/_work/raw/appicon.png   the launcher grimoire
  *
- * Headless rather than in Node because `Pix` and the wordmark's text mask are
- * built on `document.createElement('canvas')` — porting them to node-canvas
- * would be a second implementation of the logo, which is exactly the drift the
- * shared `buildSplash` exists to prevent. Vite serves the TypeScript, so the
- * page imports the same module the ad does.
+ * Outputs:
+ *   assets/splash.png, assets/splash-dark.png   2732² for capacitor-assets
+ *   assets/icon.png, assets/icon-foreground.png
+ *   store/feature-graphic.png                   1024×500 for Play
+ *
+ * This file used to DRAW the splash and the banner with the Pix toolkit. It
+ * does not any more: art is generated, and this only crops, scales and centres
+ * it. Nothing here invents a pixel.
+ *
+ * Headless because scaling and cropping want a real canvas, and NEAREST is
+ * forced throughout — the source is pixel art and a smooth resample turns it
+ * into a blurry photograph of pixel art.
  */
 import { chromium } from 'playwright-core';
-import { mkdirSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
-const PORT = 5198;
-const SIZE = 2732;
-const OUT = path.resolve('assets');
+const SPLASH = 2732;
+const LOGO = path.resolve('store/logo.png');
+const BANNER = path.resolve('art/_work/raw/feature-a.png');
 const ICON_SRC = path.resolve('art/_work/raw/appicon.png');
+const OUT = path.resolve('assets');
 mkdirSync(OUT, { recursive: true });
+mkdirSync(path.resolve('store'), { recursive: true });
 
+for (const f of [LOGO, BANNER]) {
+  if (!existsSync(f)) throw new Error(`missing ${f} — generate it first (tools/genlogoart.mjs)`);
+}
+
+const PORT = 5193;
 const url = `http://localhost:${PORT}/`;
 let server = null;
-try {
-  await fetch(url);
-} catch {
+try { await fetch(url); } catch {
   server = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
     stdio: 'ignore', detached: false,
   });
 }
-
-const start = Date.now();
+const t0 = Date.now();
 for (;;) {
-  try { if ((await fetch(url)).ok) break; } catch { /* not up yet */ }
-  if (Date.now() - start > 30000) throw new Error('dev server never came up');
+  try { if ((await fetch(url)).ok) break; } catch { /* not up */ }
+  if (Date.now() - t0 > 30000) throw new Error('dev server never came up');
   await new Promise((r) => setTimeout(r, 250));
 }
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage();
-const errors = [];
-page.on('pageerror', (e) => errors.push(String(e)));
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-const dataUrl = await page.evaluate(async (size) => {
-  const art = await import('/src/playable/art.ts');
-  return art.buildSplash(size, 'UNBOUND', 'DESCENT').toDataURL('image/png');
-}, SIZE);
+const b64 = (f) => readFileSync(f).toString('base64');
 
-if (errors.length) {
-  console.error('page errors:\n  ' + errors.join('\n  '));
-  process.exitCode = 1;
-}
+const out = await page.evaluate(async ({ logoB64, bannerB64, splashSize }) => {
+  const load = async (b) => {
+    const im = new Image();
+    im.src = `data:image/png;base64,${b}`;
+    await im.decode();
+    return im;
+  };
+  const logo = await load(logoB64);
+  const banner = await load(bannerB64);
 
-/**
- * The feature graphic is composed in the page, not in `art.ts`.
- *
- * The wordmark alone left the right 60% of a 1024×500 empty, which reads as
- * unfinished rather than as spacious. The grimoire from the app icon fills it
- * and is already the game's mark, so the banner and the launcher agree. The
- * icon is a served PNG rather than something `Pix` can draw, which is why the
- * compositing happens here where there is a real canvas and a real <img>.
- */
-const featureUrl = await page.evaluate(async () => {
-  const art = await import('/src/playable/art.ts');
-  const base = art.buildFeature(1024, 500, 'UNBOUND', 'DESCENT');
-  const cv = document.createElement('canvas');
-  cv.width = 1024; cv.height = 500;
-  const ctx = cv.getContext('2d');
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(base, 0, 0);
+  // ---- splash: the logo centred on the manifest's ink ----------------------
+  // capacitor-assets derives every density and both orientations by
+  // CENTRE-CROPPING this square, so the logo is kept to the middle third —
+  // anything near an edge is guaranteed to be cut on some device.
+  const sc = document.createElement('canvas');
+  sc.width = splashSize; sc.height = splashSize;
+  const sctx = sc.getContext('2d');
+  sctx.imageSmoothingEnabled = false;
+  /**
+   * Fill with the LOGO'S OWN corner colour, not the manifest ink.
+   *
+   * They are both "near black" and they are not the same near black, so filling
+   * with #0a0710 drew a visible dark square around the logo on every density.
+   * Sampling means the plate and the art agree by construction, whatever the
+   * next generation's background happens to be.
+   */
+  const probe = document.createElement('canvas');
+  probe.width = logo.width; probe.height = logo.height;
+  const pctx = probe.getContext('2d');
+  pctx.drawImage(logo, 0, 0);
+  const [r, g, b] = pctx.getImageData(1, 1, 1, 1).data;
+  sctx.fillStyle = `rgb(${r},${g},${b})`;
+  sctx.fillRect(0, 0, splashSize, splashSize);
+  // Whole-number upscale: the source is pixel art, and a fractional scale
+  // resamples it off its own grid.
+  const k = Math.max(1, Math.floor((splashSize * 0.42) / logo.width));
+  const lw = logo.width * k, lh = logo.height * k;
+  sctx.drawImage(logo, Math.round((splashSize - lw) / 2), Math.round((splashSize - lh) / 2), lw, lh);
 
-  const img = new Image();
-  img.src = '/icons/icon-512.png';
-  await img.decode();
-  // Right of the play-button overlay zone, and inset from the edge so a crop
-  // on a narrow listing card cannot clip the book in half.
-  // ADDITIVE, so the icon's own black square does not sit on the banner as a
-  // visible box. The art is a lit book on near-black, so compositing with
-  // 'lighter' keeps the glow and contributes nothing where the icon is dark —
-  // the seam that a straight drawImage leaves is the background showing its
-  // own edge, not a transparency problem to solve with alpha.
-  const s = 400;
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.drawImage(img, 1024 - s - 60, (500 - s) / 2, s, s);
-  ctx.globalCompositeOperation = 'source-over';
-  return cv.toDataURL('image/png');
-});
+  // ---- feature graphic: centre band of the banner, 1024×500 ---------------
+  // The banner is 3:2 and Play wants 2.048:1, so a band is cropped rather than
+  // the image squashed. Taken from the middle so the title and the corridor
+  // both survive.
+  const FW = 1024, FH = 500;
+  const bandH = Math.round(banner.width / (FW / FH));
+  const bandY = Math.round((banner.height - bandH) / 2);
+  const fc = document.createElement('canvas');
+  fc.width = FW; fc.height = FH;
+  const fctx = fc.getContext('2d');
+  fctx.imageSmoothingEnabled = false;
+  fctx.drawImage(banner, 0, bandY, banner.width, bandH, 0, 0, FW, FH);
 
-const png = Buffer.from(dataUrl.split(',')[1], 'base64');
-// One image for both themes. The splash is already the manifest's dark
-// background, so a separate light variant would either be a different design or
-// the same file under two names; Capacitor needs the dark one to exist.
+  return {
+    splash: sc.toDataURL('image/png'),
+    feature: fc.toDataURL('image/png'),
+    logoScale: k,
+    band: `${banner.width}×${bandH} @y${bandY}`,
+  };
+}, { logoB64: b64(LOGO), bannerB64: b64(BANNER), splashSize: SPLASH });
+
+const write = (dataUrl, file) => {
+  const buf = Buffer.from(dataUrl.split(',')[1], 'base64');
+  writeFileSync(file, buf);
+  console.log(`  ${file}  ${(buf.length / 1024).toFixed(0)} KB`);
+};
+const splashBuf = Buffer.from(out.splash.split(',')[1], 'base64');
 for (const name of ['splash.png', 'splash-dark.png']) {
-  writeFileSync(path.join(OUT, name), png);
-  console.log(`  assets/${name}  ${SIZE}×${SIZE}  ${(png.length / 1024).toFixed(0)} KB`);
+  writeFileSync(path.join(OUT, name), splashBuf);
+  console.log(`  assets/${name}  ${SPLASH}×${SPLASH}  ${(splashBuf.length / 1024).toFixed(0)} KB  (logo ×${out.logoScale})`);
 }
+write(out.feature, path.resolve('store/feature-graphic.png'));
+console.log(`  banner crop: ${out.band}`);
 
-const feature = Buffer.from(featureUrl.split(',')[1], 'base64');
-writeFileSync(path.resolve('store/feature-graphic.png'), feature);
-console.log(`  store/feature-graphic.png  1024×500  ${(feature.length / 1024).toFixed(0)} KB`);
-
-// The icon is NOT redrawn. `art/_work/raw/appicon.png` is a designed grimoire
-// that reads at 48px, and a procedural wordmark would not — text is illegible
-// at launcher size, which is the one thing an app icon must survive.
 if (existsSync(ICON_SRC)) {
   copyFileSync(ICON_SRC, path.join(OUT, 'icon.png'));
   copyFileSync(ICON_SRC, path.join(OUT, 'icon-foreground.png'));
   console.log('  assets/icon.png  (from art/_work/raw/appicon.png)');
-} else {
-  console.warn(`  ⚠ ${ICON_SRC} missing — icons will stay stock Capacitor`);
 }
 
 await browser.close();

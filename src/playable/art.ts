@@ -1,14 +1,16 @@
 /**
- * The wordmark, the launch screen and the button plates.
+ * AD-ONLY pixel art: the playable's wordmark and its button plates.
  *
  * Drawn with the game's own `Pix` toolkit at true art resolution and upscaled
- * NEAREST, so this chrome is made of the same chunky pixels as the walls behind
- * it. Nothing here is fetched — it costs bytes of code, not bytes of payload,
- * which matters inside a 5 MB creative.
+ * NEAREST, so the ad chrome is made of the same chunky pixels as the walls
+ * behind it. Nothing here is fetched — it costs bytes of code, not bytes of
+ * payload, which is the right trade inside a 5 MB creative.
  *
- * Mostly ad-only, and `buildSplash` is the exception: the store build needs the
- * same wordmark as a PNG, and drawing it twice is how the ad and the app end up
- * with two different logos. `tools/genlogo.mjs` renders it headless.
+ * NOT the game's logo. The splash and the Play feature graphic used to be drawn
+ * here and are now GENERATED (`tools/genlogoart.mjs`, formatted by
+ * `tools/genlogo.mjs`) — hand-plotted marks are not the house style. This
+ * wordmark survives only because the creative pays for every byte and a
+ * megabyte PNG is a real cost there; see the note in tools/genlogo.mjs.
  */
 import { Pix, Ramp, hex, rgba, shade } from '../art/pixel';
 import { Rng } from '../core/rng';
@@ -230,64 +232,6 @@ function logoPix(title: string, sub: string): Pix {
 
 export function buildLogo(title: string, sub: string): HTMLCanvasElement {
   return logoPix(title, sub).toCanvas();
-}
-
-/**
- * The launch screen: the torn page on the dark, and nothing else.
- *
- * Square and generated at `size`, which is what `capacitor-assets` wants — it
- * derives every density and both orientations by CENTRE-CROPPING this one
- * image, so anything near an edge is not merely optional, it is guaranteed to
- * be cut on some device. Everything that matters lives in the middle third.
- *
- * The upscale is a whole number chosen to fill the middle, for the same reason
- * `fitScale` insists on one: a fractional scale resamples the art off its own
- * grid and the pixels stop being pixels, which is the whole look. The
- * background is the manifest's `background_color`, so the native splash, the
- * web boot screen and the PWA card are all the same dark.
- */
-/**
- * The Play feature graphic: 1024×500, and the one store asset with a play
- * button stamped over the middle of it.
- *
- * So the wordmark sits LEFT of centre rather than centred, and nothing goes in
- * the middle third — Google overlays a circular play control there on any
- * listing with a promo video, and a centred logo would be photographed with a
- * triangle through it. No transparency either; Play rejects an alpha channel.
- */
-export function buildFeature(w: number, h: number, title: string, sub: string): HTMLCanvasElement {
-  const logo = logoPix(title, sub);
-  const scale = Math.max(1, Math.floor((w * 0.42) / logo.w));
-  const art = logo.scale(scale);
-
-  const out = new Pix(w, h, hex(0x0a0710));
-  // A few darker bands across the back, so a 1024-wide flat is not a blank
-  // swatch at listing size. Hard-edged on purpose: this is the same pixel grid
-  // the wordmark is on, and a soft gradient would sit off it.
-  const band = new Ramp([0x0a0710, 0x140b1c, 0x1c1026]);
-  for (let j = 0; j < h; j++) {
-    const t = 1 - Math.abs(j / (h - 1) - 0.5) * 2;
-    out.rect(0, j, w, 1, band.step(Math.max(0, Math.min(0.999, t))));
-  }
-  out.blit(art, Math.round(w * 0.07), Math.round((h - art.h) / 2));
-  return out.toCanvas();
-}
-
-export function buildSplash(size: number, title: string, sub: string): HTMLCanvasElement {
-  const logo = logoPix(title, sub);
-  // A third of the frame, so the wordmark survives the crop to the narrowest
-  // phone and to the squarest tablet alike.
-  const scale = Math.max(1, Math.floor((size * 0.34) / logo.w));
-  const art = logo.scale(scale);
-
-  // FLAT, with no vignette. A radial falloff drawn at this size quantises into
-  // visible concentric rings — `Pix.glow` works in a handful of bands, which is
-  // right at sprite scale and is a set of hard circles at 2732. Flat is also the
-  // truthful match: the manifest's `background_color` and the web boot screen
-  // are this exact dark, so the native splash hands over to the page invisibly.
-  const out = new Pix(size, size, hex(0x0a0710));
-  out.blit(art, Math.round((size - art.w) / 2), Math.round((size - art.h) / 2));
-  return out.toCanvas();
 }
 
 /**
