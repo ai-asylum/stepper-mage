@@ -166,12 +166,31 @@ export class Engine {
   /** Device pixel ratio actually used for the UI layer. */
   dpr = 1;
 
+  /**
+   * SAFE-AREA INSETS in CSS px — how far the CHROME has to stand off each screen edge.
+   *
+   * Not the stage. The stage still fills the viewport and the world still bleeds to
+   * every edge; these are the margins the HUD lays its own chrome out inside, because
+   * the parts of the screen a phone takes away — the camera housing, the rounded
+   * corners, the home indicator — take away readouts and buttons, not scenery. A
+   * dungeon wall clipped by a corner radius costs nothing; a settings cog clipped by
+   * one is a control the player cannot press.
+   *
+   * Measured off `#insets` rather than computed here: `env(safe-area-inset-*)` is only
+   * legal in a stylesheet, so the numbers live there and this reads them back resolved
+   * to px. See the note on that element in `index.html`. A page without it — the ad
+   * playable — gets zeroes and lays out exactly as it always did.
+   */
+  insetTop = 0;
+  insetBottom = 0;
+  insetLeft = 0;
+  insetRight = 0;
+
   private target: THREE.WebGLRenderTarget;
   private postScene = new THREE.Scene();
   private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private postMat: THREE.ShaderMaterial;
 
-  private appEl: HTMLElement;
   private stageEl: HTMLElement;
   private viewEl: HTMLCanvasElement;
   private uiEl: HTMLCanvasElement;
@@ -226,7 +245,6 @@ export class Engine {
   constructor(opts: EngineOpts = {}) {
     this.internalHeight = opts.internalHeight ?? 400;
 
-    this.appEl = document.getElementById('app') as HTMLElement;
     this.stageEl = document.getElementById('stage') as HTMLElement;
     this.viewEl = document.getElementById('view') as HTMLCanvasElement;
     this.uiEl = document.getElementById('ui') as HTMLCanvasElement;
@@ -357,30 +375,24 @@ export class Engine {
     );
   }
 
-  /**
-   * The box the stage is allowed to fill: the viewport minus the safe-area padding
-   * that `#app` carries (see the note on it in `index.html`).
-   *
-   * Measured off the element rather than computed here because `env(safe-area-inset-*)`
-   * is only legal in a stylesheet — the padding is already the device's answer, and
-   * reading it back resolves it to px. A page that sets no padding, like the ad
-   * playable, gets the raw viewport exactly as before.
-   */
-  private safeBox(): { w: number; h: number } {
-    const el = this.appEl;
-    if (!el) return { w: window.innerWidth, h: window.innerHeight };
+  /** Re-read `#insets` into `insetTop`/`insetBottom`/`insetLeft`/`insetRight`. */
+  private readInsets(): void {
+    const el = document.getElementById('insets');
+    if (!el) return;
     const cs = getComputedStyle(el);
     const px = (v: string): number => parseFloat(v) || 0;
-    return {
-      w: Math.max(80, el.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight)),
-      h: Math.max(80, el.clientHeight - px(cs.paddingTop) - px(cs.paddingBottom)),
-    };
+    this.insetTop = px(cs.paddingTop);
+    this.insetBottom = px(cs.paddingBottom);
+    this.insetLeft = px(cs.paddingLeft);
+    this.insetRight = px(cs.paddingRight);
   }
 
   private resize(): void {
-    // Portrait stage: fill the safe box, but never exceed a phone-ish aspect on
+    this.readInsets();
+    // Portrait stage: fill the viewport, but never exceed a phone-ish aspect on
     // desktop — a 21:9 monitor should letterbox, not stretch the dungeon.
-    const { w: vw, h: vh } = this.safeBox();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
     const maxAspect = 0.52;   // widest we allow (roughly 9:17)
     const minAspect = 0.42;   // narrowest (roughly 9:21)
     let sw = vw, sh = vh;

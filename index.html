@@ -31,29 +31,10 @@
     touch-action: none; user-select: none; -webkit-user-select: none;
     overscroll-behavior: none;
   }
-  /* The stage is inset from the physical screen edges instead of bleeding to them.
-     On an iPhone the top strip belongs to the camera housing and every corner is cut
-     by a ~50px radius, so the cog — drawn 6px from the stage's top-right corner —
-     sat both under the status bar and outside the visible rectangle: painted, and
-     untappable. The whole stage moves rather than the HUD, because the world, the
-     book and the HUD are one box and one inset clears all three.
-
-     `env()` is the device's own measurement and is exact where it is reported (59px
-     of Dynamic Island, 34px of home indicator). The floors are for everywhere it
-     reports nothing — a Capacitor WebView, a desktop browser — where a rounded
-     display corner is still real. The camera buffer is ADDED to the top inset rather
-     than folded into its floor: the inset already clears the housing, and this is the
-     difference between not clipped and not crowded. */
   #app {
     position: fixed; inset: 0;
     display: flex; align-items: center; justify-content: center;
     background: #000;
-    --corner-buffer: 12px;
-    --camera-buffer: 8px;
-    padding-top: calc(max(env(safe-area-inset-top, 0px), var(--corner-buffer)) + var(--camera-buffer));
-    padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--corner-buffer));
-    padding-left: env(safe-area-inset-left, 0px);
-    padding-right: env(safe-area-inset-right, 0px);
   }
   /* The stage is a fixed-aspect portrait box, letterboxed on wide screens. */
   #stage {
@@ -80,6 +61,29 @@
     background: #16060a; color: #ff9d8a; font-size: 11px; line-height: 1.5;
     white-space: pre-wrap; overflow: auto;
   }
+  /* THE DEVICE'S SAFE-AREA NUMBERS, parked somewhere script can read them.
+     `env()` is only legal in a stylesheet and a custom property holding one cannot be
+     read back resolved, so the engine measures this box's padding once per resize.
+
+     The stage still fills the screen — the dungeon bleeds to every edge, and only the
+     CHROME steps in off it. On an iPhone the top strip belongs to the camera housing
+     and every corner is cut by a ~50px radius, which is what made the cog both
+     invisible and untappable in the top-right.
+
+     `env()` is the device's own measurement where it is reported (59px of Dynamic
+     Island, 34px of home indicator). The floors are for everywhere it reports
+     nothing — a Capacitor WebView, a desktop browser — where a rounded display
+     corner is still real. The 10px on top is the camera buffer, added to the inset
+     rather than folded into its floor: the inset already clears the housing, and this
+     is the difference between not clipped and not crowded. */
+  #insets {
+    position: fixed; top: 0; left: 0; width: 0; height: 0;
+    visibility: hidden; pointer-events: none;
+    padding-top: calc(max(env(safe-area-inset-top, 0px), 8px) + 10px);
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
 </style>
 </head>
 <body>
@@ -91,6 +95,7 @@
     <pre id="err"></pre>
   </div>
 </div>
+<div id="insets" aria-hidden="true"></div>
 <script type="module" src="/src/main.ts"></script>
 <script>
   window.addEventListener('error', (e) => {

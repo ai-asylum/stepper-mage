@@ -339,8 +339,16 @@ const SAID_S = 3.2;
  */
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 
-/** Side of the settings cog, in HUD px. */
-const COG_SIZE = 28;
+/**
+ * The size the cog GLYPH is drawn at, in HUD px.
+ *
+ * Larger than the 17px row it sits on, on purpose: ⚙ fills much less of its em box than
+ * a digit does, so type-size parity would leave it visibly the smaller of the two. This
+ * is the size at which the drawn cog matches the drawn star count.
+ */
+const COG_SIZE = 23;
+/** The top row's text top edge — the depth label and the star count both sit on it. */
+const ROW_TOP = 12;
 /**
  * The in-game portrait beside the health bar. Small — it is a reminder of who you are,
  * not a picture to look at, and the 66x98 source crops to this aspect without losing any
@@ -356,12 +364,23 @@ const COG_SIZE = 28;
 const MAP_SPAN = 4;
 const MAP_CELL = 11;
 const MAP_SIZE = (MAP_SPAN * 2 + 1) * MAP_CELL + 6;
-const MAP_TOP = 28;
+/**
+ * The cards' top edge, derived from the row above instead of written as 28.
+ *
+ * At 28 it cleared the row's 17px em box by four pixels, and four pixels is the worst
+ * distance there is: too close to read as a gap and too far to read as touching, so the
+ * eye keeps going back to check whether the label is sitting on the portrait's frame. A
+ * clear ten reads as two rows, which is what they are.
+ */
+const MAP_TOP = ROW_TOP + 17 + 10;
 /**
  * Right edge the star readout aligns to, derived from the cog rather than written
  * twice. The two used to share `W - 12` and the cog would have sat on the count.
+ *
+ * The cog's ink runs from `W - 12` leftward, so this is its far edge plus a 14px gap —
+ * enough that the row reads as `✦ 85   ⚙` and not as one three-part badge.
  */
-const STARS_RIGHT = (W: number): number => W - COG_SIZE - 22;
+const STARS_RIGHT = (W: number): number => W - COG_SIZE - 26;
 
 /** Rounded rect path helper — the UI's one shape. */
 export function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -710,6 +729,14 @@ export class Hud {
     this.map = fn;
   }
 
+  /**
+   * The vertical middle of the top row's ink, measured by `drawTopBar` as it draws it.
+   *
+   * Exists so the cog can sit level with the star count without either of them owning a
+   * magic number the other has to match. See `drawSettingsCog`.
+   */
+  private topRowMid = ROW_TOP + 6;
+
   /** The book's measured top edge, so HUD layout matches the gesture boundary. */
   setBookTop(y: number): void {
     this.measuredBookTop = Number.isFinite(y) ? y : null;
@@ -841,9 +868,54 @@ export class Hud {
 
   // ---------------------------------------------------------------------- draw
 
+  /**
+   * THE WHOLE HUD LAYS OUT IN THE SAFE BOX. This is the only place that knows it.
+   *
+   * The stage is untouched and the world still bleeds to all four edges — the dungeon is
+   * scenery and a wall clipped by a corner radius costs nothing. The CHROME is what the
+   * phone's own furniture eats: the camera housing takes the top strip, the corners are
+   * cut by a ~50px arc, the home indicator owns the bottom band. So the ink and the hit
+   * boxes both move inside `engine.insetTop`/`insetBottom` and everything downstream —
+   * every `y = 12` and every `H - 76` in this file — lands inside the safe box without
+   * knowing the insets exist.
+   *
+   * One space rather than a per-element opt-in, because the failure this replaced was a
+   * cog whose ink had moved and whose hit box had not. Anything that genuinely needs
+   * real stage pixels says so at its call site: `atStage` for the world overlay, and
+   * `engine.sh` for the handful of washes that have to cover the physical screen.
+   *
+   * The hit rects are plain numbers that `ctx.translate` cannot reach, so they are
+   * shifted here, once, after everything has been pushed.
+   */
   draw(ctx: CanvasRenderingContext2D): void {
-    const W = this.engine.sw, H = this.engine.sh;
+    const t = this.engine.insetTop;
     this.hits = [];
+    ctx.save();
+    ctx.translate(0, t);
+    this.drawSafe(ctx, this.engine.sw, this.engine.sh - t - this.engine.insetBottom);
+    ctx.restore();
+    for (const h of this.hits) h.rect[1] += t;
+  }
+
+  /**
+   * Draw in REAL STAGE PIXELS, undoing the safe-box shift for the duration.
+   *
+   * For the world overlay only. Its reticles come from `engine.worldToUi`, which
+   * projects to the stage the world is actually rendered on, so a reticle drawn in the
+   * safe box would sit `insetTop` below the creature it is pointing at. Its hit rects
+   * are unshifted to match, which cancels the shift `draw` applies to all of them.
+   */
+  private atStage(ctx: CanvasRenderingContext2D, f: () => void): void {
+    const t = this.engine.insetTop;
+    const n0 = this.hits.length;
+    ctx.save();
+    ctx.translate(0, -t);
+    f();
+    ctx.restore();
+    for (let i = n0; i < this.hits.length; i++) this.hits[i].rect[1] -= t;
+  }
+
+  private drawSafe(ctx: CanvasRenderingContext2D, W: number, H: number): void {
 
     /**
      * CINEMA MODE DRAWS NOTHING.
@@ -876,20 +948,31 @@ export class Hud {
      * dropped to 0.90H the instant the book left and the cycle-target button landed on
      * top of the button that had taken the book's place.
      */
+    /**
+     * In SAFE-BOX pixels like the rest of the layout, which is why the measured edge has
+     * the top inset taken off it: `measuredBookTop` comes from the 3D book on the full
+     * stage, and every reader of `bookTop` in this file is laying out chrome.
+     */
     this.bookTop = !this.bookClosed && this.measuredBookTop !== null
-      ? Math.round(this.measuredBookTop)
+      ? Math.round(this.measuredBookTop) - this.engine.insetTop
       : this.handFull() ? Math.round(H * 0.80)
       : Math.round(H * 0.90);
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, W, this.bookTop);
-    ctx.clip();
-    this.drawWorldOverlay(ctx);
-    ctx.restore();
+    // The overlay is the one thing drawn on the stage rather than in the safe box, so its
+    // clip is in stage pixels too — the book's real edge, not the shifted one.
+    const bookTopStage = this.bookTop + this.engine.insetTop;
+    this.atStage(ctx, () => {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, bookTopStage);
+      ctx.clip();
+      this.drawWorldOverlay(ctx);
+      ctx.restore();
+    });
     // A target you cannot see is a target you cannot mean to tap. Clipping the ink
     // without clipping the hit region would leave an invisible control over the book.
-    this.hits = this.hits.filter((h) => h.rect[1] < this.bookTop);
+    // These are the overlay's own hits, so the comparison is in stage pixels as well.
+    this.hits = this.hits.filter((h) => h.rect[1] < bookTopStage);
     this.drawTopBar(ctx, W);
     this.drawMiniMap(ctx, W);
     // Above the run-end return below, so the one control that is not about the run
@@ -911,7 +994,6 @@ export class Hud {
     // Before the CAST bar, so that where a card's box and the bar's touch, CAST wins:
     // `hit` scans backwards, so whatever is pushed last is on top.
     this.drawCompass(ctx, W, H);
-    this.drawBestiaryPill(ctx, W);
     this.drawMoveHint(ctx, W, H);
     this.drawEmptySlots(ctx, W);
     this.drawFanCards(ctx, W);
@@ -1409,7 +1491,18 @@ export class Hud {
     // x = 12, the true left edge. It was indented past the portrait, which was only ever
     // needed while the portrait started at y = 10 — it starts at MAP_TOP now, so the label's
     // own line is clear and there is no reason for it to sit in the middle of the screen.
-    ink(short ? `${depth} - ${short}` : depth, 12, 12, 'rgba(240,228,196,0.9)');
+    ink(short ? `${depth} - ${short}` : depth, 12, ROW_TOP, 'rgba(240,228,196,0.9)');
+
+    /**
+     * The middle of this row's INK, for the cog to line up on.
+     *
+     * Measured off a digit rather than derived from the font size: with `textBaseline`
+     * on 'top' the alignment point is the em box's top, and how far below it the digits
+     * actually start is the font's business, not arithmetic we can do here. A guess is
+     * what left the cog four pixels high of the star count it sits beside.
+     */
+    const m = ctx.measureText('0');
+    this.topRowMid = ROW_TOP + (m.actualBoundingBoxDescent - m.actualBoundingBoxAscent) / 2;
 
     ctx.textAlign = 'right';
     // Run total plus the bank. Showing only the run made banked stars look lost.
@@ -1428,7 +1521,7 @@ export class Hud {
      * screen, which is a lot of pixels to spend on a figure that changes nothing.
      */
     const total = this.bankedStars + this.state.stars;
-    ink(`✦ ${total}`, STARS_RIGHT(W), 12, GOLD);
+    ink(`✦ ${total}`, STARS_RIGHT(W), ROW_TOP, GOLD);
     ctx.textAlign = 'left';
   }
 
@@ -1445,20 +1538,37 @@ export class Hud {
    * the altar's own card would be a second thing to press on a screen whose whole job
    * is asking one question.
    */
+  /**
+   * ON THE STAR COUNT'S LINE, and the same weight as it.
+   *
+   * It was set at 17px against a bold 17px row and centred in its own 28px box at
+   * y = 6, which put it both smaller than the figure beside it and four pixels higher —
+   * two ways of looking like it belongs to a different row than the one it sits in. The
+   * ⚙ glyph is also small for its em, so matching the row's type size is not enough:
+   * `COG_SIZE` is the size the glyph is DRAWN at and it is deliberately larger than the
+   * row's, which is what makes the two read as the same size.
+   *
+   * Aligned by MEASUREMENT rather than by a nudge. `topRowMid` is the middle of the
+   * star count's own ink, recorded by `drawTopBar` as it draws, and the cog's ink is
+   * centred on it — so the two stay level if either type size ever changes again.
+   */
   private drawSettingsCog(ctx: CanvasRenderingContext2D, W: number): void {
     if (this.offers || this.bestiaryOpen) return;
-    const S = COG_SIZE;
-    const x = W - S - 10, y = 6;
-    ctx.font = '17px ui-monospace, monospace';
+    ctx.font = `${COG_SIZE}px ui-monospace, monospace`;
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    ctx.textBaseline = 'alphabetic';
+    const m = ctx.measureText('⚙');
+    const cx = W - 12 - m.width / 2;
+    // Baseline that puts the glyph's own box centre on the row's.
+    const by = this.topRowMid + (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
     ctx.fillStyle = GOLD;
-    ctx.fillText('⚙', x + S / 2, y + S / 2 + 0.5);
+    ctx.fillText('⚙', cx, by);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    // Padded hit box. The drawn cog is 18px and a thumb is not, and this one sits in
-    // the screen corner where a miss has nothing else to land on.
-    this.hits.push({ rect: [x - 8, y - 6, S + 16, S + 14], action: { kind: 'settings' } });
+    // DRAW SMALL, HIT BIG: 44px square, the iOS minimum, centred on the glyph. The cog
+    // is ~22px of ink and a thumb is not, and this one sits in the screen corner where
+    // a miss has nothing else to land on.
+    this.hits.push({ rect: [cx - 22, this.topRowMid - 22, 44, 44], action: { kind: 'settings' } });
   }
 
   /**
@@ -1957,24 +2067,20 @@ export class Hud {
    * Rotated into the player's frame, like the minimap, so up is always forward.
    */
   /**
-   * The bestiary's handle, in the slot under the minimap that the texel-density chip
-   * vacated when `First_Minutes` deleted it. That strip is the only piece of this
-   * screen nothing else claims, and a record of what you have learned belongs beside
-   * the other readout that is neither the world nor the book.
+   * DELETED: `drawBestiaryPill`.
    *
-   * Absent until there is something in it. A control that opens an empty list is a
-   * control that teaches the player it is not worth pressing.
+   * A gold `\u2726 N` pill under the minimap, and the only handle on the bestiary. It read
+   * as a control with a number on it in the corner where every OTHER number is about
+   * the run \u2014 the star count directly above it is also a gold \u2726 and a figure \u2014 so the
+   * thing it actually said was "you have five of something important", four rows under
+   * the readout that says how many stars you have. Two gold star-and-a-number badges
+   * stacked in one corner, meaning unrelated things, is one badge too many.
+   *
+   * The bestiary screen itself is untouched (`drawBestiary`) and has no entry point in
+   * the HUD now. It wants a home somewhere that is about the collection rather than
+   * about the run \u2014 the star tree's screen is the obvious one \u2014 and until it gets one
+   * it is dark rather than deleted.
    */
-  private drawBestiaryPill(ctx: CanvasRenderingContext2D, W: number): void {
-    if (!this.bestiary.length || this.offers) return;
-    const label = `\u2726 ${this.bestiary.length}`;
-    ctx.font = '8px ui-monospace, monospace';
-    const w = ctx.measureText(label).width + 14;
-    const y = this.map ? 140 : 40;
-    const x = W - w - 10;
-    this.pill(ctx, x, y, label, 'rgba(255,207,92,0.9)', 'rgba(255,207,92,0.4)');
-    this.hits.push({ rect: [x - 6, y - 6, w + 12, 26], action: { kind: 'bestiary' } });
-  }
 
   /**
    * THE BESTIARY: every fusion this player has ever found.
@@ -1988,7 +2094,10 @@ export class Hud {
    */
   private drawBestiary(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     ctx.fillStyle = 'rgba(8,5,12,0.92)';
-    ctx.fillRect(0, 0, W, H);
+    // The scrim covers the PHYSICAL screen, not the safe box the rest of this panel
+    // lays out in: a wash inset with the chrome would leave a strip of live dungeon
+    // above and below the modal. Hence the negative origin and `sh`.
+    ctx.fillRect(0, -this.engine.insetTop, W, this.engine.sh);
 
     ctx.textAlign = 'center';
     ctx.font = 'bold 13px ui-monospace, monospace';
@@ -2064,7 +2173,10 @@ export class Hud {
    */
   private drawSettings(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     ctx.fillStyle = 'rgba(8,5,12,0.92)';
-    ctx.fillRect(0, 0, W, H);
+    // The scrim covers the PHYSICAL screen, not the safe box the rest of this panel
+    // lays out in: a wash inset with the chrome would leave a strip of live dungeon
+    // above and below the modal. Hence the negative origin and `sh`.
+    ctx.fillRect(0, -this.engine.insetTop, W, this.engine.sh);
 
     ctx.textAlign = 'center';
     ctx.font = 'bold 13px ui-monospace, monospace';
@@ -2226,7 +2338,10 @@ export class Hud {
     const list = this.roster;
     if (!list) return;
     ctx.fillStyle = 'rgba(6,4,9,0.96)';
-    ctx.fillRect(0, 0, W, H);
+    // The scrim covers the PHYSICAL screen, not the safe box the rest of this panel
+    // lays out in: a wash inset with the chrome would leave a strip of live dungeon
+    // above and below the modal. Hence the negative origin and `sh`.
+    ctx.fillRect(0, -this.engine.insetTop, W, this.engine.sh);
 
     if (this.rosterPeek) { this.drawWizardProfile(ctx, W, H, this.rosterPeek); return; }
 
@@ -2517,7 +2632,10 @@ export class Hud {
     const r = this.rescued;
     if (!r) return;
     ctx.fillStyle = 'rgba(6,4,9,0.94)';
-    ctx.fillRect(0, 0, W, H);
+    // The scrim covers the PHYSICAL screen, not the safe box the rest of this panel
+    // lays out in: a wash inset with the chrome would leave a strip of live dungeon
+    // above and below the modal. Hence the negative origin and `sh`.
+    ctx.fillRect(0, -this.engine.insetTop, W, this.engine.sh);
 
     const ph = Math.round(H * 0.24);
     const pw = Math.round(ph * PORTRAIT_ASPECT);
@@ -3504,7 +3622,9 @@ export class Hud {
 
     ctx.save();
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(buf, 0, 0, bw, bh, 0, 0, W, H);
+    // Full-screen, for the same reason a modal's scrim is: an edge wash inset with the
+    // chrome would draw its own visible edge across the screen.
+    ctx.drawImage(buf, 0, 0, bw, bh, 0, -this.engine.insetTop, W, this.engine.sh);
     ctx.restore();
   }
 
@@ -3609,7 +3729,9 @@ export class Hud {
     ctx.save();
     ctx.imageSmoothingEnabled = false;
     ctx.globalAlpha = 0.8;
-    ctx.drawImage(buf, 0, 0, bw, bh, 0, 0, W, H);
+    // Full-screen, for the same reason a modal's scrim is: an edge wash inset with the
+    // chrome would draw its own visible edge across the screen.
+    ctx.drawImage(buf, 0, 0, bw, bh, 0, -this.engine.insetTop, W, this.engine.sh);
     ctx.restore();
   }
 
@@ -3977,7 +4099,10 @@ export class Hud {
     veil.addColorStop(0.72, 'rgba(8,5,12,0.42)');
     veil.addColorStop(1, 'rgba(8,5,12,0.78)');
     ctx.fillStyle = veil;
-    ctx.fillRect(0, 0, W, H);
+    // The scrim covers the PHYSICAL screen, not the safe box the rest of this panel
+    // lays out in: a wash inset with the chrome would leave a strip of live dungeon
+    // above and below the modal. Hence the negative origin and `sh`.
+    ctx.fillRect(0, -this.engine.insetTop, W, this.engine.sh);
 
     ctx.textAlign = 'center';
     ctx.font = 'bold 12px ui-monospace, monospace';
@@ -4242,7 +4367,10 @@ export class Hud {
     // and it reads straight through a light one, so the card ends up sharing the
     // frame with a page of Frostbolt.
     ctx.fillStyle = 'rgba(8,4,10,0.86)';
-    ctx.fillRect(0, 0, W, H);
+    // The scrim covers the PHYSICAL screen, not the safe box the rest of this panel
+    // lays out in: a wash inset with the chrome would leave a strip of live dungeon
+    // above and below the modal. Hence the negative origin and `sh`.
+    ctx.fillRect(0, -this.engine.insetTop, W, this.engine.sh);
     ctx.textAlign = 'center';
     ctx.font = `bold ${won ? 17 : 22}px ui-monospace, monospace`;
     ctx.fillStyle = won ? '#ffe58a' : '#d8452f';
