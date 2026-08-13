@@ -3801,12 +3801,24 @@ export class Hud {
       ctx.beginPath();
       ctx.rect(ix, lostTop, iw, lost);
       ctx.clip();
-      ctx.filter = 'grayscale(1)';
+      /**
+       * LIGHTER UNDER THE WATERLINE, not darker.
+       *
+       * It was three passes and two of them took light out: grayscale, then a dark red
+       * wash, then a near-black `rgba(4,2,6,0.42)` on top. On an already-dim portrait
+       * that stacked to essentially black, so the drained band read as a hole cut in the
+       * card rather than as a face under water — and the lower your health, the more of
+       * the frame was simply missing.
+       *
+       * So the band is LIFTED first and tinted once. `brightness` above 1 in the filter
+       * does the lifting on the portrait itself, which keeps the face readable all the
+       * way down to a sliver of health, and a single bright wash carries the red. One
+       * pass that adds light beats two that remove it.
+       */
+      ctx.filter = 'grayscale(1) brightness(1.5)';
       drawPortrait(ctx, w.portrait, ix, iy, iw, ih);
       ctx.filter = 'none';
-      ctx.fillStyle = 'rgba(120,14,10,0.5)';
-      ctx.fillRect(ix, lostTop, iw, lost);
-      ctx.fillStyle = 'rgba(4,2,6,0.42)';
+      ctx.fillStyle = 'rgba(216,62,48,0.44)';
       ctx.fillRect(ix, lostTop, iw, lost);
       ctx.restore();
       // The waterline, so the level is readable even at a glance. On the TOP edge of the
