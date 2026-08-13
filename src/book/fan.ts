@@ -45,6 +45,13 @@ interface FloatPage {
   phase: number;
 }
 
+/**
+ * The hover clock for a fan slot. By INDEX, so a card and the outline it replaces are
+ * on the same one — see the note in `update`. Irrational-ish step so no two slots in a
+ * row bob together and read as one rigid object.
+ */
+const slotPhase = (i: number): number => i * 2.399;
+
 export class Fan {
   pages: FloatPage[] = [];
   private merging = false;
@@ -120,6 +127,38 @@ export class Fan {
    * the only way an empty slot can be drawn in the position its card will occupy.
    */
   capacity = 1;
+
+  /**
+   * Where a card in slot `i` SITS RIGHT NOW, once it has landed.
+   *
+   * The one place a slot's live transform is worked out, and the reason it exists: an
+   * empty outline and a filled card in the same row were visibly different objects.
+   * `slot` is only the resting place. A landed card then gets a hover bob, a hover roll
+   * and a fixed pitch on top of it, all applied in `update` — and the outlines were
+   * drawn from `slot` alone, so they sat a few pixels high, leaned by a different
+   * amount, and measured a couple of pixels short of the card beside them.
+   *
+   * Both go through here now. An outline is a slot in its empty state, not a second
+   * thing that has to be kept agreeing with the first.
+   */
+  landed(i: number, n: number, phase: number, t: number): {
+    pos: THREE.Vector3; rotZ: number;
+  } {
+    const s = this.slot(i, n);
+    s.pos.y += Math.sin(t * 1.9 + phase) * 0.004;
+    return { pos: s.pos, rotZ: s.rotZ + Math.sin(t * 1.4 + phase * 2) * 0.03 };
+  }
+
+  /**
+   * The live transform of an EMPTY slot, for the outline that stands in for it.
+   *
+   * Its phase is derived from the index rather than random, because an outline has no
+   * card to remember one for it and two outlines bobbing in lockstep read as a rigid
+   * pair rather than as two sheets of paper.
+   */
+  ghost(i: number, t: number): { pos: THREE.Vector3; rotZ: number; scale: number } {
+    return { ...this.landed(i, Math.max(this.capacity, 1), slotPhase(i), t), scale: FAN_SCALE };
+  }
 
   /** Fan slot transform for page i of n. PUBLIC so the empty slots share it. */
   slot(i: number, n: number): { pos: THREE.Vector3; rotZ: number } {
@@ -210,14 +249,24 @@ export class Fan {
       p.born = Math.min(FLY_DUR, p.born + dt);
       const k = clamp01(p.born / FLY_DUR);
       const e = easeOutBack(k);
-      const s = this.slot(i, Math.max(this.capacity, n));
-      // hover life once landed
-      const hoverY = Math.sin(t * 1.9 + p.phase) * 0.004 * k;
-      const hoverR = Math.sin(t * 1.4 + p.phase * 2) * 0.03 * k;
+      // The landed pose, from the same function the empty outlines read — see `landed`.
+      // Scaled by `k` so the hover fades in with the flight rather than snapping on.
+      /**
+       * The hover phase belongs to the SLOT, not to the card.
+       *
+       * It was `Math.random() * 10` per page, which meant the outline standing in for a
+       * slot and the card that lands in it bobbed to different clocks — so the instant a
+       * card arrived it was a few pixels off where its own outline had just been. Deriving
+       * it from the index is what makes the swap seamless: the outline is the slot empty
+       * and the card is the slot full, and they are in the same place at the same moment.
+       */
+      const s = this.landed(i, Math.max(this.capacity, n), slotPhase(i), t);
+      const rest = this.slot(i, Math.max(this.capacity, n));
+      s.pos.y = rest.pos.y + (s.pos.y - rest.pos.y) * k;
+      s.rotZ = rest.rotZ + (s.rotZ - rest.rotZ) * k;
       p.group.position.lerpVectors(p.fromPos, s.pos, e);
-      p.group.position.y += hoverY;
       p.group.scale.setScalar(lerp(1, FAN_SCALE, e));
-      const targetQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.06, 0, s.rotZ + hoverR));
+      const targetQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.06, 0, s.rotZ));
       p.group.quaternion.slerpQuaternions(p.fromQuat, targetQ, e);
       p.mat.uniforms.uGlow.value = lerp(0.7, 0.22 + 0.1 * Math.sin(t * 3 + p.phase), k);
       // sparkle drip

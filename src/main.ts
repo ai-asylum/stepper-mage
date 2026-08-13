@@ -18,7 +18,7 @@ import {
 import { TreeScreen, type TreeAction } from './ui/tree';
 import { routeCost, routeTo } from './ui/treeCommon';
 import { Book } from './book/book';
-import { Fan, FAN_SCALE } from './book/fan';
+import { Fan } from './book/fan';
 import {
   bookScene, camera as bookCam, projectToScreen, tickBook, resizeBook, sinks, sfx,
 } from './book/bridge';
@@ -966,11 +966,14 @@ async function boot(): Promise<void> {
   /**
    * The slots the hand has NOT filled, in screen space.
    *
-   * Projected from the fan's own `slot()` transform — the same function that places
-   * the real cards — so an outline is exactly where its card will land, at exactly
-   * its size and lean. The first version laid the outlines out independently in
-   * screen pixels, which is two sources of truth for one row and was visibly wrong
-   * the moment a card went in.
+   * Projected from `fan.ghost`, which is `fan.landed` — the very function `update`
+   * drives the real cards through. An outline is a slot in its empty state.
+   *
+   * It used to read `fan.slot`, which is only the RESTING place. A landed card then
+   * picks up a hover bob, a hover roll and a fixed pitch in `update`, and an outline
+   * picked up none of them: measured side by side and fully settled, the card sat at
+   * rot 0.116 where its outline said 0.090, five pixels lower and two pixels shorter.
+   * Close enough to look like a bug and not close enough to be one you could name.
    */
   const emptySlotBoxes = (): HandCard[] => {
     const cap = Math.max(handSize(), 1);
@@ -982,9 +985,9 @@ async function boot(): Promise<void> {
       // camera-local, which is the space `projectToScreen` already takes for the
       // real cards — converting it to world first produced points that would not
       // project at all.
-      const s = fan.slot(i, cap);
+      const s = fan.ghost(i, engine.time);
       if (!projectToScreen(s.pos.x, s.pos.y, s.pos.z, mid)) continue;
-      if (!projectToScreen(s.pos.x, s.pos.y + PAGE_H * 0.5 * FAN_SCALE, s.pos.z, top)) continue;
+      if (!projectToScreen(s.pos.x, s.pos.y + PAGE_H * 0.5 * s.scale, s.pos.z, top)) continue;
       const h = Math.abs(mid.y - top.y) * 2;
       const w = h * (PAGE_W / PAGE_H);
       out.push({ index: i, x: mid.x - w / 2, y: mid.y - h / 2, w, h, rot: s.rotZ });
