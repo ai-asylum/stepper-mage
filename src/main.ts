@@ -3863,9 +3863,25 @@ async function boot(): Promise<void> {
       case 'cast': void doCast(); break;
       case 'clear': hud.clearSelection(); break;
       case 'target':
-        // A tile is only ever a target — none of the furniture gestures below can
-        // apply to one, so it short-circuits them all.
-        if (isTileTarget(a.entity)) { hud.target = a.entity; break; }
+        /**
+         * A tile is only ever a target — none of the furniture gestures below can
+         * apply to one, so it short-circuits them all.
+         *
+         * AND TAPPING IT AGAIN PUTS IT BACK DOWN. A ground target was a one-way door:
+         * once the reticle was on a patch of floor the only ways off it were to cycle
+         * round every other candidate or to cast, so a misplaced tap committed the
+         * player to a tile they did not want. Tapping a thing to pick it up and
+         * tapping it again to drop it is what every other toggle in this game does.
+         *
+         * TILES ONLY, deliberately. A body is the thing you are in a fight with, and
+         * the tap that lands on it in the middle of one has to mean "that one" every
+         * single time — a second tap silently clearing the reticle is a cast that does
+         * not happen at the moment the player most needs it to.
+         */
+        if (isTileTarget(a.entity)) {
+          hud.target = sameTarget(hud.target, a.entity) ? null : a.entity;
+          break;
+        }
         if (a.entity.kind === 'altar') { takeFromAltar(a.entity); break; }
         if (a.entity.kind === 'chest' && !a.entity.spent) { openChest(a.entity); break; }
         // The stairs are a door, not a target. Tapping them is the same gesture as

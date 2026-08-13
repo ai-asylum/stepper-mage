@@ -41,7 +41,7 @@ import { BELT_ENABLED } from '../flags';
 import {
   ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CHAIN_JUMP_MS,
   CHAIN_RANGE, CONDUCTION_MULT, DECAY_DOT, DEEP_FREEZE_MULT,
-  DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS,
+  DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS, TURN_GAP_MS,
   FIRE_DETOUR, GROUND_FIRE_DOT, GROW_RING, bodyStars, fallDamage, REACTION_REACH, SPILL_VOLUME, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
   bossDamage, enemyDamage, FAST_DAMAGE_MULT,
 } from './tuning';
@@ -1595,6 +1595,23 @@ export class Combat {
     const px = this.playerTile.x, py = this.playerTile.y;
     let engaged = false;
 
+    /**
+     * The beat between the player's half of the turn and the room's — see `TURN_GAP_MS`.
+     *
+     * Owed rather than spent up front, and paid by the first body that actually does
+     * something. Whether anything is going to act is only known inside the loop (a
+     * hostile out of range drops out, a golem with nothing to do stands still), and a
+     * room that answers with silence must answer instantly: a pause before nothing
+     * happens is just lag. Paid at most once, so this stays a gap between two PHASES
+     * and never becomes a second, slower `ACT_PACE_MS`.
+     */
+    let gapOwed = true;
+    const turnGap = async (): Promise<void> => {
+      if (!gapOwed) return;
+      gapOwed = false;
+      await delay(TURN_GAP_MS);
+    };
+
     for (const [e, c] of [...this.combatants]) {
       if (!e.alive) continue;
 
@@ -1609,6 +1626,10 @@ export class Combat {
         // exactly what the reticle means by ALERTED — see `Combatant.alerted`.
         engaged = true;
         c.alerted = true;
+        // Before the denial too: losing your action is something the body DOES this
+        // phase, and the player has to see it happen in the room's half of the turn
+        // rather than on top of their own cast.
+        await turnGap();
         if (this.denied(c)) { this.announceDenial(c); continue; }
 
         /**
@@ -1651,6 +1672,11 @@ export class Combat {
         // Heeling is not fighting, so a golem trotting after you must not make an
         // empty room bill the player for a round.
         if (foe && foeDist <= GOLEM_AGGRO) engaged = true;
+        // A golem swinging is the room's half of the turn as much as a hostile's is,
+        // so it owes the same beat. Heeling does not — a golem trotting after you is
+        // not an ACTION being answered with, and pausing before it would put a dead
+        // stop in the middle of ordinary walking.
+        if (foe && foeDist <= GOLEM_AGGRO) await turnGap();
         if (this.denied(c)) { this.announceDenial(c); continue; }
 
         // Same budget as a hostile — a move and an attack. A golem is the mirror of

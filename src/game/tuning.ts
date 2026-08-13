@@ -413,6 +413,28 @@ export const OIL_FIRE_MULT = 2;
 export const ACT_PACE_MS = 60;
 export const ROUND_PACE_MS = 60;
 
+/**
+ * THE BEAT BETWEEN YOUR ACTION AND THE ROOM'S ANSWER.
+ *
+ * A turn is two things happening in order — you act, then they do — and without a
+ * gap between them it does not read as two things at all. The body was struck and
+ * struck back inside the same frame, so what the player saw was a single exchange
+ * they were somehow on the losing side of, rather than a hit landing and then being
+ * answered. Nothing about the rules was unclear; the presentation simply never let
+ * the first half finish before the second started.
+ *
+ * Bigger than `ACT_PACE_MS` by a lot, and it has to be: 60ms staggers bodies WITHIN
+ * a phase, where the eye is reading them as one group moving. This separates two
+ * phases, which is a beat the player is meant to notice.
+ *
+ * It is also input latency — `main.ts` blocks input for the round, and stepping away
+ * is the answer to a fight going badly, so this is time the player cannot escape in.
+ * That is the whole tension in the number. It is spent ONCE per round rather than
+ * per body, and only when something is actually going to act, so a room with nothing
+ * awake in it still answers instantly.
+ */
+export const TURN_GAP_MS = 260;
+
 // ---------------------------------------------------------------- attrition
 
 /**
