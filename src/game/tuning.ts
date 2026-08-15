@@ -551,7 +551,17 @@ export const FIRE_DETOUR = 3;
  * so feeding is something you do repeatedly and deliberately — a cast that doubled
  * the patch would make the first feed the only one worth making.
  */
-export const GROW_RING = 8;
+export const GROW_RING = 2;
+
+/**
+ * How much DEBRIS one Earthquake can leave.
+ *
+ * Below the volume ladder's top rung on purpose. Rubble is the only thing a cast
+ * leaves that never expires — every patch burns out, dries up or is swept, and this
+ * sits on the floor until someone spends a gust on it. A hazard you cannot outwait
+ * has to be smaller than one you can.
+ */
+export const RUBBLE_MAX_TILES = 3;
 
 /**
  * Stars a body pays, by depth.

@@ -155,6 +155,28 @@ const REACTION_PAIRS: readonly (readonly [Element, Element, Element])[] = [
    * true of the game.
    */
   ['frost', 'water', 'frost'],
+  /*
+   * Gust and stone bring the room DOWN — Earthquake makes debris, it does not tidy
+   * up. It is a pair rather than a priority entry because gust otherwise wins
+   * outright, and "the eraser" is the wrong reading of a spell that shakes masonry
+   * loose. Rubble is the one surface the player can already delete (a gust sweeps
+   * it), so this closes that loop: stone is the pen, gust is the eraser.
+   */
+  ['gust', 'stone', 'stone'],
+  /*
+   * Fire beats gust, stated here rather than left to the priority list now that the
+   * reactions are consulted first. A cast holding both ignites rather than sweeps,
+   * and `volumeTiles` prices its shift on exactly that reading.
+   */
+  ['gust', 'fire', 'fire'],
+  /*
+   * A blizzard leaves the room ICED, not merely swept. Whiteout is the frost-and-gust
+   * spell and it was clearing for the same reason Earthquake was: gust won by default.
+   * Laying ice still puts a fire out — `pour` gives the tile to the newcomer — so the
+   * eraser half of the cast is not lost, it is simply expressed as a floor you can
+   * then conduct through or slip on.
+   */
+  ['gust', 'frost', 'frost'],
 ];
 
 /**
@@ -167,14 +189,16 @@ const REACTION_PAIRS: readonly (readonly [Element, Element, Element])[] = [
  */
 export function groundLeaves(elements: readonly Element[]): Element | null {
   /*
-   * Fire beats gust, and gust beats everything else — the order `GROUND_ELEMENTS`
-   * already had, restated here because the reactions have to slot INTO it rather than
-   * on top of it. A cast holding both ignites rather than sweeps (`volumeTiles` prices
-   * the shift on exactly that reading, so the two must not disagree), and a cast that
-   * sweeps must not also pour, which is why gust short-circuits ahead of the table.
+   * REACTIONS FIRST, then gust, then the priority list.
+   *
+   * Gust used to short-circuit ahead of everything, which made it impossible for a
+   * pair to say what gust plus something else becomes — and that is exactly what
+   * Earthquake is. The two cases gust used to win outright are now rows in the table
+   * (`gust + fire` ignites, `gust + stone` brings debris down), so the short-circuit
+   * below only catches the casts where gust really is acting alone as the eraser.
    */
-  if (elements.includes('gust')) return elements.includes('fire') ? 'fire' : 'gust';
   return groundReaction(elements)
+    ?? (elements.includes('gust') ? 'gust' : null)
     ?? GROUND_ELEMENTS.find((el) => elements.includes(el))
     ?? null;
 }
@@ -226,7 +250,22 @@ export const GROUND_MIN_PAGES = 2;
  * READ ONE RUNG LOW — see `GROUND_TIER_SHIFT`. The ladder is written as the shape it
  * has always been, and the whole thing is entered a step later than it used to be.
  */
-export const VOLUME_TILES = [1, 9, 25] as const;
+/*
+ * ONE, THREE, FIVE — and the old ladder was 1, 9, 25.
+ *
+ * That is a NINEFOLD jump across two rungs, on a step the player buys by adding a
+ * single page. It read as three settings — nothing, a corner of the room, the room —
+ * with no rung in between where a volume is a thing you place. Squares of an expanding
+ * radius were the wrong unit: `Grid.fill` spends a tile BUDGET, so the count can be
+ * any number and does not have to be a ring.
+ *
+ * Now every step adds two tiles. Three is the tile and its neighbours down a hallway,
+ * five is a small pool you can walk around, and the top rung is a hazard rather than a
+ * room-deleter. Volumes also compound — fire spreads on fuel, bramble creeps, growth
+ * feeds a patch by a whole ring — so the cast's own footprint was never the number
+ * that mattered most.
+ */
+export const VOLUME_TILES = [1, 3, 5] as const;
 
 /**
  * The whole ground ladder, moved one page later.
@@ -248,7 +287,7 @@ const GROUND_TIER_SHIFT = 1;
  * through — so it must not routinely swallow the tile they are standing on the way
  * a late Inferno is supposed to.
  */
-export const FROST_VOLUME_TILES = [1, 5, 9] as const;
+export const FROST_VOLUME_TILES = [1, 2, 3] as const;
 
 /** Which tile budget this set of elements spends. */
 /**
@@ -286,7 +325,11 @@ function volumeTiles(elements: readonly Element[], step: number): number {
    * the order of `GROUND_ELEMENTS`, where fire comes first — so a cast holding both
    * gust and fire ignites rather than sweeps, and takes the shift like any other fire.
    */
-  const clears = elements.includes('gust') && !elements.includes('fire');
+  // Asked of `groundLeaves` rather than restated, because "does this cast clear" and
+  // "what does this cast leave" are the same question and they have twice now drifted
+  // apart: a gust cast that ignites, or ices, or brings debris down is not an eraser
+  // and must take the shift like anything else that puts something on the floor.
+  const clears = groundLeaves(elements) === 'gust';
   const shift = clears ? 0 : GROUND_TIER_SHIFT;
   // Clamped at BOTH ends. The shift can push the index below zero — two different
   // pages still empower nothing — and that floor is the bottom rung, not an absence:
@@ -834,7 +877,7 @@ export const COMBOS: Record<string, ComboDef> = {
    * the gust adds to it.
    */
   'frost+gust': {
-    name: 'Whiteout', colour: 0xd6f4ff, damage: 13, count: 3, volume: 9, shove: 1,
+    name: 'Whiteout', colour: 0xd6f4ff, damage: 13, count: 3, volume: 5, shove: 1,
     statuses: [{ id: 'frozen', power: 0.8 }],
   },
   'gust+spark': {
@@ -885,7 +928,7 @@ export const COMBOS: Record<string, ComboDef> = {
   // The seeds go where the wind does. Volume is the whole row — this is how a briar
   // gets laid across a room in one cast instead of a tile at a time.
   'gust+plant': {
-    name: 'Seedstorm', colour: 0x8fd66a, damage: 10, count: 3, volume: 9, shove: 1,
+    name: 'Seedstorm', colour: 0x8fd66a, damage: 10, count: 3, volume: 5, shove: 1,
   },
   // The two green pages together: what grows is already dying, and it spreads that
   // to whatever walks through it. Plant's floor plus rot's slow, patient total.

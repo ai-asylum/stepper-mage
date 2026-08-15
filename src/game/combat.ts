@@ -42,6 +42,7 @@ import {
   ACT_PACE_MS, BOSS_DENIAL_BRACE, BURNING_DOT, CHAIN_JUMP_MS,
   CHAIN_RANGE, CONDUCTION_MULT, DECAY_DOT, DEEP_FREEZE_MULT,
   CAST_LAND_MS, DENIAL_BRACE, ENGAGE_RADIUS, GOLEM_AGGRO, OIL_FIRE_MULT, ROUND_PACE_MS,
+  RUBBLE_MAX_TILES,
   TURN_GAP_MS,
   FIRE_DETOUR, GROUND_FIRE_DOT, GROW_RING, bodyStars, fallDamage, REACTION_REACH, SPILL_VOLUME, SHATTER_DAMAGE, SHATTER_MULT, SPELL_REACH,
   bossDamage, enemyDamage, FAST_DAMAGE_MULT,
@@ -870,6 +871,41 @@ export class Combat {
         // One page: the floor is left exactly as it was found. The cast still landed —
         // its damage, its statuses and its shove all resolved above; only the residue
         // it would have poured out is gone.
+      } else if (leaves === 'stone') {
+        /**
+         * THE ROOM COMES DOWN — the first thing a cast leaves that is a SURFACE and
+         * not a patch.
+         *
+         * Rubble was terrain the generator laid and the player could only ever delete
+         * (a gust sweeps it). Earthquake writing it is the other half of that loop:
+         * gust is the eraser, stone is the pen, and the thing they trade in costs a
+         * body a full turn to cross — flyers excepted — exactly as it costs the
+         * player one.
+         *
+         * It goes through `grid.surface` rather than `Ground`, so it does not expire
+         * and cannot be poured over. That permanence is why it is the one volume held
+         * to `RUBBLE_MAX_TILES`: a patch that burns out forgives a bad cast, and this
+         * one does not.
+         *
+         * Never onto a tile a body is standing on, and never the caster's own. Rubble
+         * under something would be terrain that arrived where the cost could not be
+         * seen — and a doorway you sealed yourself into is a bug report, not a play.
+         */
+        const own = g.idx(this.playerTile.x, this.playerTile.y);
+        let laid = 0;
+        for (const { i } of filled) {
+          if (laid >= RUBBLE_MAX_TILES) break;
+          if (i === own) continue;
+          if (g.surface[i] !== Surface.Plain) continue;
+          const tx = i % g.w, ty = (i / g.w) | 0;
+          if (this.floor.entityAt(tx, ty)) continue;
+          g.surface[i] = Surface.Rubble;
+          laid++;
+        }
+        if (laid) {
+          this.floor.resurface();
+          this.onEvent({ kind: 'status', text: 'THE CEILING COMES DOWN!', colour: 0xa89880 });
+        }
       } else if (leaves === 'fire') {
         this.floor.ground.ignite(filled);
       } else if (leaves === 'plant') {
