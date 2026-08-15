@@ -166,7 +166,14 @@ const REACTION_PAIRS: readonly (readonly [Element, Element, Element])[] = [
  * room and then poured water into it would be two answers to one question.
  */
 export function groundLeaves(elements: readonly Element[]): Element | null {
-  if (elements.includes('gust')) return 'gust';
+  /*
+   * Fire beats gust, and gust beats everything else — the order `GROUND_ELEMENTS`
+   * already had, restated here because the reactions have to slot INTO it rather than
+   * on top of it. A cast holding both ignites rather than sweeps (`volumeTiles` prices
+   * the shift on exactly that reading, so the two must not disagree), and a cast that
+   * sweeps must not also pour, which is why gust short-circuits ahead of the table.
+   */
+  if (elements.includes('gust')) return elements.includes('fire') ? 'fire' : 'gust';
   return groundReaction(elements)
     ?? GROUND_ELEMENTS.find((el) => elements.includes(el))
     ?? null;
