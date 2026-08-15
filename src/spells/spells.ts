@@ -73,7 +73,15 @@ export type Element =
  * Everything else is a radius, and deliberately: if everything wrapped there would
  * be no distinction worth having.
  */
-export const VOLUME_ELEMENTS: ReadonlySet<Element> = new Set<Element>(['fire', 'gust', 'frost', 'plant']);
+/*
+ * Water and oil are volumes too, and were the conspicuous hole in this set: both are
+ * substances the floor can hold, both have a full row in `pour`, and neither could
+ * ever cover more than the single tile it landed on because `isVolume` said no. A
+ * liquid that does not spread is not a liquid.
+ */
+export const VOLUME_ELEMENTS: ReadonlySet<Element> = new Set<Element>(
+  ['fire', 'gust', 'frost', 'plant', 'water', 'oil'],
+);
 
 /**
  * Volume elements that fill LESS than the rest — see `FROST_VOLUME_TILES`.
@@ -92,7 +100,13 @@ export const VOLUME_ELEMENTS: ReadonlySet<Element> = new Set<Element>(['fire', '
  * spends most of the growth budget up front; this is the one that stops the budget
  * being multiplied by an area in the first place.
  */
-const SMALL_VOLUME: ReadonlySet<Element> = new Set<Element>(['frost', 'plant']);
+/*
+ * The liquids join frost at the small table rather than fire's. A puddle you can
+ * conduct through or slip a fire along is terrain the player wants to stand near,
+ * which is exactly the argument frost already makes here — and a 25-tile oil slick
+ * is a room-ending accident rather than a play.
+ */
+const SMALL_VOLUME: ReadonlySet<Element> = new Set<Element>(['frost', 'plant', 'water', 'oil']);
 
 /**
  * The elements that LEAVE SOMETHING ON THE FLOOR, in the order a cast holding
@@ -106,6 +120,74 @@ const SMALL_VOLUME: ReadonlySet<Element> = new Set<Element>(['frost', 'plant']);
 // Plant last: anything that burns, blows or pours beats a seed, so a cast holding
 // both leaves the louder thing and the bramble never quietly overrides a fire.
 export const GROUND_ELEMENTS: readonly Element[] = ['fire', 'gust', 'oil', 'water', 'frost', 'plant'];
+
+/**
+ * WHAT TWO ELEMENTS MAKE OF THE FLOOR, which beats the priority list above.
+ *
+ * `GROUND_ELEMENTS` answers "which of the things I am holding wins", and that is the
+ * wrong question whenever the two things together are a THIRD thing. Fire and frost
+ * do not leave a choice between burning and ice — they leave a wet floor, and until
+ * now fire simply won because it is first in the list. The pairs here are the ones
+ * where the combination is more interesting than either half:
+ *
+ *  - **fire + frost: water.** Steam Burst wets the room instead of lighting it.
+ *  - **plant + rot: oil.** Decay renders a thicket down into something that burns —
+ *    the one route to oil that does not need a barrel.
+ *  - **spark + oil: fire.** A charge into a slick is the obvious ignition, and it was
+ *    the conspicuous missing row: spark carried no ground at all, so casting it into
+ *    oil consumed the slick and left nothing.
+ *
+ * THE GROUND COUNTS AS AN INGREDIENT. `Combat` asks this with the substance already
+ * on the tile folded in, so aiming Decay at bramble is `plant + rot` exactly as
+ * holding both pages is — which is what makes these reactions something you set up
+ * on the floor rather than something you have to draw in one hand.
+ */
+const REACTION_PAIRS: readonly (readonly [Element, Element, Element])[] = [
+  ['fire', 'frost', 'water'],
+  ['plant', 'rot', 'oil'],
+  ['spark', 'oil', 'fire'],
+  /*
+   * Frost into water is ICE, and it is here rather than left to the priority list
+   * because of the page count. `FEEDS` already says frost does not feed water, it
+   * freezes it — but "freeze" resolved through the fallback is a POUR, so the
+   * two-page gate ate it and a single Frost into a puddle left bare floor. As a
+   * reaction it is exempt, which is the only version where the comment in `FEEDS` is
+   * true of the game.
+   */
+  ['frost', 'water', 'frost'],
+];
+
+/**
+ * What this cast leaves on the floor: the reaction if it made one, else the first
+ * ground element it holds.
+ *
+ * Gust is checked before the reactions, not after. It is the eraser and it outranks
+ * everything — the same claim `groundUse` already makes — and a gust that swept the
+ * room and then poured water into it would be two answers to one question.
+ */
+export function groundLeaves(elements: readonly Element[]): Element | null {
+  if (elements.includes('gust')) return 'gust';
+  return groundReaction(elements)
+    ?? GROUND_ELEMENTS.find((el) => elements.includes(el))
+    ?? null;
+}
+
+/**
+ * The reaction alone, with no fallback — "did these two make a third thing".
+ *
+ * Separate from `groundLeaves` because `Combat` has to ask a second question the
+ * priority list cannot answer: whether the floor changed because of a REACTION or
+ * merely because the cast poured something. A reaction is exempt from
+ * `GROUND_MIN_PAGES` — one page of Decay into a thicket transmutes ground that was
+ * already there rather than creating any, and gating it would have made the whole
+ * table unreachable at hand size one.
+ */
+export function groundReaction(elements: readonly Element[]): Element | null {
+  for (const [a, b, out] of REACTION_PAIRS) {
+    if (elements.includes(a) && elements.includes(b)) return out;
+  }
+  return null;
+}
 
 /** Does this cast fill space, rather than reach a distance? */
 export function isVolume(elements: readonly Element[]): boolean {
@@ -162,6 +244,24 @@ const GROUND_TIER_SHIFT = 1;
 export const FROST_VOLUME_TILES = [1, 5, 9] as const;
 
 /** Which tile budget this set of elements spends. */
+/**
+ * How much a cast's VARIETY is worth on the ladder — one rung per extra element.
+ *
+ * The step used to be `extraBolt` alone, which counts duplicates and nothing else, and
+ * that had a consequence nobody chose: a combo — three different pages, the most
+ * expensive and most interesting hand in the game — sat on the bottom rung with the
+ * one-pagers, while three copies of the same page climbed to the top. Of 199 spells,
+ * exactly three laid more than a single tile, and all three were the same page thrice.
+ *
+ * Variety pays the same rung repetition does, so a three-page combo reaches the middle
+ * of the ladder. Deliberately `distinct - 1` and not `distinct`: two different pages
+ * must still come out at one tile, because `GROUND_TIER_SHIFT` is what keeps the first
+ * ground a player makes small and a two-page cast is where most players live.
+ */
+function varietyStep(elements: readonly Element[]): number {
+  return new Set(elements).size - 1;
+}
+
 function volumeTiles(elements: readonly Element[], step: number): number {
   // A cast holding fire OR gust is a full volume even if it also holds frost: the
   // bigger of the two shapes wins, so a Whiteout covers ground and not a doormat.
@@ -181,11 +281,12 @@ function volumeTiles(elements: readonly Element[], step: number): number {
    */
   const clears = elements.includes('gust') && !elements.includes('fire');
   const shift = clears ? 0 : GROUND_TIER_SHIFT;
-  // Clamped at BOTH ends now. The shift can push the index below zero — a two-page
-  // cast of two different elements empowers nothing — and that floor is the bottom
-  // rung, not an absence: whether a cast lays ground at all is `GROUND_MIN_PAGES`,
-  // asked where the page count is known.
-  return table[Math.max(0, Math.min(step - shift, table.length - 1))];
+  // Clamped at BOTH ends. The shift can push the index below zero — two different
+  // pages still empower nothing — and that floor is the bottom rung, not an absence:
+  // whether a cast lays ground at all is `GROUND_MIN_PAGES`, asked where the page
+  // count is known.
+  const rung = step + varietyStep(elements) - shift;
+  return table[Math.max(0, Math.min(rung, table.length - 1))];
 }
 
 /** A non-volume cast fills the tile it lands on and no more. */

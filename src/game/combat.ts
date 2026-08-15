@@ -29,11 +29,11 @@ import {
   DIR_VEC, FOG_SIGHT, Surface, Tile, conducts, hazardState, type Grid, type Hazard,
 } from '../dungeon/grid';
 import { faceToward, type Entity, type Floor } from './floor';
-import { groundUse, type GroundUse, type Substance } from './ground';
+import { groundUse, SUBSTANCE_ELEMENT, type GroundUse, type Substance } from './ground';
 import { affinityMult, affinityOf, type Affinities } from './affinity';
 import {
   STATUS_META, displayName, harvestOf, isFixtureElement, resolveCast,
-  GROUND_ELEMENTS, GROUND_MIN_PAGES, SPELL_BY_ID,
+  GROUND_MIN_PAGES, SPELL_BY_ID, groundLeaves, groundReaction,
   type CastTarget, type Element, type ResolvedCast, type StatusId,
 } from '../spells/spells';
 import { BOSS_INGREDIENTS, rollDropCount, rollIngredient, type BeltState } from '../spells/belt';
@@ -612,7 +612,10 @@ export class Combat {
     if (fuel) {
       this.floor.ground.extinguish([fuelAt]);
       this.syncGround();
-      const noun = groundWas === 'fire' ? 'FIRE' : groundWas === 'oil' ? 'OIL' : 'WATER';
+      // Every substance names itself. It used to be a three-way that fell through to
+      // 'WATER', so ice and bramble — neither of which could be aimed at before now —
+      // announced themselves as water the moment they became targets.
+      const noun = (groundWas ?? 'ground').toUpperCase();
       this.onEvent({
         kind: 'status',
         text: fuel > 1 ? `THE ${noun} FEEDS IT \u00d7${fuel}!` : `THE ${noun} FEEDS IT!`,
@@ -717,7 +720,24 @@ export class Combat {
      * take off the floor is spent, and what you put back is what you cast.
      */
     const ownElements = this.elementsOf(this.byRank(pages));
-    const leaves = GROUND_ELEMENTS.find((el) => ownElements.includes(el));
+    /**
+     * THE TILE IS THE OTHER HALF OF THE REACTION.
+     *
+     * `groundLeaves` is asked with what the player threw PLUS what was already on the
+     * floor, which is the only reading that makes these reactions something you set
+     * up: Decay aimed at a thicket is `plant + rot` and renders it to oil, a spark
+     * into a slick is `spark + oil` and lights it, and neither needs both pages in
+     * one hand.
+     *
+     * The ground still does not decide the SIZE — that stays `ownElements`, so a
+     * one-page cast reacting with a big patch cannot inherit a volume it never paid
+     * for. The old comment above about the scavenged fire relighting its own tile
+     * holds for exactly the same reason.
+     */
+    const reagents = groundWas
+      ? [...ownElements, SUBSTANCE_ELEMENT[groundWas]]
+      : ownElements;
+    const leaves = groundLeaves(reagents);
     if (leaves) {
       const g = this.floor.grid;
       const away: [number, number] = [
@@ -744,7 +764,17 @@ export class Combat {
        * feeding one is a thing the player went and did rather than a thing that happened
        * to them.
        */
-      const lays = pages.length >= GROUND_MIN_PAGES;
+      /**
+       * A REACTION IS EXEMPT, because it creates no ground — it changes ground that
+       * was already on the floor into something else. Decay into a thicket is oil, a
+       * spark into a slick is fire, and both are one page: gating them behind the
+       * two-page rule would have made the whole reaction table unreachable at the hand
+       * size the player spends most of the game at, which is the opposite of the
+       * rule's intent. What it still stops is a one-page cast pouring NEW ground onto
+       * a bare tile.
+       */
+      const reacted = groundWas !== null && groundReaction(reagents) !== null;
+      const lays = pages.length >= GROUND_MIN_PAGES || reacted;
 
       /**
        * The fill is thrown AWAY from the caster, so an open room takes the whole
@@ -2417,42 +2447,23 @@ export function targetsInView(
   }
 
   /**
-   * BURNING GROUND is targetable, under the same three clauses as a body.
+   * COVERED GROUND is targetable — ALL of it, under the same three clauses as a body.
    *
-   * The first thing in this game worth aiming at that is not an entity. It has to be
-   * aimable because fire on the floor is a spell COMPONENT — casting into it picks it
-   * up — and until now the only way to reach that fuel was to aim at a creature
-   * standing in it, which is the case where you least want to be spending the cast on
-   * the ground.
+   * This was two loops with a substance filter on each: fire, because it is a
+   * component you can pick up, and then bramble and briar, because they are what fire
+   * eats. Ice, water and oil were left out for no reason anybody could state — they
+   * fuel a cast exactly as fire does (`withGroundFuel` never cared which substance it
+   * was), they react with what you throw at them, and you simply could not say which
+   * tile you meant unless something was standing on it.
+   *
+   * So the rule is now the substance-blind one it should always have been: if the
+   * floor is holding something, you can aim at it. No exceptions, and no list to keep
+   * in sync with `Substance` the next time one is added.
    *
    * Same cone, same reach, same wall test. A tile is a target on exactly the terms a
    * creature is, which is what stops this being a second targeting system.
    */
-  for (const i of floor.ground.fires()) {
-    const tx = i % grid.w, ty = (i / grid.w) | 0;
-    const dx = tx - x, dy = ty - y;
-    const ahead = dx * fx + dy * fy;
-    const side = Math.abs(dx * rx + dy * ry);
-    if (ahead < 1 || side > ahead) continue;
-    if (Math.abs(dx) + Math.abs(dy) > reach) continue;
-    if (!clearLine(grid, x, y, tx, ty)) continue;
-    out.push({ tile: true, x: tx, y: ty });
-  }
-
-  /**
-   * AND THE PLANTS, which are the tiles you most often want to aim at ON PURPOSE.
-   *
-   * Fire got in here because it is a component you can pick up. Grass and briar are
-   * the other half of that trade: they are what fire EATS, so "put a Flame on the
-   * near end of the thicket" is the whole reason the spread rule exists — and until
-   * now there was no way to say which tile, because a plant is not an entity and the
-   * reticle only ever knew about entities, fire and blocks.
-   *
-   * Same cone, same reach, same wall test, through the same door. A tile is a target
-   * on exactly the terms a creature is.
-   */
   for (const p of floor.ground.patches()) {
-    if (p.what !== 'bramble' && p.what !== 'briar') continue;
     const tx = p.i % grid.w, ty = (p.i / grid.w) | 0;
     const dx = tx - x, dy = ty - y;
     const ahead = dx * fx + dy * fy;

@@ -120,6 +120,23 @@ function react(
 const FLAMMABLE: ReadonlySet<Substance> = new Set<Substance>(['oil', 'bramble', 'briar']);
 
 /**
+ * A substance read back as the ELEMENT it is, so the floor can be an ingredient.
+ *
+ * The inverse of what `Combat` does when it pours: ice is what frost leaves and
+ * bramble is what plant leaves, so a tile holding either answers as the element that
+ * put it there. Without this a reaction could only ever fire when the player held
+ * both pages at once, which is the version where the floor is scenery.
+ */
+export const SUBSTANCE_ELEMENT: Record<Substance, Element> = {
+  fire: 'fire',
+  oil: 'oil',
+  water: 'water',
+  ice: 'frost',
+  bramble: 'plant',
+  briar: 'plant',
+};
+
+/**
  * What a cast DOES to the ground it is aimed at.
  *
  *  - `grow`   the cast carried the same thing that is already there, so the patch
@@ -271,6 +288,39 @@ export class Ground {
   /** Set tiles alight. The common case, kept as its own name for readability. */
   ignite(tiles: readonly FillTile[], turns = FIRE_TURNS): void {
     this.pour(tiles, 'fire', turns);
+    this.flashover(tiles.map((t) => t.i), turns);
+  }
+
+  /**
+   * OIL GOES UP ALL AT ONCE — the whole connected slick, on the frame it catches.
+   *
+   * The per-round creep in `age` is right for a thicket: a hedge burning along its
+   * own length is something you watch and something you can outrun. It is wrong for
+   * oil, which is the substance whose entire promise is that lighting one end lights
+   * all of it. Waiting a round per tile made a slick you poured in front of something
+   * a fire that arrived after it had walked out of it.
+   *
+   * ONLY OIL travels this way. Bramble and briar stay on the slow creep, so the two
+   * fuels read as two different things — a fuse and a hedge — rather than one rule
+   * with a speed setting.
+   *
+   * Breadth-first from every tile that just caught, which is why the seen set is
+   * seeded with them: the flood is over the slick, and a tile already burning is not
+   * a tile the fire has to cross.
+   */
+  private flashover(from: readonly number[], turns: number): void {
+    const seen = new Set<number>(from);
+    const queue = [...from];
+    for (let head = 0; head < queue.length; head++) {
+      for (const n of this.neighbours(queue[head])) {
+        if (seen.has(n)) continue;
+        seen.add(n);
+        if (this.patch.get(n)?.what !== 'oil') continue;
+        if (this.refuses(n, 'fire')) continue;
+        this.patch.set(n, { what: 'fire', turns });
+        queue.push(n);
+      }
+    }
   }
 
   /** Spill a container's contents. */
@@ -403,6 +453,9 @@ export class Ground {
     // Lit AFTER the ageing pass, so a tile that just caught burns from full rather
     // than being aged on the turn it went up.
     for (const i of caught) this.patch.set(i, { what: 'fire', turns: FIRE_TURNS });
+    // And a slick that catches from the room's own fire flashes over exactly as one
+    // lit by a cast does — the rule is about oil, not about who struck the match.
+    this.flashover(caught, FIRE_TURNS);
   }
 
   clear(): void { this.patch.clear(); }
