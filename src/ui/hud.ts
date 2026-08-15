@@ -356,6 +356,11 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
  * a digit does, so type-size parity would leave it visibly the smaller of the two. This
  * is the size at which the drawn cog matches the drawn star count.
  */
+/** Seconds a run of fruitless taps stays open before it is forgotten. */
+const TAP_WINDOW = 1.6;
+/** Seconds the nudged instruction stays on screen. */
+const NUDGE_SHOW = 3.5;
+
 const COG_SIZE = 23;
 /** The top row's text top edge — the depth label and the star count both sit on it. */
 const ROW_TOP = 12;
@@ -554,6 +559,12 @@ export class Hud {
    * hint that failed (`Roadmap/First_Minutes.md`).
    */
   hasMoved = false;
+
+  /** The nudged instruction's remaining time, and the run of fruitless taps that
+   *  earns it. See `idleTap`. */
+  private nudgeT = 0;
+  private tapRun = 0;
+  private tapRunT = 0;
 
   /**
    * Every fusion this player has ever cast, newest last. Owned by `meta`.
@@ -885,6 +896,12 @@ export class Hud {
   }
 
   update(dt: number): void {
+    // The nudge and the tap run, on the same clock as everything else here.
+    if (this.nudgeT > 0) this.nudgeT = Math.max(0, this.nudgeT - dt);
+    if (this.tapRunT > 0) {
+      this.tapRunT = Math.max(0, this.tapRunT - dt);
+      if (this.tapRunT === 0) this.tapRun = 0;
+    }
     for (const f of this.floats) f.t += dt;
     this.floats = this.floats.filter((f) => f.t < 1.3);
     for (const l of this.log) l.t += dt;
@@ -2806,8 +2823,36 @@ export class Hud {
     ctx.textAlign = 'left';
   }
 
+  /**
+   * A tap that resolved to nothing at all.
+   *
+   * Called from the tap path in `main.ts`. Three inside `TAP_WINDOW` is a player
+   * pressing the screen and getting no answer, which is the one moment they are
+   * definitely asking how this works — so the instruction comes back rather than
+   * waiting to be discovered. It costs nothing to anybody playing correctly, because
+   * they never trigger it.
+   */
+  idleTap(): void {
+    if (this.offers || this.roster || this.settingsOpen || this.bestiaryOpen) return;
+    this.tapRun = this.tapRunT > 0 ? this.tapRun + 1 : 1;
+    this.tapRunT = TAP_WINDOW;
+    if (this.tapRun >= 3) { this.nudgeT = NUDGE_SHOW; this.tapRun = 0; }
+  }
+
   private drawMoveHint(ctx: CanvasRenderingContext2D, W: number, H: number): void {
-    if (this.hasMoved || this.offers) return;
+    /**
+     * SHOWN AT THE START OF THE FIRST FLOOR, or whenever the player is visibly stuck.
+     *
+     * The opening prompt is depth 1 only. It is the first sentence in the game and it
+     * exists because nothing else says the world answers a swipe — by the second floor
+     * that has been learnt, and an instruction that keeps reappearing reads as the game
+     * nagging rather than helping.
+     *
+     * `nudgeT` is the other way in: three taps that hit nothing, on any floor. See
+     * `idleTap`.
+     */
+    const opening = !this.hasMoved && this.state.depth <= 1;
+    if ((!opening && this.nudgeT <= 0) || this.offers) return;
 
     /**
      * Positioned off the CANVAS, not off the book.
@@ -2838,12 +2883,20 @@ export class Hud {
      * must read was competing with the busiest texture on the screen. The outline is the
      * same trick the depth label and the roster captions use.
      */
+    /**
+     * The instruction follows the BOOK, because the book decides which gesture is even
+     * available. Open, a swipe is a page coming out and the answer to "nothing is
+     * happening" is that you cast with it; closed, a swipe is a step. Telling somebody
+     * to swipe to move while the grimoire fills the bottom of the screen and eats the
+     * gesture is worse than saying nothing.
+     */
+    const line = this.bookClosed ? 'SWIPE TO MOVE' : 'SWIPE TO CAST';
     ctx.font = 'bold 24px ui-monospace, monospace';
     ctx.lineWidth = 4;
     ctx.strokeStyle = 'rgba(6,4,8,0.85)';
-    ctx.strokeText('SWIPE TO MOVE', W / 2, y);
+    ctx.strokeText(line, W / 2, y);
     ctx.fillStyle = '#fff4dc';
-    ctx.fillText('SWIPE TO MOVE', W / 2, y);
+    ctx.fillText(line, W / 2, y);
     ctx.restore();
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';

@@ -4433,8 +4433,20 @@ async function boot(): Promise<void> {
       return;
     }
 
-    // A tap resolves against the HUD (targets, cast, toggles); a swipe moves.
-    if (moved < 24) { act(hud.hit(x, y)); return; }
+    /**
+     * A tap resolves against the HUD (targets, cast, toggles); a swipe moves.
+     *
+     * A tap that hits NOTHING is reported. Three of them and the instruction comes
+     * back — see `Hud.idleTap`. This is the only signal the game gets that a player is
+     * stuck: they are pressing the screen and it is not answering, which is exactly
+     * when somebody is trying to work out what the input even is.
+     */
+    if (moved < 24) {
+      const a = hud.hit(x, y);
+      if (a.kind === 'none') hud.idleTap();
+      act(a);
+      return;
+    }
     if (performance.now() - st < 700) {
       const dx = x - px0, dy = y - py0;
       if (Math.abs(dy) > Math.abs(dx)) {
