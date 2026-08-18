@@ -1219,7 +1219,33 @@ export class Hud {
         }
         if (!pts.length) continue;
 
-        const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+        /**
+         * AND THE HIT REGION IS THE WHOLE STONE, not just its lid.
+         *
+         * Lifting the outline to the top of a block put the tap region up there with
+         * it, which is right for the mark and wrong for the finger: a block stands
+         * nearly a storey tall and at this camera the face you are looking at is the
+         * SIDE of it, so the only part of a block that answered a tap was the sliver
+         * of lid visible over the top. Tapping the stone itself — the large, obvious,
+         * lit thing filling the frame — did nothing, and on a floor whose exit is a
+         * block puzzle that is not a fiddly reticle, it is a floor you cannot finish.
+         *
+         * So the box is grown over the prism: the lid corners the outline is drawn
+         * from, plus the same four at the block's own floor. The outline stays on the
+         * lid, because a ring drawn round the whole prism reads as a box in the air
+         * rather than a mark on a thing.
+         */
+        const hit: [number, number][] = pts.slice();
+        if (cg && cg.at(c.x, c.y) === Tile.Block) {
+          const base = cg.heightAt(c.x, c.y) * STEP_H;
+          for (const [ox, oz] of [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]] as const) {
+            project(new THREE.Vector3(c.x + ox, base, c.y + oz), corner);
+            if (corner.behind) continue;
+            hit.push([corner.x, corner.y]);
+          }
+        }
+
+        const xs = hit.map((q) => q[0]), ys = hit.map((q) => q[1]);
         let x0 = Math.min(...xs), x1 = Math.max(...xs);
         let y0 = Math.min(...ys), y1 = Math.max(...ys);
         /**

@@ -3227,6 +3227,22 @@ async function boot(): Promise<void> {
     const id = e.captiveId as WizardElement | undefined;
     const w = id ? WIZARD_BY_ID[id] : null;
     if (!w || !id || meta.freed.includes(id)) return;
+    /**
+     * ADJACENT AND FACING, like every other thing in this dungeon you reach out and
+     * touch.
+     *
+     * This was the one interaction that skipped `reachRefusal`, so a captive could be
+     * cut loose from across the room — or through the doorway of a room you had not
+     * entered — the moment their marker could be tapped. That makes the cell free,
+     * which is the opposite of what a cell is for: the walk to the cage IS the rescue,
+     * and the gate, the plate and the block puzzle in front of it are the price the
+     * floor charges for a wizard.
+     *
+     * Same refusal as the altar and the chest, in the same words, because a captive is
+     * a fixture you operate and the player has already learned this sentence.
+     */
+    const why = reachRefusal(e, w.name.toLowerCase());
+    if (why) { hud.addLog(why, 0xffcf5c); return; }
     meta.freed.push(id);
     if (!meta.wizards.includes(id)) meta.wizards.push(id);
     saveMeta(meta);
