@@ -787,13 +787,13 @@ function wind(
   /**
    * A CAGE YOU CANNOT OPEN IS WORSE THAN A CAGE WITH NO DOOR.
    *
-   * `placeCaptiveGate` is the encounter the design wants — "the gate IS the encounter" —
-   * and it stays the default. But it is only an encounter if the player holds the key,
-   * so a save that cannot shove gets the room without the portcullis: the rescue reads
-   * as weaker, and the alternative is a roster that can never be widened at all.
+   * "The gate IS the encounter", so the cage is always sealed. What changes is the KEY:
+   * a plate for a save that can shove a block onto it, and a bank of levers for one that
+   * cannot. An unsealed room was the first answer here and it was the wrong one — it makes
+   * the single appearance of that hero read as a body standing in a corridor.
    */
   if (wantCaptiveRoom) {
-    g.captiveRoom = (canShove ? placeCaptiveGate(g, rng) : pickCaptiveRoom(g, rng)) ?? -1;
+    g.captiveRoom = placeCaptiveGate(g, rng, canShove) ?? -1;
   }
   if (depth >= 6 && canShove) placeGate(g, rng);
 }
@@ -824,30 +824,7 @@ function wind(
  * the captive is placed by `populate`, long after the grid exists, so generation cannot be told
  * where they will be. It decides where they CAN be instead.
  */
-/**
- * A room for the captive with NO gate on it.
- *
- * The fallback for a save that cannot shove (`GenOpts.canShove`). It keeps the half of
- * `placeCaptiveGate`'s search that is about the room — big enough to hold a body and a
- * fixture, not the entrance, and not standing on the start or the stairs — and drops the
- * half that is about sealing it, because sealing it is what the player cannot undo.
- *
- * Deliberately NOT a relaxed version of the gate search. Trying to seal and giving up on
- * failure would make the room's shape depend on a mechanism that is not going to be
- * built, and the whole point here is that no portcullis is placed at all.
- */
-function pickCaptiveRoom(g: Grid, rng: Rng): number | null {
-  const sacred = new Set<number>([g.idx(g.start.x, g.start.y)]);
-  if (g.stairs) sacred.add(g.idx(g.stairs.x, g.stairs.y));
-  for (const room of rng.shuffle(g.rooms.filter((r) => r.kind !== 'entrance'))) {
-    if (room.tiles.length < 6) continue;
-    if (room.tiles.some(([x, y]) => sacred.has(g.idx(x, y)))) continue;
-    return room.id;
-  }
-  return null;
-}
-
-function placeCaptiveGate(g: Grid, rng: Rng): number | null {
+function placeCaptiveGate(g: Grid, rng: Rng, withPlate: boolean): number | null {
   /**
    * SEAL A ROOM'S DOORWAYS. Do not go looking for a corridor that cuts the map.
    *
@@ -902,20 +879,61 @@ function placeCaptiveGate(g: Grid, rng: Rng): number | null {
     }
     if (!ok) { for (const [k, t] of was) g.tiles[k] = t; continue; }
 
-    const plates: number[] = [];
+    /**
+     * The candidates are the same tiles either way: reachable with the cage SHUT, in a room
+     * that is not the cage, off the run's critical tiles, and not the mouth's own doorstep.
+     * A plate and a lever want exactly the same place — somewhere you have to walk to.
+     */
+    const spots: number[] = [];
     const [mx, my] = [[...mouths][0] % g.w, ([...mouths][0] / g.w) | 0];
     for (let k = 0; k < shut.length; k++) {
       if (!shut[k] || sacred.has(k) || g.surface[k] !== Surface.Plain) continue;
       if (g.roomOf[k] === 255 || inside.has(k)) continue;
       if (g.hazards.some((h) => g.idx(h.x, h.y) === k)) continue;
       const d = Math.abs((k % g.w) - mx) + Math.abs(((k / g.w) | 0) - my);
-      if (d >= 3) plates.push(k);
+      if (d >= 3) spots.push(k);
     }
-    if (!plates.length) { for (const [k, t] of was) g.tiles[k] = t; continue; }
+    if (!spots.length) { for (const [k, t] of was) g.tiles[k] = t; continue; }
 
-    const plate = rng.pick(plates);
-    g.surface[plate] = Surface.Plate;
-    for (const k of mouths) g.doors.push({ i: k, plate });
+    if (withPlate) {
+      const plate = rng.pick(spots);
+      g.surface[plate] = Surface.Plate;
+      for (const k of mouths) g.doors.push({ i: k, plate });
+      return room.id;
+    }
+
+    /**
+     * LEVERS INSTEAD, for a save that cannot shove a block onto a plate.
+     *
+     * One or two, and two only when there is room for two that are not next to each other —
+     * a second lever is what stops the cage being a switch beside a door, and it is the
+     * boss door's own trick at a smaller scale. A lever is a SURFACE, so it goes on standing
+     * floor and `populate` turns it into a fixture you tap.
+     *
+     * `walkAround` is asked of each, the same question `lock` asks of the boss levers: a
+     * handle in a slot with one way in is a handle the player walks a corridor to reach and
+     * then walks back out of, and it can be walled in outright by a block laid later.
+     */
+    /**
+     * A lever is SOLID, so it is asked both questions `lock` asks of the boss levers:
+     * `walkAround` for the passage case a flood cannot see, and `plugs` for the tile that
+     * genuinely cuts the map. Asked with the cage OPEN — the state the floor spends the
+     * rest of its life in once the player has thrown them.
+     */
+    for (const k of mouths) g.setDoorLift(k, 1);
+    const openBase = reachable(g);
+    const usable = rng.shuffle(spots)
+      .filter((k) => walkAround(g, k) && !plugs(g, k, openBase));
+    for (const k of mouths) g.setDoorLift(k, 0);
+    if (!usable.length) { for (const [k, t] of was) g.tiles[k] = t; continue; }
+    const levers = [usable[0]];
+    const far = usable.find((k) => {
+      const dx = (k % g.w) - (levers[0] % g.w), dy = ((k / g.w) | 0) - ((levers[0] / g.w) | 0);
+      return Math.abs(dx) + Math.abs(dy) >= 4;
+    });
+    if (far !== undefined) levers.push(far);
+    for (const k of levers) g.surface[k] = Surface.Lever;
+    g.captiveGate = { doors: [...mouths], levers, pulled: new Set<number>() };
     return room.id;
   }
   return null;
@@ -1306,6 +1324,16 @@ function strew(g: Grid, rng: Rng, depth: number): void {
     sacred.add(g.bossDoor.i);
     for (const j of g.bossDoor.levers) sacred.add(j);
   }
+  /**
+   * The captive cage's levers are as load-bearing as the boss door's, and for a harder
+   * reason: they are the ONLY way that room opens. A block laid on one buries the handle,
+   * and a block laid beside one can wall it into a slot — which is what `leverTiles` below
+   * is holding as solid while it tests, so both banks belong in it.
+   */
+  if (g.captiveGate) {
+    for (const d of g.captiveGate.doors) sacred.add(d);
+    for (const j of g.captiveGate.levers) sacred.add(j);
+  }
 
   /** A tile a block may be laid on: ordinary, empty, standing floor. */
   const bare = (i: number): boolean => {
@@ -1322,7 +1350,10 @@ function strew(g: Grid, rng: Rng, depth: number): void {
    * each made a sound decision and the pair of them walled the handle in. The levers are
    * held as wall for the duration of the test, which is what they will be to the player.
    */
-  const leverTiles = g.bossDoor ? g.bossDoor.levers : [];
+  const leverTiles = [
+    ...(g.bossDoor ? g.bossDoor.levers : []),
+    ...(g.captiveGate ? g.captiveGate.levers : []),
+  ];
   const withLevers = <T>(f: () => T): T => {
     const was = leverTiles.map((j) => g.tiles[j]);
     for (const j of leverTiles) g.tiles[j] = Tile.Wall;

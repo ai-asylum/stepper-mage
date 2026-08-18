@@ -208,6 +208,19 @@ export interface BossDoor {
   pulled: Set<number>;
 }
 
+/**
+ * A set of door tiles and the levers that raise them together.
+ *
+ * `pulled` is the levers currently thrown; every door in `doors` sits at
+ * `pulled.size / levers.length` of its travel, so a bank of two levers grinds every mouth
+ * of the cage halfway up on the first throw. Both directions, like the boss door's.
+ */
+export interface LeverGate {
+  doors: number[];
+  levers: number[];
+  pulled: Set<number>;
+}
+
 /** Do spark and shock run along this surface? */
 export function conducts(s: Surface): boolean {
   return s === Surface.Iron || s === Surface.Water;
@@ -341,6 +354,22 @@ export class Grid {
   captiveRoom = -1;
   /** The way into the boss room, and what opens it. Null on floors that have none. */
   bossDoor: BossDoor | null = null;
+  /**
+   * The captive's gate when it is opened by LEVERS rather than by a plate.
+   *
+   * Same object as the cage the plate seals and a different key, because the plate's key
+   * is a shoved block and a save that has not freed Vane cannot shove one (see
+   * `GenOpts.canShove`). A lever is the one mechanism in this game that any wizard can
+   * work, so it is what the cage falls back to — never an unsealed room, which would make
+   * the one appearance of that hero read as a body standing in a corridor.
+   *
+   * Shaped like `BossDoor` and deliberately not reusing it: a floor has one boss door, the
+   * compass points at it, and its sockets are drawn on it. This is several door TILES —
+   * every mouth of the sealed room — sharing one bank of levers, and each lever owns its
+   * share of the travel on all of them at once.
+   */
+  captiveGate: LeverGate | null = null;
+
 
   constructor(w: number, h: number) {
     this.w = w; this.h = h;

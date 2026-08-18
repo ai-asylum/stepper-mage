@@ -1223,6 +1223,24 @@ export class ClockView {
       this.drawDoor(g, bd.i, x, y, e, gateAcross(g, x, y));
     }
 
+    /**
+     * AND THE CAPTIVE'S CAGE when levers hold it, which is the one gate that is in
+     * neither list above.
+     *
+     * `g.doors` is plate-held gates and it is what the plate pass writes into; a cage
+     * opened by levers is deliberately not in it, or `refreshPlates` would hunt for a
+     * plate that does not exist and drop the bars every round. Which leaves it drawn by
+     * nothing at all — a room sealed by a portcullis nobody can see, with the player
+     * walking into empty air. Bars are what make it read as a cage rather than a bug.
+     */
+    const cg = g.captiveGate;
+    if (cg) {
+      for (const i of cg.doors) {
+        const x = i % g.w, y = (i / g.w) | 0;
+        this.drawDoor(g, i, x, y, g.heightAt(x, y) * STEP_H, gateAcross(g, x, y));
+      }
+    }
+
     for (let i = this.live; i < this.pool.length; i++) this.pool[i].visible = false;
   }
 

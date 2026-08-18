@@ -3163,13 +3163,28 @@ async function boot(): Promise<void> {
         hud.addLog('Too far. Stand next to it.', 0x9aa3ad);
         return;
       }
-      const bd = floor.grid.bossDoor;
-      if (!bd) return;
       const g = floor.grid;
-      const before = g.doorLift[bd.i];
+      /**
+       * WHICH MECHANISM THIS HANDLE BELONGS TO, asked before it is thrown.
+       *
+       * Two banks of levers exist on a floor now — the boss door's, and the captive cage's
+       * when the save cannot shove a block onto a plate — so the door to cut to is whichever
+       * one owns the tile under the player's finger. Read here rather than inside
+       * `pullLever` because the cut is a camera decision and the lever is a rules one.
+       *
+       * Every door of the mechanism is watched, not just the first: a cage with two mouths
+       * grinds both up together, and showing one of them is showing half the actuation.
+       */
+      const cg = g.captiveGate;
+      const i = g.idx(e.sprite.tx, e.sprite.ty);
+      const watched = cg && cg.levers.includes(i)
+        ? cg.doors
+        : (g.bossDoor && g.bossDoor.levers.includes(i) ? [g.bossDoor.i] : null);
+      if (!watched) return;
+      const before = watched.map((k) => g.doorLift[k]);
       const r = combat.pullLever(e.sprite.tx, e.sprite.ty);
       if (r === null) return;
-      showDoor(bd.i, before, g.doorLift[bd.i]);
+      watched.forEach((k, n) => showDoor(k, before[n], g.doorLift[k]));
     };
 
     /**

@@ -2275,8 +2275,29 @@ export class Combat {
    */
   pullLever(x: number, y: number): 'pulled' | 'opened' | 'released' | null {
     const g = this.floor.grid;
-    const bd = g.bossDoor;
     const i = g.idx(x, y);
+
+    /**
+     * THE CAPTIVE'S CAGE, when its key is levers rather than a plate.
+     *
+     * First, because it is the more specific mechanism: the boss door is the floor's one
+     * gate and this is a bank of handles that belongs to a room. Same rule for both — each
+     * lever owns its share of the travel and spends it in either direction — applied to
+     * every mouth of the cage at once, so a room shut by two doorways opens as one thing.
+     */
+    const cg = g.captiveGate;
+    if (cg && cg.levers.includes(i)) {
+      const wasSet = cg.pulled.has(i);
+      if (wasSet) { cg.pulled.delete(i); } else { cg.pulled.add(i); }
+      this.floor.markLever(i, !wasSet);
+      const lift = cg.pulled.size / Math.max(1, cg.levers.length);
+      for (const d of cg.doors) g.setDoorLift(d, lift);
+      this.floor.syncClock();
+      if (wasSet) return 'released';
+      return cg.pulled.size >= cg.levers.length ? 'opened' : 'pulled';
+    }
+
+    const bd = g.bossDoor;
     if (!bd || !bd.levers.includes(i)) return null;
 
     /**
