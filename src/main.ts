@@ -1860,7 +1860,7 @@ async function boot(): Promise<void> {
   const rollGolden = (rng: Rng): AltarOffer | null => {
     // Never a page the starting book already holds — you would begin the next run
     // holding that one anyway, so gilding it is a card that grants nothing.
-    const gild = ELEMENT_SPELLS.filter((sp) => !meta.loadout.includes(sp.id)).map((sp) => sp.id);
+    const gild = rosterPages().filter((sp) => !meta.loadout.includes(sp.id)).map((sp) => sp.id);
     if (goldenClaimed || !gild.length) return null;
     if (!goldenForced && !rng.chance(GOLDEN_CHANCE)) return null;
     return goldenOffer(rng.pick(gild));
@@ -1892,7 +1892,7 @@ async function boot(): Promise<void> {
     // Elements only: an altar grants PAGES, and ingredients have none. Deduped
     // because a book may legitimately hold a page twice.
     const owned = [...new Set(state.pages.filter(isPageElement))];
-    const unowned = ELEMENT_SPELLS.filter((sp) => !owned.includes(sp.id)).map((sp) => sp.id);
+    const unowned = rosterPages().filter((sp) => !owned.includes(sp.id)).map((sp) => sp.id);
     // A page cannot feed itself, so one rank-2 page buys nothing; it takes two.
     const rank2 = rng.shuffle(owned.filter((id) => (state.ranks[id] ?? 0) === 2));
 
@@ -2052,8 +2052,9 @@ async function boot(): Promise<void> {
    */
   const rollBlessings = (): AltarOffer[] => {
     const rng = new Rng(`${meta.best}:${state.depth}:blessing`);
-    const unowned = ELEMENT_SPELLS.filter((sp) => !state.pages.includes(sp.id));
-    const extra = rng.pick(unowned.length ? unowned : ELEMENT_SPELLS);
+    const roster = rosterPages();
+    const unowned = roster.filter((sp) => !state.pages.includes(sp.id));
+    const extra = rng.pick(unowned.length ? unowned : roster);
     /**
      * A DEEPER PAGE, and the run may not have one yet.
      *
@@ -2068,8 +2069,8 @@ async function boot(): Promise<void> {
      * three choices stay three choices.
      */
     const owned = state.pages.map((id) => SPELL_BY_ID[id]).filter(Boolean);
-    const spare = ELEMENT_SPELLS.filter((sp) => sp.id !== extra.id);
-    const deepen = rng.pick(owned.length ? owned : (spare.length ? spare : ELEMENT_SPELLS));
+    const spare = roster.filter((sp) => sp.id !== extra.id);
+    const deepen = rng.pick(owned.length ? owned : (spare.length ? spare : roster));
 
     const blank = {
       cost: null, amount: 0, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
@@ -2247,8 +2248,31 @@ async function boot(): Promise<void> {
    * decision, which is the toll `offerStartDepth` refuses to charge for the same
    * reason.
    */
+  /**
+   * THE PAGES THIS SAVE HAS A WIZARD FOR.
+   *
+   * A wizard IS an element — that is already the rule the mouth screen derives identity
+   * from — and until now it was the ONLY thing a wizard was. Every page pool in the game
+   * (the start menu, the altar draw, the golden page, the mouth blessings) rolled over
+   * all six elements from the first run, so a save that had never opened a cage could
+   * still be holding Decay on floor two. That made the roster cosmetic: freeing Kela won
+   * you a portrait and a different opening page, and nothing you could not already cast.
+   *
+   * So the pools are cut to the roster. Six elements is the END state of the chain, not
+   * its start, and every cage on the way down is now the only way to widen what the book
+   * can ever contain.
+   *
+   * HARVESTS ARE UNTOUCHED, deliberately. Drawing frost off a frozen fountain before you
+   * have freed Kela is the game showing you what is behind the next cage — it lasts one
+   * cast, cannot be stored and cannot be ranked, which is the difference between a taste
+   * and a page. The dungeon staying a component pouch is a pillar (`docs/DESIGN.md`); the
+   * BOOK is what the roster gates.
+   */
+  const rosterPages = () =>
+    ELEMENT_SPELLS.filter((sp) => meta.wizards.includes(sp.id as WizardElement));
+
   const startPageMenu = (): string[] => {
-    const pool = ELEMENT_SPELLS.map((sp) => sp.id).filter((id) => id !== gifted);
+    const pool = rosterPages().map((sp) => sp.id).filter((id) => id !== gifted);
     return new Rng(`${runSeed}-start-page`).sample(pool, meta.slots);
   };
 
