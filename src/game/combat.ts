@@ -738,7 +738,24 @@ export class Combat {
     const reagents = groundWas
       ? [...ownElements, SUBSTANCE_ELEMENT[groundWas]]
       : ownElements;
-    const leaves = groundLeaves(reagents);
+    /**
+     * GUST ALONE IS STILL THE ERASER, whatever the tile is holding.
+     *
+     * The reaction rows are consulted before gust's short-circuit so that a cast HOLDING
+     * both pages can say what the pair becomes — `gust + fire` ignites, `gust + stone`
+     * brings debris down, `gust + frost` ices. But `reagents` is the player's pages plus
+     * the substance already on the floor, so gusting a burning tile matched the ignite row
+     * off the fire it was aimed at: the eraser relit what it was sent to put out, and
+     * blowing out a fire became impossible with the one spell whose whole job it is.
+     *
+     * So the pair has to come from the HAND. If the player's own elements carry gust and
+     * make no reaction between themselves, the cast is gust acting alone and it clears —
+     * exactly the claim `groundUse` already makes one function away, which is why the two
+     * had to disagree for this to be wrong at all.
+     */
+    const leaves = ownElements.includes('gust') && groundReaction(ownElements) === null
+      ? 'gust'
+      : groundLeaves(reagents);
     if (leaves) {
       const g = this.floor.grid;
       const away: [number, number] = [
