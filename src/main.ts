@@ -598,7 +598,21 @@ async function boot(): Promise<void> {
 
   /** Learn a page mid-run: rebuild the book and re-sync it. */
   const learnPage = (id: string): void => {
-    if (!state.pages.includes(id)) state.pages.push(id);
+    /**
+     * A SECOND COPY IS A SECOND PAGE, not a no-op.
+     *
+     * This deduped, and everything downstream disagreed with it. `handSize` counts
+     * `state.pages`, so the book widening is what buys the hand that holds two cards;
+     * `varietyStep` and the volume ladder are written around repetition being a real hand
+     * ("three copies of the same page" is discussed there as the top rung); and
+     * `tornIds` is a LIST that counts duplicates rather than a set. So a duplicate grant —
+     * the mouth's wider-book blessing on a save whose roster is one element, which is now
+     * every new save — silently paid out nothing at all: same book, same hand of one.
+     *
+     * Ranks stay keyed by id and both copies share one, which is correct: a rank is how
+     * deeply the wizard knows Flame, not a property of the sheet it is written on.
+     */
+    state.pages.push(id);
     // Before the refresh, not after: the rank is what decides the name printed on the
     // sheet, so the stale art has to be evicted while the book is still being rebuilt.
     // Every caller writes `state.ranks[id]` immediately before calling this.
@@ -4490,6 +4504,29 @@ async function boot(): Promise<void> {
         if (UI_CONTROLS.has(ui.kind)) { act(ui); return; }
         const ribbon = book.ribbonAt(x, y);
         if (ribbon) { book.goToChapter(ribbon); return; }
+        /**
+         * A TAP ON THE OPEN PAGE TEARS IT.
+         *
+         * The upward drag stays — it is the gesture the book teaches, and the tension in
+         * the lift is most of what makes a tear read as one. This is the cheap way to say
+         * the same thing, and it is what every other fixture in the game already does:
+         * the thing under your finger is the thing you meant. On a tall phone, held in
+         * one hand, an 78px upward drag is the most expensive input in the game and it is
+         * also the one the player performs most often.
+         *
+         * After the ribbon and the HUD controls, never before: a chapter tab and the CAST
+         * pill both sit over the book, and a tap that tore a page instead of jumping to
+         * elementalism would be the book's own furniture firing the wrong mechanism.
+         *
+         * `refused` is explained in words through the same say-it-once channel the drag
+         * uses, so a full hand reads identically whichever gesture asked. `blocked` is the
+         * book mid-animation and stays silent, exactly as it does for a drag.
+         */
+        if (ui.kind === 'none' && !book.closed) {
+          const r = book.tapTear();
+          if (r === 'refused') explainRefusal(book.currentSpell);
+          if (r !== 'blocked') return;
+        }
         act(ui);
       }
       return;

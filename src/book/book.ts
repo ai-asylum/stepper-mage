@@ -563,6 +563,32 @@ export class Book {
   }
 
   /**
+   * TEAR THE PAGE THAT IS OPEN, on a tap.
+   *
+   * The upward drag is the gesture the book teaches and it stays the primary one — the
+   * page lifts with tension under the finger, which is what makes a tear feel like a
+   * tear. But a drag is also the most expensive input in the game to perform one-handed
+   * on a tall phone, and it is the input the player makes most often; a tap is the cheap
+   * way to say the same thing, exactly as tapping an altar or a lever is.
+   *
+   * Same refusals as `ripDrag`, in the same three words, so a tap and a drag can never
+   * disagree about whether a page may leave the book: `blocked` while the book is
+   * animating (silent, it is the book's own business), `refused` when the page cannot be
+   * torn (the caller explains why), `torn` when it left.
+   */
+  tapTear(): 'torn' | 'blocked' | 'refused' {
+    if (this.busy || this.introT >= 0 || this.flipActive) return 'blocked';
+    if (this.regrowT >= 0 && this.regrowT < 0.65) return 'blocked';
+    const spell = this.currentSpell;
+    if (!this.canRip(spell)) {
+      this.ripReturn = 1.4;   // the same deny snap the drag gives
+      return 'refused';
+    }
+    this.tear(spell);
+    return 'torn';
+  }
+
+  /**
    * Tear a specific page outright, no drag. Local addition on top of upstream:
    * the keyboard shortcuts and the scripted playtests need to tear page N
    * without simulating a gesture.
