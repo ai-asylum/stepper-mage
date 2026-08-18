@@ -90,7 +90,7 @@ The first release of Unbound Descent. Tear pages out of your grimoire, fuse them
 | App icon | 512×512, 32-bit PNG, ≤1 MB | ✅ [public/icons/icon-512.png](../public/icons/icon-512.png) |
 | Logo / splash | square | ✅ [store/logo.png](logo.png), formatted to `assets/splash.png` by `tools/genlogo.mjs` |
 | Feature graphic | 1024×500 PNG/JPEG | ✅ [store/feature-graphic.png](feature-graphic.png) — generated, centre band of `art/_work/raw/feature-a.png` |
-| Phone screenshots (2–8) | PNG/JPEG, 320–3840px/side, ratio no wider than 2:1 | ✅ 5 × 1040×2000 PNG (1:1.92) in [store/shots/](shots/) |
+| Phone screenshots (2–8) | PNG/JPEG, 320–3840px/side, ratio no wider than 2:1 | ✅ 5 × 1152×2048 PNG (9:16), dressed with slogans via Scenario, in [store/shots/](shots/); undressed captures kept in [store/shots/raw/](shots/raw/) |
 
 Play rejects WebP; these are PNG.
 
