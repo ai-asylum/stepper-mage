@@ -86,6 +86,17 @@ export function sameTarget(a: AimTarget | null, b: AimTarget | null): boolean {
 
 export type AltarOfferKind =
   | 'new' | 'upgrade' | 'sacrifice' | 'star' | 'golden'
+  /**
+   * A SECOND COPY of a page already in the book — the offer for a book that has nothing
+   * new left to learn.
+   *
+   * Not an 'upgrade'. A rank-up makes one page cast twice and leaves the hand exactly as
+   * wide as it was; a second copy widens the BOOK, and the hand is `state.pages.length`,
+   * so this is the only altar card that buys a slot to hold a second card in. On a roster
+   * of one wizard it is also the only route to a two-page cast at all, which is to say to
+   * fusion — the thing the game is about.
+   */
+  | 'copy'
   // A bundle of one belt ingredient. About a spell, but never about a PAGE, so it
   // does not satisfy the "no roll is spell-free" rule — see `rollExtras`, which is
   // where it is rolled and where it is gated on the belt being able to keep it.

@@ -1693,6 +1693,33 @@ async function boot(): Promise<void> {
    * eight-page book feels tight, so it cannot be waived just because the roll
    * happened to land on that page.
    */
+  /**
+   * A SECOND COPY OF A PAGE YOU ALREADY HOLD.
+   *
+   * The card a book with nothing new left to learn needs, and on a one-wizard roster that
+   * is every altar from the first one. `unowned` is empty there — the page pools are cut to
+   * the freed roster — so every offer was a rank-up, and a rank-up leaves the hand one card
+   * wide. A hand of one cannot fuse, and fusion is the game; the player was being handed
+   * bigger single casts forever and never the thing the tutorial is about.
+   *
+   * Capped at two copies of any one page. Three is a legal hand — the volume ladder is
+   * written for it — but three sheets of Flame in a book of one element is a book that has
+   * stopped being a choice, and the altar has better things to offer by then.
+   */
+  const copyOffer = (id: string): AltarOffer | null => {
+    const def = SPELL_BY_ID[id];
+    if (!def) return null;
+    const held = state.pages.filter((p) => p === id).length;
+    if (held !== 1) return null;
+    if (state.pages.length >= HAND_MAX) return null;
+    return {
+      id, colour: def.colour, cost: null, amount: 0, maxRank: MAX_RANK, golden: false,
+      kind: 'copy', name: def.name, tag: 'SECOND COPY',
+      detail: `A second ${def.name} for the book. Your hand widens to hold both.`,
+      rank: state.ranks[id] ?? 1, toRank: 0,
+    };
+  };
+
   const pageOffer = (id: string, spend: string | null): AltarOffer | null => {
     const def = SPELL_BY_ID[id];
     if (!def) return null;
@@ -1925,6 +1952,17 @@ async function boot(): Promise<void> {
      *
      * Shuffled within each tier, so WHICH new page and WHICH upgrade still varies.
      */
+    /**
+     * COPIES RANK WITH NEW PAGES, above every rank-up, and only when there is nothing new.
+     *
+     * Same order the comment below argues for and for the same reason: what the player
+     * needs from an altar is a spell they cannot already cast, and on a one-element roster
+     * a second copy is the only card that delivers one — Flame twice is a fusion, and a
+     * deeper Flame is the same cast bigger.
+     */
+    const copies = unowned.length
+      ? []
+      : rng.shuffle(owned).map((id) => copyOffer(id)).filter((o): o is AltarOffer => o !== null);
     const gone = golden ? [golden.id] : [];
     const ordered = [
       ...rng.shuffle(unowned.filter((id) => !gone.includes(id))),
@@ -1958,6 +1996,7 @@ async function boot(): Promise<void> {
     // satisfied by a card that grants no spell.
     const pages = [
       ...(golden ? [golden] : []),
+      ...copies,
       ...offerable.filter((o) => o.kind !== 'star'),
       ...offerable.filter((o) => o.kind === 'star'),
     ];
@@ -2423,6 +2462,18 @@ async function boot(): Promise<void> {
     const pageName = SPELL_BY_ID[o.id] ? rankName(o.id, state.ranks[o.id] ?? 1) : o.id;
 
     switch (o.kind) {
+      /**
+       * A SECOND COPY. The rank is left exactly where it was — this is another sheet of
+       * the same page, not a rung — and `learnPage` pushes it, which is what widens the
+       * hand (`handSize` counts `state.pages`).
+       */
+      case 'copy':
+        learnPage(o.id);
+        hud.setShout(`A SECOND ${o.name.toUpperCase()}`, o.colour);
+        hud.addLog(
+          `The altar yields a second ${o.name}. Your hand widens to hold it.`, o.colour,
+        );
+        break;
       case 'new':
         state.ranks[o.id] = 1;
         learnPage(o.id);
