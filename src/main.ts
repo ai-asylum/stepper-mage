@@ -2791,6 +2791,13 @@ async function boot(): Promise<void> {
       captiveWizard && captiveWizard.captiveSprite
         ? { id: captiveWizard.id, sprite: captiveWizard.captiveSprite }
         : null,
+      /**
+       * WHETHER THIS SAVE CAN WORK A PLATE, which decides whether the floor is allowed to
+       * build one. Gust is the only cast with `shove` and a block is the only weight that
+       * holds a gate up and lets you past it, so `canShove` is exactly "has Vane been
+       * freed" — see `GenOpts.canShove` for why a floor must not gate on it otherwise.
+       */
+      meta.wizards.includes('gust'),
     );
     engine.scene.add(floor.group);
 

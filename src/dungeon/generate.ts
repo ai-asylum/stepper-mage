@@ -30,6 +30,25 @@ export interface GenOpts {
    * generator has no business knowing either. It is told, and it answers with geometry.
    */
   wantCaptiveRoom?: boolean;
+  /**
+   * Can this save SHOVE? Told, for the same reason `wantCaptiveRoom` is told.
+   *
+   * A portcullis is held up by weight on its plate, and of the three things that can
+   * weigh a plate down — your boots, a body, a block of stone — only the block leaves
+   * you free to walk through the gap. Shoving stone is `cast.shove`, which is gust and
+   * nothing else, and gust is VANE, whose cage is on depth 5 and who is fourth in a
+   * chain that starts with Kela on depth 3.
+   *
+   * So a plate-gated floor built for a save that has not freed Vane is a floor with a
+   * mechanism it cannot work: the first two cages in the game sit behind the one lock
+   * whose only key is three cages further down. Every page pool is now cut to the
+   * roster, which turned that from a bad roll into the guaranteed opening of every new
+   * save — but it was always reachable, because a run that never rolled Gust hit it too.
+   *
+   * When false, nothing that needs a shove is built. The captive still gets a room; it
+   * simply is not sealed.
+   */
+  canShove?: boolean;
   /** Grid grows a little with depth so later floors feel bigger. */
   size?: number;
   /**
@@ -101,7 +120,7 @@ export function generate(opts: GenOpts): Grid {
   if (!layout.dressed) {
     dress(g, rng, opts.depth);
     raise(g, rng, opts.depth);
-    wind(g, rng, opts.depth, !!opts.wantCaptiveRoom);
+    wind(g, rng, opts.depth, !!opts.wantCaptiveRoom, opts.canShove !== false);
     lock(g, rng, opts.depth);
     /**
      * EVERY BOSS ROOM IS LOCKED, or this floor is not the floor.
@@ -682,7 +701,9 @@ function raise(g: Grid, rng: Rng, depth: number): void {
  * and the trapdoor last on 8 — it is the only one that can take a floor off you, and
  * it should arrive to a player who already trusts that a wind-up means something.
  */
-function wind(g: Grid, rng: Rng, depth: number, wantCaptiveRoom = false): void {
+function wind(
+  g: Grid, rng: Rng, depth: number, wantCaptiveRoom = false, canShove = true,
+): void {
   if (depth < 3) return;
 
   const sacred = new Set<number>([g.idx(g.start.x, g.start.y)]);
@@ -763,8 +784,18 @@ function wind(g: Grid, rng: Rng, depth: number, wantCaptiveRoom = false): void {
    * left on the grid for `populate` to read, and stays -1 when no room could be sealed, which is
    * a floor whose shape simply had nowhere to put one.
    */
-  if (wantCaptiveRoom) g.captiveRoom = placeCaptiveGate(g, rng) ?? -1;
-  if (depth >= 6) placeGate(g, rng);
+  /**
+   * A CAGE YOU CANNOT OPEN IS WORSE THAN A CAGE WITH NO DOOR.
+   *
+   * `placeCaptiveGate` is the encounter the design wants — "the gate IS the encounter" —
+   * and it stays the default. But it is only an encounter if the player holds the key,
+   * so a save that cannot shove gets the room without the portcullis: the rescue reads
+   * as weaker, and the alternative is a roster that can never be widened at all.
+   */
+  if (wantCaptiveRoom) {
+    g.captiveRoom = (canShove ? placeCaptiveGate(g, rng) : pickCaptiveRoom(g, rng)) ?? -1;
+  }
+  if (depth >= 6 && canShove) placeGate(g, rng);
 }
 
 /**
@@ -793,6 +824,29 @@ function wind(g: Grid, rng: Rng, depth: number, wantCaptiveRoom = false): void {
  * the captive is placed by `populate`, long after the grid exists, so generation cannot be told
  * where they will be. It decides where they CAN be instead.
  */
+/**
+ * A room for the captive with NO gate on it.
+ *
+ * The fallback for a save that cannot shove (`GenOpts.canShove`). It keeps the half of
+ * `placeCaptiveGate`'s search that is about the room — big enough to hold a body and a
+ * fixture, not the entrance, and not standing on the start or the stairs — and drops the
+ * half that is about sealing it, because sealing it is what the player cannot undo.
+ *
+ * Deliberately NOT a relaxed version of the gate search. Trying to seal and giving up on
+ * failure would make the room's shape depend on a mechanism that is not going to be
+ * built, and the whole point here is that no portcullis is placed at all.
+ */
+function pickCaptiveRoom(g: Grid, rng: Rng): number | null {
+  const sacred = new Set<number>([g.idx(g.start.x, g.start.y)]);
+  if (g.stairs) sacred.add(g.idx(g.stairs.x, g.stairs.y));
+  for (const room of rng.shuffle(g.rooms.filter((r) => r.kind !== 'entrance'))) {
+    if (room.tiles.length < 6) continue;
+    if (room.tiles.some(([x, y]) => sacred.has(g.idx(x, y)))) continue;
+    return room.id;
+  }
+  return null;
+}
+
 function placeCaptiveGate(g: Grid, rng: Rng): number | null {
   /**
    * SEAL A ROOM'S DOORWAYS. Do not go looking for a corridor that cuts the map.

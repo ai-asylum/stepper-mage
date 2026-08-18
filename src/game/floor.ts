@@ -197,7 +197,7 @@ export class Floor {
 
   private constructor(
     readonly depth: number, readonly seed: string, layout?: LayoutId,
-    wantCaptiveRoom = false,
+    wantCaptiveRoom = false, canShove = true,
   ) {
     this.theme = themeForDepth(depth);
     /**
@@ -213,10 +213,10 @@ export class Floor {
      * a body in a corridor, and the one time that hero is ever offered is the time it read as
      * nothing at all.
      */
-    let g = generate({ depth, seed, layout, wantCaptiveRoom });
+    let g = generate({ depth, seed, layout, wantCaptiveRoom, canShove });
     if (wantCaptiveRoom) {
       for (let n = 1; n < 200 && g.captiveRoom < 0; n++) {
-        g = generate({ depth, seed: `${seed}-g${n}`, layout, wantCaptiveRoom });
+        g = generate({ depth, seed: `${seed}-g${n}`, layout, wantCaptiveRoom, canShove });
       }
     }
     this.grid = g;
@@ -253,8 +253,9 @@ export class Floor {
   /** Build a floor, preloading every sprite it needs before returning. */
   static async create(
     depth: number, seed: string, layout?: LayoutId, captive: CaptiveSpot | null = null,
+    canShove = true,
   ): Promise<Floor> {
-    const f = new Floor(depth, seed, layout, !!captive);
+    const f = new Floor(depth, seed, layout, !!captive, canShove);
     // The captive's sprite is preloaded with the theme's, so the room is never built around a
     // body that has not decoded — a gate opening onto an invisible person is worse than no gate.
     await preloadSprites([
