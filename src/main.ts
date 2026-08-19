@@ -1702,20 +1702,34 @@ async function boot(): Promise<void> {
    * wide. A hand of one cannot fuse, and fusion is the game; the player was being handed
    * bigger single casts forever and never the thing the tutorial is about.
    *
-   * Capped at two copies of any one page. Three is a legal hand — the volume ladder is
-   * written for it — but three sheets of Flame in a book of one element is a book that has
-   * stopped being a choice, and the altar has better things to offer by then.
+   * Capped by `HAND_MAX` and nothing else: the hand is the book's length, so any cap below
+   * it is a cast slot the player cannot reach.
    */
   const copyOffer = (id: string): AltarOffer | null => {
     const def = SPELL_BY_ID[id];
     if (!def) return null;
+    /**
+     * UP TO THE HAND CEILING, not up to two.
+     *
+     * This capped at one extra sheet, on the reasoning that three Flames in a book of one
+     * element has stopped being a choice. That reasoning was about the BOOK and the cap
+     * lands on the HAND: `handSize` is `state.pages.length`, so refusing the third copy
+     * refused the third slot, and a one-wizard save was held at a two-card hand with an
+     * altar that had nothing to say about it. Three copies is a legal hand the volume
+     * ladder is written for, and the ceiling that matters is `HAND_MAX`, which is the
+     * number the whole turn economy is priced against.
+     */
     const held = state.pages.filter((p) => p === id).length;
-    if (held !== 1) return null;
-    if (state.pages.length >= HAND_MAX) return null;
+    if (held < 1 || state.pages.length >= HAND_MAX) return null;
     return {
       id, colour: def.colour, cost: null, amount: 0, maxRank: MAX_RANK, golden: false,
-      kind: 'copy', name: def.name, tag: 'SECOND COPY',
-      detail: `A second ${def.name} for the book. Your hand widens to hold both.`,
+      kind: 'copy', name: def.name,
+      // The card says WHICH copy it is, because "second copy" on the third sheet is the
+      // altar miscounting a book the player can see.
+      tag: held === 1 ? 'SECOND COPY' : 'THIRD COPY',
+      detail: held === 1
+        ? `A second ${def.name} for the book. Your hand widens to hold both.`
+        : `A third ${def.name} for the book. Your hand widens to hold all three.`,
       rank: state.ranks[id] ?? 1, toRank: 0,
     };
   };
