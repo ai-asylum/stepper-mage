@@ -2376,7 +2376,22 @@ async function boot(): Promise<void> {
     const rng = new Rng(`${meta.best}:${state.depth}:blessing`);
     const roster = rosterPages();
     const unowned = roster.filter((sp) => !state.pages.includes(sp.id));
-    const extra = rng.pick(unowned.length ? unowned : roster);
+    /**
+     * A WIDER BOOK MEANS A SPELL YOU DO NOT HAVE. Never a second copy of the one you
+     * are carrying.
+     *
+     * This fell back to the whole roster when there was nothing new, which on a narrow
+     * roster is most of the time — so the card offered the element the player had just
+     * been given as their starting page. That is not a wider book, it is the same spell
+     * twice, and it is worthless the moment the hand can hold two of anything: a second
+     * Flame does nothing the first did not, where a Frost beside a Flame is a fusion.
+     * Widening the run is the whole job of this card, and duplicating is the one outcome
+     * that cannot do it.
+     *
+     * With nothing new to offer the card is DROPPED rather than faked (`canWiden`). Two
+     * real choices beat three where one is furniture.
+     */
+    const extra = unowned.length ? rng.pick(unowned) : null;
     /**
      * A DEEPER PAGE, and the run may not have one yet.
      *
@@ -2391,7 +2406,7 @@ async function boot(): Promise<void> {
      * three choices stay three choices.
      */
     const owned = state.pages.map((id) => SPELL_BY_ID[id]).filter(Boolean);
-    const spare = roster.filter((sp) => sp.id !== extra.id);
+    const spare = roster.filter((sp) => sp.id !== extra?.id);
     const deepen = rng.pick(owned.length ? owned : (spare.length ? spare : roster));
 
     const blank = {
@@ -2407,9 +2422,9 @@ async function boot(): Promise<void> {
      * element already in the book, and the player is offered a Flame they cannot use for
      * the rest of the run. Two real axes beat three cards where one is furniture.
      */
-    const canWiden = state.pages.length < HAND_MAX;
+    const canWiden = extra !== null && state.pages.length < HAND_MAX;
     return [
-      ...(canWiden ? [{
+      ...(canWiden && extra ? [{
         ...blank, kind: 'blessing' as const, id: extra.id, name: extra.name,
         tag: 'a wider book',
         colour: extra.colour,
@@ -2502,9 +2517,23 @@ async function boot(): Promise<void> {
 
   /** Wait for the open chooser to be answered. The mouth is the only place that
    *  blocks on one — everywhere else the modal simply owns the taps until it closes. */
+  /**
+   * Wait until the player has answered whatever the screen is asking.
+   *
+   * Watches the ROSTER as well as the offer cards, and that is not a nicety: the page
+   * question is asked through `hud.roster` and every other question through
+   * `hud.offers`, so polling only the latter resolved the moment the roster went up —
+   * before the player had picked anyone.
+   *
+   * The consequence was invisible and quite bad. The blessings were then rolled against
+   * an EMPTY book, so "a wider book" could offer the very element the player was about
+   * to choose as their starting page: the one card whose whole job is to widen the run
+   * handed you a second copy of your only spell. Two things wrong at once — the wrong
+   * page, and a card whose text disagreed with what it granted.
+   */
   const waitForChoice = (): Promise<void> => new Promise((resolve) => {
     const tick = (): void => {
-      if (!hud.offers) { resolve(); return; }
+      if (!hud.offers && !hud.roster) { resolve(); return; }
       setTimeout(tick, 60);
     };
     tick();
@@ -2736,9 +2765,36 @@ async function boot(): Promise<void> {
         state.ranks[o.id] = o.toRank;
         hud.addLog(`You set out with ${o.name}. ${o.detail}`, o.colour);
       } else if (o.id) {
-        state.ranks[o.id] = 1;
-        learnPage(o.id);
-        hud.addLog(`You set out with ${o.name} already in the book.`, o.colour);
+        /**
+         * CHECKED AGAIN AT CLAIM TIME, because the card may have been rolled before the
+         * book had its page in it.
+         *
+         * The page comes from the roster pick and that resolves asynchronously, so the
+         * blessing cards can be built while `state.pages` is still empty — which is
+         * exactly how "a wider book" ended up offering the element the player was about
+         * to start with. Filtering at roll time is not enough on its own; the question
+         * has to be asked again at the moment the page would actually be granted.
+         *
+         * A duplicate is swapped for something genuinely new. If the roster has nothing
+         * new left, the blessing pays the OTHER thing it can honestly give — a rank on
+         * the page you hold — rather than a second copy that does nothing.
+         */
+        const dupe = state.pages.includes(o.id);
+        const fresh = dupe
+          ? rosterPages().find((sp) => !state.pages.includes(sp.id))?.id ?? null
+          : o.id;
+        if (fresh) {
+          state.ranks[fresh] = 1;
+          learnPage(fresh);
+          const name = SPELL_BY_ID[fresh]?.name ?? fresh;
+          hud.addLog(`You set out with ${name} already in the book.`, SPELL_BY_ID[fresh]?.colour);
+        } else {
+          state.ranks[o.id] = 2;
+          syncPageRanks();
+          hud.addLog(
+            `Nothing new to carry — you set out with ${rankName(o.id, 2)} instead.`, o.colour,
+          );
+        }
       } else {
         // Both, and in that order. Raising the ceiling alone would hand the player a
         // bar that begins the run already missing the blessing they just took.
