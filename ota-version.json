@@ -1,0 +1,4 @@
+{
+  "version": "1.0.1",
+  "comment": "OTA web-bundle version. MUST stay above the Android versionName in android/app/build.gradle (currently 1.0) — the plugin reports versionName as the running version on a fresh install, so anything at or below it is never offered. Bump the last number to publish a new bundle; leaving it alone means a Vercel redeploy serves the same version and installed apps do not re-download the whole bundle for nothing."
+}

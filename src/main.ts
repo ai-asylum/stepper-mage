@@ -3687,6 +3687,18 @@ async function boot(): Promise<void> {
   await enterFloor(1);
 
   /**
+   * THE BUNDLE RAN, so the updater may keep it.
+   *
+   * Fired here rather than at the top of boot because it is a liveness claim: a
+   * downloaded bundle is installed optimistically and reverted unless something
+   * certifies it within `appReadyTimeout`, and a call made before the first floor
+   * exists certifies nothing. A floor is built, so this bundle works.
+   *
+   * Every boot, including boots of the copy inside the AAB — see `notifyBootOk`.
+   */
+  void import('./systems/liveUpdates').then((m) => m.notifyBootOk());
+
+  /**
    * THE MOUTH, in order: where to begin, which page, then what else.
    *
    * Depth first, because a blessing chosen before knowing which floor you land on is
