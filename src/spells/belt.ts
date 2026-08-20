@@ -16,12 +16,60 @@
  * `Roadmap/Ingredient_Belt.md` puts "ingredients surviving a run" out of scope.
  */
 import type { Rng } from '../core/rng';
-import { INGREDIENT_IDS, SPELL_BY_ID, isIngredient } from './spells';
+import { INGREDIENT_IDS, SPELL_BY_ID, isIngredient, isFixtureComponent } from './spells';
 
-/** One pouch loop: which ingredient, and how many are in it. */
+/** One pouch: which component, and how many are in it. */
 export interface BeltSlot {
   id: string;
   count: number;
+}
+
+/**
+ * HOW BIG A POUCH IS, in units. The tree buys the tier, not the numbers.
+ *
+ * Capacity is an allowance rather than a slot count so that one table can price
+ * every substance against every pouch. The alternative — a per-substance stack cap
+ * — needs a second table and then an exception every time the two disagree.
+ */
+export const POUCH_UNITS = [5, 10, 20] as const;
+export type PouchTier = 0 | 1 | 2;
+
+/**
+ * WHAT ONE OF A THING WEIGHS, and therefore how many fit.
+ *
+ * This is the value dial, and it has a fiction behind it so it needs no exceptions:
+ * water is light and a pouch holds a lot of it; an open flame costs four units
+ * because you are carrying an open flame; golem clay is the heaviest thing in the
+ * dungeon, so a 20-unit pouch holds exactly two and a 5-unit pouch cannot hold any.
+ * The cap nobody has to remember is the one that falls out of arithmetic.
+ *
+ * It says the same thing `HARVEST_DEPTH` says in the world (`spells.ts`): what is
+ * cheap is deep and light, what is precious is shallow and heavy.
+ *
+ * Anything absent weighs 1 — the ingredients the belt already held are the baseline
+ * this is measured against, not a special case.
+ */
+const WEIGHT: Readonly<Record<string, number>> = {
+  water: 1,
+  stone: 1,
+  oil: 2,
+  flame: 4,
+  starlight: 5,
+  clay: 10,
+};
+
+export function weightOf(id: string): number {
+  return WEIGHT[id] ?? 1;
+}
+
+/** Units a pouch of this tier holds. */
+export function pouchUnits(tier: PouchTier): number {
+  return POUCH_UNITS[tier];
+}
+
+/** Units a stack is using. */
+export function slotUnits(slot: BeltSlot): number {
+  return slot.count * weightOf(slot.id);
 }
 
 export interface BeltState {
@@ -34,6 +82,15 @@ export interface BeltState {
    * twice is a capacity a refund can leave stale.
    */
   capacity: number;
+  /**
+   * How big each pouch is, as an index into `POUCH_UNITS`. Bought separately from
+   * how MANY pouches there are, because the two answer different questions: breadth
+   * is how many different things you can carry, depth is how much of one.
+   *
+   * Derived from the owned node set in the same one place `capacity` is, for the
+   * same reason — a capacity stored twice is a capacity a refund can leave stale.
+   */
+  tier: PouchTier;
   /**
    * DEAD. It counted the components TimeSand had already paid for, and under
    * cast = 1 turn no component costs a turn, so nothing writes it and nothing spends
@@ -77,8 +134,8 @@ export const ALTAR_INGREDIENTS = 3;
 /** The coin flip on a third, for chests and bosses. */
 export const EXTRA_DROP_CHANCE = 0.5;
 
-export function newBelt(capacity: number): BeltState {
-  return { slots: [], capacity: Math.max(0, capacity), free: 0, refusal: null };
+export function newBelt(capacity: number, tier: PouchTier = 0): BeltState {
+  return { slots: [], capacity: Math.max(0, capacity), tier, free: 0, refusal: null };
 }
 
 /** How many of this ingredient are on the belt. */
@@ -102,14 +159,48 @@ export function beltTotal(belt: BeltState): number {
  */
 export const BELT_LOCKED = 'You have nowhere to keep it — your belt has no loops.';
 
-export function beltRefusalFor(belt: BeltState, id: string): string | null {
-  if (!isIngredient(id)) return 'That is not something a pouch will hold.';
-  if (belt.capacity <= 0) return BELT_LOCKED;
-  if (beltHeld(belt, id) > 0) return null;
-  if (belt.slots.length >= belt.capacity) {
-    return `Every loop is full. Spend something before taking ${SPELL_BY_ID[id]?.name ?? id}.`;
+/** Can a pouch hold this at all — ingredients, and anything harvested. */
+export function pouchable(id: string): boolean {
+  return isIngredient(id) || isFixtureComponent(id);
+}
+
+/**
+ * How many more of `id` the belt could take right now.
+ *
+ * Asked of the whole belt rather than of one pouch, because a stack that does not
+ * fit in its own pouch may still fit in an empty one — and because every caller
+ * wants the same answer: is there room, and how much.
+ */
+export function beltRoom(belt: BeltState, id: string): number {
+  if (!pouchable(id) || belt.capacity <= 0) return 0;
+  const w = weightOf(id);
+  const units = pouchUnits(belt.tier);
+  if (w > units) return 0;                       // too heavy for this tier, at any count
+  let room = 0;
+  for (const slot of belt.slots) {
+    if (slot.id === id) room += Math.floor((units - slotUnits(slot)) / w);
   }
-  return null;
+  const empty = Math.max(0, belt.capacity - belt.slots.length);
+  return room + empty * Math.floor(units / w);
+}
+
+export function beltRefusalFor(belt: BeltState, id: string): string | null {
+  if (!pouchable(id)) return 'That is not something a pouch will hold.';
+  if (belt.capacity <= 0) return BELT_LOCKED;
+  const name = SPELL_BY_ID[id]?.name ?? id;
+  /**
+   * TOO HEAVY is its own refusal, and it is the one that teaches the tier.
+   *
+   * Golem clay in a small pouch is not "your belt is full" — the belt may be empty
+   * — it is "this pouch is not big enough for that", which points at the upgrade
+   * instead of at the contents. Getting these two confused is how a player concludes
+   * the game is broken rather than that they need a bigger pouch.
+   */
+  if (weightOf(id) > pouchUnits(belt.tier)) {
+    return `${name} is too heavy for a pouch this size.`;
+  }
+  if (beltRoom(belt, id) > 0) return null;
+  return `Every pouch is full. Drop something before taking ${name}.`;
 }
 
 /** Record a refusal so the strap can pulse for it. Returns the same reason. */
@@ -128,11 +219,66 @@ export function beltRefuse(belt: BeltState, why: string): string {
 export function beltAdd(belt: BeltState, id: string, n = 1): string | null {
   const why = beltRefusalFor(belt, id);
   if (why) return beltRefuse(belt, why);
-  const slot = belt.slots.find((s) => s.id === id);
-  if (slot) slot.count += n;
-  else belt.slots.push({ id, count: n });
+  if (beltRoom(belt, id) < n) {
+    return beltRefuse(belt, `There is not room for ${n} ${SPELL_BY_ID[id]?.name ?? id}.`);
+  }
+  const w = weightOf(id);
+  const units = pouchUnits(belt.tier);
+  let left = n;
+  // Top up the pouches already holding this before opening a new one: a substance
+  // spread across two half-empty pouches is two pouches the player cannot use for
+  // anything else.
+  for (const slot of belt.slots) {
+    if (left <= 0) break;
+    if (slot.id !== id) continue;
+    const fits = Math.floor((units - slotUnits(slot)) / w);
+    const take = Math.min(fits, left);
+    slot.count += take; left -= take;
+  }
+  while (left > 0 && belt.slots.length < belt.capacity) {
+    const take = Math.min(Math.floor(units / w), left);
+    belt.slots.push({ id, count: take });
+    left -= take;
+  }
   belt.refusal = null;
   return null;
+}
+
+/**
+ * Empty some or all of one pouch. Returns how many were actually dropped.
+ *
+ * The pouch panel's DROP, and the only way anything on the belt is destroyed. The
+ * caller is what turns the returned count into ground — this function knows about
+ * the belt and deliberately nothing about the floor.
+ */
+export function beltDrop(belt: BeltState, index: number, n: number): number {
+  const slot = belt.slots[index];
+  if (!slot) return 0;
+  const took = Math.max(0, Math.min(n, slot.count));
+  slot.count -= took;
+  if (slot.count <= 0) belt.slots.splice(index, 1);
+  return took;
+}
+
+/**
+ * Move a whole pouch onto another. Same substance merges up to the cap and leaves
+ * the remainder where it was; anything else swaps the two.
+ *
+ * Returns false when the move would do nothing, so the panel can grey the target
+ * rather than offering a button that no-ops.
+ */
+export function beltMove(belt: BeltState, from: number, to: number): boolean {
+  const a = belt.slots[from], b = belt.slots[to];
+  if (!a || from === to) return false;
+  if (!b) { belt.slots[to] = a; belt.slots.splice(from, 1); return true; }
+  if (a.id !== b.id) { belt.slots[from] = b; belt.slots[to] = a; return true; }
+  const w = weightOf(a.id);
+  const fits = Math.floor((pouchUnits(belt.tier) - slotUnits(b)) / w);
+  if (fits <= 0) return false;
+  const take = Math.min(fits, a.count);
+  b.count += take; a.count -= take;
+  if (a.count <= 0) belt.slots.splice(from, 1);
+  return true;
 }
 
 /**

@@ -52,7 +52,7 @@ import {
 } from './game/tuning';
 import { setGilded, setPageRanks } from './book/pageTexture';
 import {
-  NODE_BY_ID, TREE, derivedBeltSlots, derivedGolemInfusion, derivedGolemsKept,
+  NODE_BY_ID, TREE, derivedBeltSlots, derivedGolemInfusion, derivedGolemsKept, derivedPouchTier,
   derivedHandSize, derivedSlots, buyBlocker, isNodeId, migrateOwned, owns,
   refundBlocker, sanitizeOwned, type NodeId,
 } from './meta/tree';
@@ -456,7 +456,7 @@ async function boot(): Promise<void> {
     stars: 0,
     depth: 1,
     // Empty, and as wide as the tree has paid for. A run never inherits a vial.
-    belt: newBelt(derivedBeltSlots(meta.nodes)),
+    belt: newBelt(derivedBeltSlots(meta.nodes), derivedPouchTier(meta.nodes)),
   };
 
   /**
@@ -466,7 +466,12 @@ async function boot(): Promise<void> {
    * is the same rule `applyTree` states for hand size and for the same reason: a
    * refund must not be able to leave a stale ceiling behind. This is the only writer.
    */
-  const syncBelt = (): void => beltSetCapacity(state.belt, derivedBeltSlots(meta.nodes));
+  const syncBelt = (): void => {
+    beltSetCapacity(state.belt, derivedBeltSlots(meta.nodes));
+    // The tier moves with the count and through the same one writer, or a refunded
+    // depth node leaves pouches that are still deep.
+    state.belt.tier = derivedPouchTier(meta.nodes);
+  };
 
   const fx = new CastFx();
   engine.scene.add(fx.group);

@@ -57,6 +57,8 @@ export interface TreeNode {
   readonly slots?: number;
   /** Raises the belt to this many loops. Phase 5 reads it. */
   readonly beltSlots?: number;
+  /** Pouch size tier this node raises the ceiling to: 0 small, 1 sturdy, 2 deep. */
+  readonly pouchTier?: number;
   /** How many golems survive the stairs. Phase 6 reads it. */
   readonly golemsKept?: number;
   /** A kept golem keeps its rank and elemental infusion. Phase 6 reads it. */
@@ -237,6 +239,22 @@ export function derivedBeltSlots(owned: readonly string[]): number {
    */
   if (!BELT_ENABLED) return 0;
   return ceiling(owned, 0, (n) => n.beltSlots);
+}
+
+/**
+ * How big each pouch is, as a `PouchTier` index — the second belt axis.
+ *
+ * Bought separately from how MANY pouches there are, because breadth and depth are
+ * different questions: how many different things can I carry, against how much of
+ * one. Derived here for the same reason the count is, so a refund cannot leave a
+ * stale tier behind.
+ *
+ * Zeroed with the rest of the belt while the flag is off.
+ */
+export function derivedPouchTier(owned: readonly string[]): 0 | 1 | 2 {
+  if (!BELT_ENABLED) return 0;
+  const n = ceiling(owned, 0, (node) => node.pouchTier);
+  return (n > 2 ? 2 : n < 0 ? 0 : n) as 0 | 1 | 2;
 }
 
 export function derivedGolemsKept(owned: readonly string[]): number {

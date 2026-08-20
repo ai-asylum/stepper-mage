@@ -1239,6 +1239,17 @@ export function harvestDepthOf(propId: string): number {
  * `flame` and never as `fire`, or `Combat.byRank` would find the player's Fireball
  * rank sitting on it.
  */
+/**
+ * Is this component something a fixture yields — the things the belt can now hold
+ * beside its ingredients?
+ *
+ * Asked of the id rather than the element because the hand holds ids, and harvested
+ * fire arrives as `flame` precisely so it cannot inherit a Fireball rank.
+ */
+export function isFixtureComponent(id: string): boolean {
+  return FIXTURE_SPELLS.some((s) => s.id === id);
+}
+
 export function harvestOf(propId: string): string | null {
   const el = PROP_ELEMENT[propId];
   if (!el) return null;
