@@ -7,7 +7,7 @@ stands. This one is about **what the nodes should be**, because the game the tre
 was written for is no longer the game being played.
 
 Revised after design review. Two nodes from the first draft are **deleted, not
-parked** — see §6. Nothing in `src/meta/tree.ts` has been changed.
+parked** — see §5. Nothing in `src/meta/tree.ts` has been changed.
 
 ---
 
@@ -21,7 +21,7 @@ One rule over all of it:
 > **The tree buys ACCESS and OPTIONS. It never buys a number.**
 
 Exactly one node bends that rule and it is a pacing node rather than a power one
-(§4). Everything else hands the player a verb they did not have, or moves where a
+(§3). Everything else hands the player a verb they did not have, or moves where a
 run starts along an axis they already understand.
 
 The largest single change is not a node at all. It is that **harvesting gets an
@@ -30,34 +30,7 @@ teaches — and pulls the golem chain back into reach on the way.
 
 ---
 
-## 1. Why the current tree is out of sync
-
-Measured against the code, not the design docs.
-
-**Half of it is unreachable.** `belt3`, `belt6`, `corpseRaising`, `golemKeep1`,
-`golemInfusion`, `golemKeep2` all sit behind the ingredient belt and the golems.
-`BELT_ENABLED` is `false` in [src/flags.ts](../src/flags.ts) and object animation
-is a belt ingredient, so none of the six do anything. They are honestly labelled
-in the data (`live: false`) but the player cannot see that label: from their
-chair, half the sky is priced and inert.
-
-**Two live nodes describe the wrong mechanic.** `hand2`/`hand3` raise a ceiling,
-but `handSize()` is `max(meta.handSize, min(HAND_MAX, state.pages.length))` and
-altars now hand out second and third copies of a page. The hand widens *inside a
-run* on its own. These nodes now decide whether you **start** wide, which is a
-real thing to sell and not what the text says.
-
-**One live node can do nothing on a new save.** `slots4` widens the starting book
-to four pages, but the book only holds elements whose wizard you have freed. On a
-one-wizard roster it buys a slot with nothing to put in it.
-
-**And the thing the player is chasing is not on the tree.** Since the roster
-gate, every element in the book is downstream of a cage — and the screen the game
-calls progression does not mention cages at all.
-
----
-
-## 2. What the research says, and what it rules out
+## 1. What the research says, and what it rules out
 
 The pattern in the genre's own discussion is consistent.
 
@@ -95,12 +68,12 @@ and anything the game needs before it is fair. The game must stay winnable with
 
 ---
 
-## 3. Harvesting gets an inventory
+## 2. Harvesting gets an inventory
 
 This is the centre of the proposal. It replaces the first draft's worst idea
-(§6) and it resolves three separate problems at once.
+(§5) and it resolves three separate problems at once.
 
-### 3.1 Fixtures get depth
+### 2.1 Fixtures get depth
 
 A harvestable object holds a **finite** number of draws, set by how valuable its
 element is:
@@ -127,7 +100,7 @@ Empty must read in the world, not in a widget: a snuffed candelabra, a dry
 barrel with its lid off. A pip counter on a fixture is a readout, and this game
 has no other readouts in the world.
 
-### 3.2 The belt is the sides of the screen
+### 2.2 The belt is the sides of the screen
 
 Not a second bar. Three slots **vertically down the left edge**, hanging under
 the player portrait, where nothing else lives. The book owns the bottom, the
@@ -138,7 +111,7 @@ That placement also carries a meaning the old strip did not: the portrait is
 *you*, and the belt is what you are carrying — a column of things on your person,
 beside the picture of your person.
 
-### 3.3 The UX, decided rather than left open
+### 2.3 The UX, decided rather than left open
 
 The messy part is fill order and movement, so here is a rule set that needs no
 dragging at all — dragging is the one gesture this game does not otherwise use.
@@ -160,19 +133,19 @@ the game's whole input vocabulary is taps and swipes.
 **Belt contents survive a cast; hand contents are spent.** That is the line
 between the two containers and it is the whole reason the belt is worth having.
 
-### 3.4 What this buys the design
+### 2.4 What this buys the design
 
 - The belt gets a **reason to exist and a place to be taught**: you unlock it,
   you harvest into it, and the perk itself is the tutorial. That is the
   gradual-tutorial pattern from the research, applied to the one feature that has
   been shelved for lack of an on-ramp.
-- **The golems come back** (§5).
+- **The golems come back** (§4).
 - Harvesting stops being a one-shot and becomes a thing you *plan*, without ever
   becoming a faucet.
 
 ---
 
-## 4. The proposal
+## 3. The proposal
 
 Four chains, nine nodes. Prices in the existing unit — one good run ≈ 70 stars.
 
@@ -211,7 +184,7 @@ the progression.
 | **A Louder Cry** | 60 | — | The compass points at the cage on floors that hold one. |
 
 Information, which is the cheapest honest thing a tree can sell. One node, not
-two — see §6.
+two — see §5.
 
 ### Chain D — THE MOUTH (where a run starts, and what it earns)
 
@@ -238,7 +211,7 @@ the only one whose absence costs the player no options.
 
 ### What is deleted
 
-`corpseRaising`, `golemKeep1`, `golemInfusion`, `golemKeep2` (until §5),
+`corpseRaising`, `golemKeep1`, `golemInfusion`, `golemKeep2` (until §4),
 `blessingWider` (phase never landed), `slots4` (the roster owns the book's width
 now).
 
@@ -248,7 +221,7 @@ star that does nothing teaches the player that the tree lies.
 
 ---
 
-## 5. The golems, brought back into reach
+## 4. The golems, brought back into reach
 
 The golem chain was shelved because Animate needs an ingredient and infinite
 Animate was rejected. The belt-with-depth answers both: put the animation
@@ -268,7 +241,7 @@ and on the belt existing. It should re-enter the tree in the same pass that flip
 
 ---
 
-## 6. Two nodes from the first draft, and why they are gone
+## 5. Two nodes from the first draft, and why they are gone
 
 **"Two Draughts" — a harvest fills two hand slots with the same element.**
 Deleted. It spends the player's scarcest resource — hand slots — on redundancy,
@@ -285,7 +258,7 @@ earned in.
 
 ---
 
-## 7. Open question: the compass
+## 6. Open question: the compass
 
 The compass was specified for **quests**, and quests were never built, so it
 currently points at one thing and is otherwise idle. There is an obvious use for
@@ -316,7 +289,7 @@ the run.
 
 ---
 
-## 8. Invariants worth writing into the code
+## 7. Invariants worth writing into the code
 
 1. **Winnable at zero.** No node is required to reach depth ten. If a balance
    pass ever depends on an owned node, that is the bug.
@@ -328,7 +301,7 @@ the run.
 
 ---
 
-## 9. Still open
+## 8. Still open
 
 - **Prices.** Placed by feel against one-run-≈-70-stars; they want a pass once
   run length settles.
