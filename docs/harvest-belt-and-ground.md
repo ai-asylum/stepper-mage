@@ -216,7 +216,18 @@ watching in play rather than pre-nerfing.
 
 ### 1.6 Inventory management
 
-Four verbs, and the common one stays a single tap.
+Every gesture, in one place:
+
+| To | Do | Costs |
+|---|---|---|
+| Put a component **in** the belt | swipe up off the hand, or tap it | free |
+| Take one **out** | swipe right out of the pouch, or tap it | free |
+| **Move or merge** a stack | long-press the pouch to lift, tap the target pouch | free |
+| **Delete** a stack | long-press the pouch to lift, tap the floor — it pours out | one turn |
+
+Deleting is pouring, and pouring **empties the whole stack** onto the tile you are
+standing on. To keep part of it, draw the units you want into the hand first and
+pour the rest — there is no partial pour and no slider.
 
 **Harvest auto-stacks.** A draw joins an existing stack of the same substance
 with room; failing that it takes the first empty slot; failing that it is refused
@@ -242,22 +253,16 @@ the wrong pouch on a thumb's wobble. Pulling a stack OUT of the belt is a swipe
 because it only has to leave the column; putting one INTO a particular slot has to
 be precise, and precision is what a tap gives and a drag does not.
 
-**Remove is POUR IT OUT — the only way anything is ever destroyed.** While a
-stack is lifted, tap the floor: it empties onto the tile you are standing on as
-ground. Water makes a puddle, oil a slick, fire lights the tile under your own
-feet.
+**Pouring is the only way anything is ever destroyed**, and it is the answer to a
+full belt: refusal names the substance, you pour something out, you have room.
+Water makes a puddle, oil a slick, fire lights the tile under your own feet.
 
-Because this is the sole destructive verb, it is also the answer to a full belt.
-The loop the player learns is: belt full → refusal that names the substance → pour
-something out → room. Every step of that is visible and every step is theirs.
-
-This is the part worth arguing for. Discard is normally a delete — a bin icon, a
-confirm, and a small feeling of waste. Pouring makes room *and* makes terrain, so
-emptying a slot is a play: dumping five oil in a doorway and backing away is a
-setup, and pouring fire on your own tile is a mistake the game already knows how
-to punish. It reuses the ground system rather than adding a system, it needs no
-new art beyond what a poured substance already draws, and it means the answer to
-"my belt is full" is a decision instead of an apology.
+Discard is normally a delete — a bin icon, a confirm, and a small feeling of waste.
+Pouring makes room *and* makes terrain, so emptying a pouch is a play: five oil in
+a doorway and back away is a setup, and pouring fire on your own tile is a mistake
+the game already knows how to punish. It reuses the ground system rather than
+adding one, needs no art a poured substance does not already have, and makes the
+answer to "my belt is full" a decision instead of an apology.
 
 The golem draught pours as nothing — a wasted slot and a stain. That is the game
 saying out loud what the cap of 2 implies.
