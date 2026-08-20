@@ -1,122 +1,182 @@
 # The Star Tree — content proposal
 
-Companion to [star-tree-research.md](star-tree-research.md), which answered a
+Companion to [star-tree-research.md](star-tree-research.md), which answers a
 different question. That document is about **how the tree is drawn** — the
-constellation rail, the ring geometry, the pinned route — and its
-recommendation stands. This one is about **what the nodes should be**, because
-the game the tree was written for is no longer the game being played.
+constellation rail, the ring geometry, the pinned route — and its recommendation
+stands. This one is about **what the nodes should be**, because the game the tree
+was written for is no longer the game being played.
 
-Deliverable is a proposal. Nothing in `src/meta/tree.ts` was changed.
+Revised after design review. Two nodes from the first draft are **deleted, not
+parked** — see §6. Nothing in `src/meta/tree.ts` has been changed.
 
 ---
 
 ## 0. The recommendation, up front
 
-Cut the tree from twelve nodes to **nine**, delete every node that points at a
-feature the build cannot reach, and re-cut the survivors around the three verbs
-the game actually has — **tear, fuse, harvest** — plus the one thing the player
-already wants and cannot buy: **the roster**.
+Cut the tree to **nine nodes**, delete everything pointing at a feature the build
+cannot reach, and re-cut the survivors around what the game actually is.
 
-The single most important change is a rule, not a node:
+One rule over all of it:
 
 > **The tree buys ACCESS and OPTIONS. It never buys a number.**
 
-Every node below either hands the player a verb they did not have, or moves
-where a run *starts* along an axis they already understand. None of them
-multiply damage, and none of them are a prerequisite for the game being
-completable — which is the line the genre's own audience is loudest about.
+Exactly one node bends that rule and it is a pacing node rather than a power one
+(§4). Everything else hands the player a verb they did not have, or moves where a
+run starts along an axis they already understand.
+
+The largest single change is not a node at all. It is that **harvesting gets an
+inventory**, which turns the belt from a shelved feature into the thing the tree
+teaches — and pulls the golem chain back into reach on the way.
 
 ---
 
 ## 1. Why the current tree is out of sync
 
-Measured against the code, not against the design docs.
+Measured against the code, not the design docs.
 
-**Half of it is unreachable.** Six of twelve nodes — `belt3`, `belt6`,
-`corpseRaising`, `golemKeep1`, `golemInfusion`, `golemKeep2` — sit behind the
-ingredient belt and the golems. `BELT_ENABLED` is `false` in
-[src/flags.ts](../src/flags.ts), and object animation is a belt ingredient, so
-none of those six do anything today. They are honestly labelled in the data
-(`live: false`, with a `lands:` phase) but the player cannot see that label.
-From the player's chair, half the sky is priced and inert.
+**Half of it is unreachable.** `belt3`, `belt6`, `corpseRaising`, `golemKeep1`,
+`golemInfusion`, `golemKeep2` all sit behind the ingredient belt and the golems.
+`BELT_ENABLED` is `false` in [src/flags.ts](../src/flags.ts) and object animation
+is a belt ingredient, so none of the six do anything. They are honestly labelled
+in the data (`live: false`) but the player cannot see that label: from their
+chair, half the sky is priced and inert.
 
-**Two of the live nodes now describe the wrong mechanic.** `hand2` and `hand3`
-raise a *ceiling* — but `handSize()` in [src/main.ts](../src/main.ts) is
-`max(meta.handSize, min(HAND_MAX, state.pages.length))`, and altars now hand out
-second and third copies of a page. The hand widens **inside a run** on its own.
-So these two nodes no longer decide whether you can ever hold two cards; they
-decide whether you *start* holding two. That is a real thing to sell, and it is
-not what the node text says.
+**Two live nodes describe the wrong mechanic.** `hand2`/`hand3` raise a ceiling,
+but `handSize()` is `max(meta.handSize, min(HAND_MAX, state.pages.length))` and
+altars now hand out second and third copies of a page. The hand widens *inside a
+run* on its own. These nodes now decide whether you **start** wide, which is a
+real thing to sell and not what the text says.
 
-**One live node can do nothing at all on a new save.** `slots4` widens the
-starting book to four pages, but the book can only hold elements whose wizard
-you have freed. On a one-wizard roster the fourth binding buys a slot with
-nothing to put in it.
+**One live node can do nothing on a new save.** `slots4` widens the starting book
+to four pages, but the book only holds elements whose wizard you have freed. On a
+one-wizard roster it buys a slot with nothing to put in it.
 
-**And the thing the player is actually chasing is not on the tree.** Since the
-roster gate landed, the whole shape of progression is *which wizards are out* —
-every element in the book is downstream of a cage. The tree, which is the screen
-the game shows you between runs and calls progression, does not mention it.
+**And the thing the player is chasing is not on the tree.** Since the roster
+gate, every element in the book is downstream of a cage — and the screen the game
+calls progression does not mention cages at all.
 
 ---
 
 ## 2. What the research says, and what it rules out
 
-The pattern in the community discussion is consistent and it is not subtle.
+The pattern in the genre's own discussion is consistent.
 
-**Stat-based meta progression is the most disliked shape in the genre.**
-Players describe permanent stat upgrades as "an extremely unsatisfying kind of
-progression", object that the game becomes balanced around having them, and
-characterise the loop as being expected to lose until you have farmed enough to
-be allowed to play properly
-([ResetEra](https://www.resetera.com/threads/im-starting-to-feel-that-stat-based-meta-progression-is-starting-to-ruin-roguelites-generally-speaking.1509337/),
-[Hades II discussion](https://steamcommunity.com/app/1145350/discussions/0/4358999171576511867/?ctp=2)).
-The specific complaint — *rewards dying, promotes grinding instead of skill* —
-is what a tree of damage multipliers reads as.
+**Stat-based meta progression is the most disliked shape in the genre.** Players
+call permanent stat upgrades "an extremely unsatisfying kind of progression",
+object that the game becomes balanced around having them, and describe the loop
+as being expected to lose until you have farmed enough to be allowed to play
+properly ([ResetEra](https://www.resetera.com/threads/im-starting-to-feel-that-stat-based-meta-progression-is-starting-to-ruin-roguelites-generally-speaking.1509337/),
+[Hades II](https://steamcommunity.com/app/1145350/discussions/0/4358999171576511867/?ctp=2)).
+The sharp version of the complaint — *it rewards dying* — is what a tree of
+multipliers reads as.
 
-**Unlocking options is the accepted alternative.** The same threads land on
-"unlocking more stuff you can potentially find on future runs" as fine, and
-power unlocks as the thing that undermines the genre. Dead Cells' runes are the
-canonical example: they grant traversal and abilities — new *access* — and are
-permanent and immediate rather than bought with a currency
-([Dead Cells wiki](https://deadcells.wiki.gg/wiki/Runes_and_upgrades)).
+**Unlocking options is the accepted alternative.** Dead Cells' runes are the
+model: they grant traversal and abilities, i.e. new access, and are permanent and
+immediate ([wiki](https://deadcells.wiki.gg/wiki/Runes_and_upgrades)).
 
-**Slay the Spire's unlocks gate complexity, not power**, and that is why it
-survives being the hardest thing in its own genre: unlocks give you more
-options rather than an easier game, and the game is beatable from run one
-([StS 2 discussions](https://steamcommunity.com/app/2868840/discussions/0/798966340583011639/)).
-The extension of that idea is meta progression as a **gradual tutorial** — hold
-back the advanced mechanic until the player is ready for it, and let the unlock
-say "you are ready now"
-([Garden of Learning](https://notes.hamatti.org/gaming/video-games/meta-progression-with-gradual-tutorial-in-roguelike-games)).
+**Slay the Spire's unlocks gate complexity, not power**, which is why it survives
+being the hardest thing in its genre — more options, not an easier game, and
+beatable from run one ([discussion](https://steamcommunity.com/app/2868840/discussions/0/798966340583011639/)).
+The extension is meta progression as a **gradual tutorial**: withhold the
+advanced mechanic until the player is ready, and let the unlock say "you are
+ready now" ([Garden of Learning](https://notes.hamatti.org/gaming/video-games/meta-progression-with-gradual-tutorial-in-roguelike-games)).
+That is exactly the job the belt should be given.
 
-**Reversibility is what makes a tree safe to experiment in.** Hades' Mirror of
-Night is repeatedly cited as one of the best systems in the genre, and the
-reasons given are that every node has two exclusive variants and that a full
-respec is cheap and refunds everything, so nothing is ever a trap
+**Reversibility makes a tree safe to touch.** Hades' Mirror is repeatedly named
+one of the best systems in the genre, and the reasons are exclusive two-variant
+nodes plus a cheap, total respec — nothing is ever a trap
 ([TheGamer](https://www.thegamer.com/hades-mirror-of-night-roguelite-progression/),
-[Fextralife](https://hades.wiki.fextralife.com/Mirror_of_Night)).
-This game already refunds every node in full — that is a real asset and the tree
-should lean on it harder, not hide it.
+[Fextralife](https://hades.wiki.fextralife.com/Mirror_of_Night)). This game
+already refunds every node in full and never says so on the screen.
 
-**What that rules out for us:** damage nodes, health nodes, "+1 star per chest",
-and anything that makes floor one easier. Also anything that reads as a tax the
-player must clear before the game is fair — the game must stay winnable with
-**zero** nodes owned, and that should be stated as an invariant and tested.
+**Ruled out:** damage nodes, health nodes, anything that makes floor one easier,
+and anything the game needs before it is fair. The game must stay winnable with
+**zero** nodes owned.
 
 ---
 
-## 3. The proposal
+## 3. Harvesting gets an inventory
 
-Four chains, nine nodes. Prices are in the existing unit — one good run is
-roughly 70 stars, per the note above `PRICES` in
-[src/meta/tree.ts](../src/meta/tree.ts).
+This is the centre of the proposal. It replaces the first draft's worst idea
+(§6) and it resolves three separate problems at once.
+
+### 3.1 Fixtures get depth
+
+A harvestable object holds a **finite** number of draws, set by how valuable its
+element is:
+
+| Fixture | Draws | Reads as |
+|---|---|---|
+| Water barrel, cistern, fountain | ~100 | effectively bottomless |
+| Oil drum | ~20 | a resource you plan around |
+| Candelabra, torch, brazier | ~5 | a thing you can use up |
+
+The numbers are the design language, not a balance table: depth *is* the rarity
+signal, so the player learns what fire is worth by finding out that candles run
+out and water does not.
+
+**This is a deliberate reversal of a rejected rule, and it is the coherent one.**
+`docs/DESIGN.md` rejects depleting fixtures with: *"Fixtures are non-depleting
+and non-storable; those two rules hold each other up."* That is exactly right —
+and it means the moment harvest becomes **storable** the other rule has to give,
+or a candelabra becomes an unlimited fire faucet with a pouch under it. Depth is
+what buys storability. The pillar is not being broken; its other half is being
+paid for.
+
+Empty must read in the world, not in a widget: a snuffed candelabra, a dry
+barrel with its lid off. A pip counter on a fixture is a readout, and this game
+has no other readouts in the world.
+
+### 3.2 The belt is the sides of the screen
+
+Not a second bar. Three slots **vertically down the left edge**, hanging under
+the player portrait, where nothing else lives. The book owns the bottom, the
+depth banner owns the top, and a strip above or below the book was always going
+to fight one of them.
+
+That placement also carries a meaning the old strip did not: the portrait is
+*you*, and the belt is what you are carrying — a column of things on your person,
+beside the picture of your person.
+
+### 3.3 The UX, decided rather than left open
+
+The messy part is fill order and movement, so here is a rule set that needs no
+dragging at all — dragging is the one gesture this game does not otherwise use.
+
+**Harvest fills the hand while the hand has room; the belt takes the overflow.**
+The hand is what you cast from, so the first draw goes where it can be used. Once
+the hand is full, further draws stow. Nothing is ever refused for being full
+while a belt slot is empty, which is the failure the current "your hand is full"
+refusal would otherwise produce constantly.
+
+**Movement is taps, both ways.** Tap a belt slot to draw it into the hand — that
+gesture already exists (`hud.ts`: *"Draw an ingredient out of a belt pouch. A
+single tap"*). Tap a held card to stow it back. Same verb as tapping an altar, a
+lever, a captive, and now a page.
+
+**No drag, ever.** A drag is a precision gesture on a phone held in one hand, and
+the game's whole input vocabulary is taps and swipes.
+
+**Belt contents survive a cast; hand contents are spent.** That is the line
+between the two containers and it is the whole reason the belt is worth having.
+
+### 3.4 What this buys the design
+
+- The belt gets a **reason to exist and a place to be taught**: you unlock it,
+  you harvest into it, and the perk itself is the tutorial. That is the
+  gradual-tutorial pattern from the research, applied to the one feature that has
+  been shelved for lack of an on-ramp.
+- **The golems come back** (§5).
+- Harvesting stops being a one-shot and becomes a thing you *plan*, without ever
+  becoming a faucet.
+
+---
+
+## 4. The proposal
+
+Four chains, nine nodes. Prices in the existing unit — one good run ≈ 70 stars.
 
 ### Chain A — THE HAND (start wide)
-
-The hand is the game's central gate and its central lesson: a hand of one
-cannot fuse, and fusion is the point. In-run widening now exists, so these
-nodes stop being "can you ever" and become "do you start there".
 
 | Node | Price | Requires | Effect |
 |---|---|---|---|
@@ -124,96 +184,159 @@ nodes stop being "can you ever" and become "do you start there".
 | **Third Hand** | 140 | Second Hand | Begin able to hold three. |
 
 Keep both, reprice neither, **rewrite both descriptions** to say *begin*. The
-current text promises a capability the altars now give away, which makes the
-first purchase feel like it did nothing.
+current text promises what the altars now give away, so the first purchase reads
+as having done nothing.
 
-### Chain B — THE ROOM (harvesting)
-
-The dungeon-as-component-pouch is the pillar that separates this from every
-other stepper, and the tree says nothing about it. This is where the genuinely
-new options live.
+### Chain B — THE ROOM (harvest and the belt)
 
 | Node | Price | Requires | Effect |
 |---|---|---|---|
 | **Long Reach** | 70 | — | Harvest a fixture you are facing from two tiles, not one. |
-| **Two Draughts** | 110 | Long Reach | A harvest fills two hand slots with the same element instead of one. |
-| **Cold Cellar** | 150 | Two Draughts | A harvested element survives one cast — it returns to the hand instead of being spent. |
+| **The Belt** | 90 | — | Three slots down your left side. Harvest more than you can hold. |
+| **Deep Belt** | 160 | The Belt | Five slots. |
 
-All three are verbs, not numbers. **Long Reach** loosens the adjacency rule the
-game teaches first, which is exactly the "you are ready for this now" unlock the
-tutorial-by-unlock argument describes. **Cold Cellar** is the strongest thing on
-this list and is deliberately the most expensive: it turns the room from a
-one-shot shelf into a resource you can hold, which is a different game.
-
-*Open question for the designer:* Cold Cellar may be too strong beside the
-no-storage rule in `docs/DESIGN.md`. The safer version is "the fixture you
-harvested does not go quiet for the rest of the floor", if depletion is ever
-added.
+**Long Reach** loosens the adjacency rule the game teaches first — the "you are
+ready for this now" unlock. **The Belt** is the on-ramp described above and
+absorbs the old `belt3`/`belt6` pair, which were priced at 70/140 for the same
+capacities; the small increase is because the belt now does something.
 
 ### Chain C — THE CAGES (the roster)
 
-The missing chain, and the one the player is already chasing. It must not sell
-wizards — a wizard is earned by walking to the cage — it sells **the odds of
-meeting one**.
+The missing chain. It must **not** sell wizards, and it must not touch how many
+you can free — a wizard is earned by walking to a cage, and the chain's length is
+the progression.
 
 | Node | Price | Requires | Effect |
 |---|---|---|---|
-| **A Louder Cry** | 60 | — | The compass points at the cage once per floor. |
-| **Two Cells** | 160 | A Louder Cry | A run may hold two captives, so one descent can free two wizards. |
+| **A Louder Cry** | 60 | — | The compass points at the cage on floors that hold one. |
 
-**A Louder Cry** is information, which is the cheapest honest thing a tree can
-sell. **Two Cells** is the answer to the roster being a five-run chain: it is
-the node that shortens the longest stretch in the game without handing anyone a
-page.
+Information, which is the cheapest honest thing a tree can sell. One node, not
+two — see §6.
 
-### Chain D — THE MOUTH (where a run starts)
-
-Keep, trimmed. These already work and already sell options rather than power.
+### Chain D — THE MOUTH (where a run starts, and what it earns)
 
 | Node | Price | Requires | Effect |
 |---|---|---|---|
 | **Wider Rites** | 70 | — | Altars offer four cards instead of three. |
 | **Dungeon Mouth Blessing** | 90 | — | Choose a blessing before the first floor. |
+| **Compound Interest** | 100 | — | Unspent stars earn interest at the end of every run. |
 
-Drop `blessingWider` (its phase has not landed) and drop `slots4` outright: the
-book's width is now the roster's business, and a node that does nothing on a
-one-wizard save is the same defect as the golem nodes.
+**Compound Interest** is the one node that touches a number, and it is included
+because it is about *pacing*, not power: it cannot make a floor easier, and
+everything it accelerates toward is another option.
+
+Interest on the **unspent** balance is the right shape — better than "+1 star per
+run", which is a trickle nobody thinks about. Interest makes banking a decision:
+hold 200 stars and the tree pays you for patience, or spend now and take the node
+this run. That is a real choice on a screen whose job is choices.
+
+Two things it needs, or it inverts the game: a **cap** (5% of the balance, at
+most +10 a run) so hoarding cannot outrun playing, and it must be **the last
+thing** priced, because a compounding currency node bought early distorts every
+price after it. If either feels shaky in play, this is the node to cut — it is
+the only one whose absence costs the player no options.
 
 ### What is deleted
 
-`belt3`, `belt6`, `corpseRaising`, `golemKeep1`, `golemInfusion`, `golemKeep2`,
-`blessingWider`, `slots4`.
+`corpseRaising`, `golemKeep1`, `golemInfusion`, `golemKeep2` (until §5),
+`blessingWider` (phase never landed), `slots4` (the roster owns the book's width
+now).
 
-Not deleted from the *game* — deleted from the tree until the feature exists.
-The `live: false` mechanism should stay in the schema, but a node that is not
-live should not be **drawn**. A priced star that does nothing is worse than an
-empty sky: it teaches the player that the tree lies.
+Deleted from the *tree*, not from the game. The `live: false` mechanism should
+stay in the schema, but a node that is not live must not be **drawn**: a priced
+star that does nothing teaches the player that the tree lies.
 
 ---
 
-## 4. Invariants worth writing into the code
+## 5. The golems, brought back into reach
 
-Three, all cheap, all currently unstated:
+The golem chain was shelved because Animate needs an ingredient and infinite
+Animate was rejected. The belt-with-depth answers both: put the animation
+ingredient **in the world as a harvestable**, and depth is the limiter that
+`docs/DESIGN.md` was asking for.
+
+- The ingredient is harvested from world objects — so it is reachable on **floor
+  one, by a fresh player**, with no tree node required.
+- **Cap the carry at one or two.** The limit is not a cooldown or a cost, it is
+  how many you can be holding, which is the same rule the hand already teaches.
+- The old `golemKeep*` / `golemInfusion` nodes then become what they were always
+  meant to be: not *can you animate*, but *does it survive the floor*.
+
+Sequencing: this lands after chain B ships, because it depends on harvest depth
+and on the belt existing. It should re-enter the tree in the same pass that flips
+`BELT_ENABLED`.
+
+---
+
+## 6. Two nodes from the first draft, and why they are gone
+
+**"Two Draughts" — a harvest fills two hand slots with the same element.**
+Deleted. It spends the player's scarcest resource — hand slots — on redundancy,
+and the hand exists to be filled with *different* things: a hand of two identical
+elements is a worse version of a hand of two, and the player would never choose
+it. The belt is the correct answer to "I want more than one draw", because it
+stores instead of crowding.
+
+**"Two Cells" — two captives per run.** Deleted. The roster chain is the
+progression: five wizards, one per descent, each freeing the next. A node that
+frees two at once collapses that into a purchase, and it is exactly the shape the
+research warns about — spending currency to skip the content the currency was
+earned in.
+
+---
+
+## 7. Open question: the compass
+
+The compass was specified for **quests**, and quests were never built, so it
+currently points at one thing and is otherwise idle. There is an obvious use for
+it — the cage (chain C), the nearest unclaimed altar, the boss door, the star
+tree — and one real question: **override or second arrow?**
+
+**Recommendation: one compass, one arrow, a priority stack — never two.** Two
+arrows on a phone screen in a first-person view is two things to interpret at the
+moment the player is trying to walk. A single arrow that always means "the thing
+you most likely want next" stays readable:
+
+1. A quest target, when quests exist. Always wins.
+2. The cage, if this floor holds one and it is still shut (needs **A Louder Cry**).
+3. The boss door, once the levers are found and it is open.
+4. The nearest unclaimed altar.
+5. The stairs, once open.
+
+The arrow should **say what it is pointing at** — a one-word label under it —
+because a priority stack the player cannot see is indistinguishable from an arrow
+that changes its mind. That label is also what makes the override honest when
+quests land: the word changes, so the player knows why the arrow moved.
+
+Star-tree pointing is a different thing and does not belong on the dungeon
+compass: the tree is a screen, not a place. If the goal is "remind me what I am
+saving for", that is the **pinned route** from
+[star-tree-research.md](star-tree-research.md) §0, which already persists into
+the run.
+
+---
+
+## 8. Invariants worth writing into the code
 
 1. **Winnable at zero.** No node is required to reach depth ten. If a balance
-   pass ever depends on an owned node, that is the bug, not the tree.
-2. **Every node is refundable in full, forever.** Already true; say it on the
-   screen where the player can read it, because reversibility is most of what
-   makes a tree worth touching.
-3. **No node multiplies a number.** If a proposed node's effect can be written
-   as "×" or "+n damage", it belongs in the run economy, not the tree.
+   pass ever depends on an owned node, that is the bug.
+2. **Every node is refundable in full, forever.** Already true — say it on the
+   screen, because reversibility is most of what makes a tree worth touching.
+3. **No node multiplies a number**, with Compound Interest as the single, capped,
+   deliberately-last exception.
+4. **A node that is not live is not drawn.**
 
 ---
 
-## 5. What this does not answer
+## 9. Still open
 
-- **Prices.** The nine above are placed by feel against the one-run-≈-70-stars
-  unit. They want a pass once the run length settles.
-- **Whether the belt is coming back.** If `BELT_ENABLED` flips on, chain B and
-  the old belt chain overlap heavily and one of them should give way — probably
-  the belt keeps the ingredient slots and chain B keeps the harvest verbs.
-- **The second-variant idea.** Hades' two-per-node structure is the single most
-  praised thing in the research and this proposal does not use it. It would suit
-  chain B especially (Long Reach *or* Two Draughts as exclusive halves of one
-  star). Worth a look, but it doubles the content and the tree cannot afford
-  that until the nodes themselves are settled.
+- **Prices.** Placed by feel against one-run-≈-70-stars; they want a pass once
+  run length settles.
+- **Harvest depths.** The 100/20/5 sketch is a language, not a table. Candles at
+  5 is the number most likely to be wrong in either direction.
+- **Whether stowing costs a turn.** Drawing from the belt is presumably free, but
+  a free stow-and-swap mid-fight is a way to hold six things at once. Leaning:
+  drawing is free, stowing is free, and the limiter stays the hand's width.
+- **Hades' two-variant nodes.** The most praised idea in the research and unused
+  here. It would suit chain B (Long Reach *or* something else as exclusive halves
+  of one star), but it doubles the content and the nodes should settle first.
