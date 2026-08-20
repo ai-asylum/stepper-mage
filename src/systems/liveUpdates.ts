@@ -46,3 +46,24 @@ export async function notifyBootOk(): Promise<void> {
     console.warn("[live-updates] notifyAppReady failed", err);
   }
 }
+
+/**
+ * Which bundle the plugin is actually serving, or null when there is nothing to ask.
+ *
+ * `OTA_VERSION` in `src/version.ts` is compiled into the bundle, so it says what this
+ * code believes it is. This says what the updater believes it handed to the WebView.
+ * They should agree; when they do not, the app has staged a bundle and is running
+ * something else, and the settings-panel stamp says so out loud rather than leaving a
+ * wrong number on screen.
+ */
+export async function currentBundle(): Promise<string | null> {
+  if (!Capacitor.isNativePlatform()) return null;
+  try {
+    const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
+    const info = await CapacitorUpdater.current();
+    return info?.bundle?.version ?? null;
+  } catch (err) {
+    console.warn("[live-updates] current() failed", err);
+    return null;
+  }
+}

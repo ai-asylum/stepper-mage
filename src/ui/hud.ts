@@ -28,6 +28,7 @@ import { Pix, hex } from '../art/pixel';
 import { drawPortrait, PORTRAIT_ASPECT } from './portraits';
 import type { Wizard } from '../game/wizards';
 import { drawCentered, CELL_H } from '../art/bitfont';
+import { BUILD, OTA_VERSION } from '../version';
 import * as THREE from 'three';
 import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
 import { PORTAL_HUES, STEP_H } from '../art/tiles';
@@ -595,6 +596,14 @@ export class Hud {
    * panel closed is the thing that draws it.
    */
   resetArmed = false;
+  /**
+   * The bundle the OTA plugin says it is serving, or null off-device.
+   *
+   * Written by `main.ts` once the updater answers; only shown when it disagrees with
+   * the version compiled into this bundle — see the stamp at the foot of the settings
+   * panel.
+   */
+  bundleVersion: string | null = null;
   /**
    * The FOV the slider should draw, and the range it spans. Pushed in by `main.ts`
    * rather than read from the save here, so the HUD keeps knowing nothing about
@@ -2414,6 +2423,32 @@ export class Hud {
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#fff4dc';
     ctx.fillText(close, W / 2, by + 15);
+    /**
+     * THE BUILD STAMP, under everything.
+     *
+     * `BUILD` is the commit the running web bundle was made from and `OTA_VERSION` is
+     * the bundle version the updater compares — the two answer different questions and
+     * an OTA test needs both: which code am I running, and which bundle is it. On a
+     * phone this is the only way to tell whether an update landed, because a downloaded
+     * bundle and the one packaged in the AAB are indistinguishable from the outside.
+     *
+     * `bundleVersion` is what the plugin says it is actually SERVING, filled in by
+     * `main.ts` off the updater and left null in the browser. When it disagrees with
+     * `OTA_VERSION` the app is running one bundle and reporting another, which is the
+     * one state worth seeing spelled out.
+     *
+     * Deliberately the smallest, dimmest text on the screen: it is diagnostic, it is on
+     * a panel nobody reads mid-fight, and a version string competing with the settings
+     * is a version string in the way.
+     */
+    ctx.textAlign = 'center';
+    ctx.font = '8px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.32)';
+    const served = this.bundleVersion && this.bundleVersion !== OTA_VERSION
+      ? `  ·  serving ${this.bundleVersion}`
+      : '';
+    ctx.fillText(`${BUILD}  ·  bundle ${OTA_VERSION}${served}`, W / 2, by + 38);
+
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     this.hits.push({ rect: [bx, by, tw, 30], action: { kind: 'settings' } });
   }

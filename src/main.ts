@@ -3696,7 +3696,12 @@ async function boot(): Promise<void> {
    *
    * Every boot, including boots of the copy inside the AAB — see `notifyBootOk`.
    */
-  void import('./systems/liveUpdates').then((m) => m.notifyBootOk());
+  void import('./systems/liveUpdates').then(async (m) => {
+    await m.notifyBootOk();
+    // And ask what it is serving, so the settings stamp can disagree with itself out
+    // loud when a staged bundle is not the one running. Null off-device.
+    hud.bundleVersion = await m.currentBundle();
+  });
 
   /**
    * THE MOUTH, in order: where to begin, which page, then what else.
