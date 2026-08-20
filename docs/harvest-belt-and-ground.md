@@ -167,15 +167,14 @@ out of it rather than being special-cased:
 | Oil | 2 | 2 | 5 | 10 |
 | Fire | 4 | 1 | 2 | 5 |
 | Starlight | 5 | 1 | 2 | 4 |
-| Golem draught | 10 | — | 1 | 2 |
+| Golem clay | 10 | — | 1 | 2 |
 
 Weight is the value dial, and it does the work the old per-substance stack table
 did with none of the exceptions. Water is heavy in nothing and deep in everything;
 an open flame takes four units because you are carrying an open flame; and the
-golem draught's cap of **two, ever** is not a rule anybody has to remember — it is
+golem clay's cap of **two, ever** is not a rule anybody has to remember — it is
 what weight 10 means in a 20-unit pouch. It also means a fresh player *cannot*
-carry a draught at all until they have upgraded a pouch, which is the right gate:
-golems are a thing you commit to.
+
 
 These numbers should agree with fixture depth (§1.1): a candle with five draws in
 it fills exactly one small pouch's worth of fire, and a bottomless barrel fills any
@@ -209,8 +208,8 @@ or gild it and open the next run with a supply.
 - **The contents are frozen at what you had**, not topped up. A gilded deep pouch
   with two oil in it opens the next run with two oil, not ten.
 
-The interesting edge is the golem draught: gilding it is the only way to begin a
-run able to animate something on floor one, which is a genuinely different opening
+The interesting edge is golem clay: gilding it is the only way to begin a run able
+to animate something on floor one, which is a genuinely different opening
 and costs a whole altar choice to set up. That is a good trade, and it is worth
 watching in play rather than pre-nerfing.
 
@@ -264,8 +263,10 @@ the game already knows how to punish. It reuses the ground system rather than
 adding one, needs no art a poured substance does not already have, and makes the
 answer to "my belt is full" a decision instead of an apology.
 
-The golem draught pours as nothing — a wasted slot and a stain. That is the game
-saying out loud what the cap of 2 implies.
+Clay is the exception to the verb rather than to the rule: it is tipped out, not
+poured, and it leaves nothing but a smear on the tile. Every other substance you
+empty becomes terrain; the clay just goes. That is the game saying out loud what
+weight 10 already implied — this was the expensive thing to be carrying.
 
 **What each verb costs:** drawing is free, moving is free, pouring **costs a
 turn**. Free terrain creation would be the strongest thing in the game, and
@@ -278,7 +279,7 @@ that changes the floor is ever free — same rule as a cast.
   you harvest into it, and the perk itself is the tutorial. That is the
   gradual-tutorial pattern from the research, applied to the one feature that has
   been shelved for lack of an on-ramp.
-- **The golems come back** (§3), limited by how much draught a belt can carry.
+- **The golems come back** (§3), limited by how much clay a belt can carry.
 - Harvesting stops being a one-shot and becomes a thing you *plan*, without ever
   becoming a faucet.
 
@@ -373,10 +374,17 @@ Animate was rejected. The belt-with-depth answers both: put the animation
 ingredient **in the world as a harvestable**, and depth is the limiter that
 `docs/DESIGN.md` was asking for.
 
-- The ingredient is harvested from world objects — so it is reachable on **floor
+**Golem clay** is the ingredient, and the name is the design: clay is a material
+you press into a shape, so animating a thing is *packing clay into it* rather than
+pouring a potion over it. It comes off earthen decorations — unfired pots, clay
+urns, the wet heap beside a kiln, a cracked statue — which is a prop class that can
+sit on floor one without explanation and gives the art a reason to put pottery in a
+dungeon.
+
+- Harvested like any other fixture element, so animation is reachable on **floor
   one, by a fresh player**, with no tree node required.
-- **Cap the carry at one or two.** The limit is not a cooldown or a cost, it is
-  how many you can be holding, which is the same rule the hand already teaches.
+- **The carry cap is one or two**, and it is not a cooldown or a cost — it is
+  weight (§1.4), which is the same rule the hand already teaches.
 - The old `golemKeep*` / `golemInfusion` nodes then become what they were always
   meant to be: not *can you animate*, but *does it survive the floor*.
 

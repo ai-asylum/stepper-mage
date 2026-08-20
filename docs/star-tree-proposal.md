@@ -9,7 +9,7 @@ was written for is no longer the game being played.
 Nothing in `src/meta/tree.ts` has been changed.
 
 The mechanics several of these nodes unlock — harvest depth, the belt and its
-inventory, standing in a substance, the golem draught, the compass — are core-game
+inventory, standing in a substance, the golem clay, the compass — are core-game
 design and live in [harvest-belt-and-ground.md](harvest-belt-and-ground.md). This
 document is only about which stars exist and what they cost.
 
@@ -180,7 +180,7 @@ Three ways out, in order of preference:
 ### Chain E — THE SERVANTS (the golems, live)
 
 The golem chain comes back, because the thing that shelved it is solved: the
-animation draught is **harvested from world decorations**, so animating something
+animation clay is **harvested from world decorations**, so animating something
 is free from floor one and needs no node at all
 ([harvest-belt-and-ground.md](harvest-belt-and-ground.md) §3). What the tree sells
 is not *can you animate* — it is **does what you animated last**.
@@ -195,11 +195,11 @@ is not *can you animate* — it is **does what you animated last**.
 Prices are the existing ones — they were already sized for this chain and nothing
 about their shape has changed. What changes is that they now describe something the
 player has already done with their own hands before they are asked to pay for it,
-which is the right order: the draught teaches animation on floor one, and the tree
+which is the right order: the clay teaches animation on floor one, and the tree
 sells permanence once the player knows what they would be keeping.
 
 `corpseRaising` keeps its id and moves off `belt3` as a prerequisite — it depended
-on the belt only because the draught used to be a belt ingredient. Now the draught
+on the belt only because the clay used to be a belt ingredient. Now the clay
 is a harvest, so the whole chain is free-standing.
 
 ### What is deleted
