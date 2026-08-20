@@ -7,26 +7,32 @@ stands. This one is about **what the nodes should be**, because the game the tre
 was written for is no longer the game being played.
 
 Revised after design review. Two nodes from the first draft are **deleted, not
-parked** — see §5. Nothing in `src/meta/tree.ts` has been changed.
+parked** — see §3. Nothing in `src/meta/tree.ts` has been changed.
+
+The mechanics several of these nodes unlock — harvest depth, the belt and its
+inventory, standing in a substance, the golem draught, the compass — are core-game
+design and live in [harvest-belt-and-ground.md](harvest-belt-and-ground.md). This
+document is only about which stars exist and what they cost.
 
 ---
 
 ## 0. The recommendation, up front
 
-Cut the tree to **nine nodes**, delete everything pointing at a feature the build
-cannot reach, and re-cut the survivors around what the game actually is.
+Re-cut the tree to **sixteen nodes** across five chains — one chain per system the
+game actually has — and drop the two that point at nothing.
 
 One rule over all of it:
 
 > **The tree buys ACCESS and OPTIONS. It never buys a number.**
 
 Exactly one node bends that rule and it is a pacing node rather than a power one
-(§3). Everything else hands the player a verb they did not have, or moves where a
+(§2). Everything else hands the player a verb they did not have, or moves where a
 run starts along an axis they already understand.
 
-The largest single change is not a node at all. It is that **harvesting gets an
-inventory**, which turns the belt from a shelved feature into the thing the tree
-teaches — and pulls the golem chain back into reach on the way.
+The largest single change is not a node at all: **harvesting gets an inventory**
+([harvest-belt-and-ground.md](harvest-belt-and-ground.md)), which turns the belt
+from a shelved feature into the thing the tree teaches, and pulls the golem chain
+back into reach on the way.
 
 ---
 
@@ -68,195 +74,9 @@ and anything the game needs before it is fair. The game must stay winnable with
 
 ---
 
-## 2. Harvesting gets an inventory
+## 2. The proposal
 
-This is the centre of the proposal. It replaces the first draft's worst idea
-(§5) and it resolves three separate problems at once.
-
-### 2.1 Fixtures get depth
-
-A harvestable object holds a **finite** number of draws, set by how valuable its
-element is:
-
-| Fixture | Draws | Reads as |
-|---|---|---|
-| Water barrel, cistern, fountain | ~100 | effectively bottomless |
-| Oil drum | ~20 | a resource you plan around |
-| Candelabra, torch, brazier | ~5 | a thing you can use up |
-
-The numbers are the design language, not a balance table: depth *is* the rarity
-signal, so the player learns what fire is worth by finding out that candles run
-out and water does not.
-
-**This is a deliberate reversal of a rejected rule, and it is the coherent one.**
-`docs/DESIGN.md` rejects depleting fixtures with: *"Fixtures are non-depleting
-and non-storable; those two rules hold each other up."* That is exactly right —
-and it means the moment harvest becomes **storable** the other rule has to give,
-or a candelabra becomes an unlimited fire faucet with a pouch under it. Depth is
-what buys storability. The pillar is not being broken; its other half is being
-paid for.
-
-Empty must read in the world, not in a widget: a snuffed candelabra, a dry
-barrel with its lid off. A pip counter on a fixture is a readout, and this game
-has no other readouts in the world.
-
-### 2.2 The belt is the sides of the screen
-
-Not a second bar. Three slots **vertically down the left edge**, hanging under
-the player portrait, where nothing else lives. The book owns the bottom, the
-depth banner owns the top, and a strip above or below the book was always going
-to fight one of them.
-
-That placement also carries a meaning the old strip did not: the portrait is
-*you*, and the belt is what you are carrying — a column of things on your person,
-beside the picture of your person.
-
-### 2.3 The UX, decided rather than left open
-
-The messy part is fill order and movement, so here is a rule set. It borrows the
-book's gestures rather than inventing any: the belt is the second container full
-of castable things, and it should be worked the same way as the first.
-
-**Harvest fills the hand while the hand has room; the belt takes the overflow.**
-The hand is what you cast from, so the first draw goes where it can be used. Once
-the hand is full, further draws stow. Nothing is ever refused for being full
-while a belt slot is empty, which is the failure the current "your hand is full"
-refusal would otherwise produce constantly.
-
-**Drawing from the belt is a SWIPE OUT OF IT, on the belt's own axis.** Tearing a
-page is a swipe up out of the book; drawing an ingredient is a swipe sideways out
-of the belt. Same verb — *pull the thing out of the container it lives in* — and
-the axis is whichever way the container faces: the book lies along the bottom, so
-its pages come up; the belt runs down the left edge, so its pouches come out to
-the right, toward the hand.
-
-That consistency is worth more than saving the player a gesture. Two containers
-that both hold castable components should not be emptied by two unrelated inputs,
-and a swipe carries the same tension a tear does — the stack lifts under the
-thumb, and a swipe that does not finish puts it back.
-
-**And a tap does it too**, exactly as a tap now tears the open page. The swipe is
-the gesture that teaches; the tap is the cheap repeat for the player who already
-knows. Both land in the same place, so neither has to be discovered twice.
-
-**Stowing is a SWIPE UP off the hand.** A page comes up out of the book into the
-hand; a component carries on up, out of the hand and into the belt. Up is the
-put-it-away direction all the way through: the same flick, one stage further
-along. A tap on a held component does the same thing, for the same
-teach-then-repeat reason.
-
-**Nothing ever destroys a component implicitly.** A tap or a swipe on a held
-ingredient means *stow it*, and if the belt cannot take it — no matching stack
-with room, no empty slot — the gesture is **refused by name** (*"your belt is full
-of oil"*) and the component stays in the hand. It is never silently dropped,
-returned to nowhere, or overwritten to make space.
-
-That rule is worth stating because the cheap implementation is the destructive
-one: a full belt is easiest to handle by throwing the incoming thing away, and the
-player finds out by losing the starlight they walked three rooms for. Losing a
-component is a real cost in a game where the room is the pouch, so it has to be a
-thing the player *did*, not a thing that happened to them. The only route to
-destruction is pouring (§2.5) — explicit, aimed at a tile, and it costs a turn.
-
-**Belt swipes belong to the belt.** The world reads a swipe as walking or turning,
-so the belt needs the zone claim the book already has (`overBook` in `main.ts`): a
-gesture that starts on a slot is the belt's, whatever it does next. Without that,
-every draw is also a step.
-
-**Belt contents survive a cast; hand contents are spent.** That is the line
-between the two containers and it is the whole reason the belt is worth having.
-
-### 2.4 Stacks, and what a stack is worth
-
-A belt slot holds a **stack of one substance**, and the cap is per substance —
-the second rarity dial after fixture depth, and it must agree with the first.
-
-| Substance | Stack | Fixture depth | Reads as |
-|---|---|---|---|
-| Water | 20 | ~100 | carry as much as you like |
-| Stone | 10 | ~40 | plentiful, heavy |
-| Oil | 5 | ~20 | worth planning a room around |
-| Fire | 3 | ~5 | you are carrying an open flame |
-| Starlight | 2 | ~3 | precious |
-| Golem draught | 2 | ~2 | the reason the cap exists |
-
-The two numbers say the same thing twice on purpose: a candle is shallow *and*
-fire stacks small, water is bottomless *and* stacks deep. A player who never
-reads a number still learns the hierarchy, because the shallow things run out in
-both directions.
-
-Three slots at these caps is a real inventory — 60 water or 6 starlight — without
-ever being a warehouse. And a cap of 2 on the golem draught is what keeps §4
-honest: the limiter on golems is how much draught you can carry, not a cooldown.
-
-### 2.5 Inventory management
-
-Four verbs, and the common one stays a single tap.
-
-**Harvest auto-stacks.** A draw joins an existing stack of the same substance
-with room; failing that it takes the first empty slot; failing that it is refused
-by name — *"your belt is full of oil"* — because a refusal that does not say what
-is in the way is a refusal the player cannot act on. The same rule and the same
-refusal apply to stowing from the hand (§2.3): a full belt refuses, it never
-makes room by itself.
-
-**Draw is a swipe out, or a tap.** Either way one unit goes to the hand — see
-§2.3 for why it is both. This is the action players perform hundreds of times a
-run and it must never cost two inputs. It is also the only splitting the belt
-needs: drawing one at a time *is* the split, so no slider and no
-long-press-to-split.
-
-**Move is long-press, then tap.** Hold a slot to lift its stack — the column
-dims to show the drop targets — then tap another slot to place it. Same substance
-merges up to the cap and leaves the remainder behind; different substance swaps
-the two. Tap the lifted slot again to set it down unchanged.
-
-Long-press-then-tap rather than a drag *between slots specifically*: the slots are
-a few dozen pixels apart on the short axis of a phone, so a dragged stack lands in
-the wrong pouch on a thumb's wobble. Pulling a stack OUT of the belt is a swipe
-because it only has to leave the column; putting one INTO a particular slot has to
-be precise, and precision is what a tap gives and a drag does not.
-
-**Remove is POUR IT OUT — the only way anything is ever destroyed.** While a
-stack is lifted, tap the floor: it empties onto the tile you are standing on as
-ground. Water makes a puddle, oil a slick, fire lights the tile under your own
-feet.
-
-Because this is the sole destructive verb, it is also the answer to a full belt.
-The loop the player learns is: belt full → refusal that names the substance → pour
-something out → room. Every step of that is visible and every step is theirs.
-
-This is the part worth arguing for. Discard is normally a delete — a bin icon, a
-confirm, and a small feeling of waste. Pouring makes room *and* makes terrain, so
-emptying a slot is a play: dumping five oil in a doorway and backing away is a
-setup, and pouring fire on your own tile is a mistake the game already knows how
-to punish. It reuses the ground system rather than adding a system, it needs no
-new art beyond what a poured substance already draws, and it means the answer to
-"my belt is full" is a decision instead of an apology.
-
-The golem draught pours as nothing — a wasted slot and a stain. That is the game
-saying out loud what the cap of 2 implies.
-
-**What each verb costs:** drawing is free, moving is free, pouring **costs a
-turn**. Free terrain creation would be the strongest thing in the game, and
-pouring a slick is exactly the kind of act a room should get an answer to. Nothing
-that changes the floor is ever free — same rule as a cast.
-
-### 2.6 What this buys the design
-
-- The belt gets a **reason to exist and a place to be taught**: you unlock it,
-  you harvest into it, and the perk itself is the tutorial. That is the
-  gradual-tutorial pattern from the research, applied to the one feature that has
-  been shelved for lack of an on-ramp.
-- **The golems come back** (§4), limited by how much draught a belt can carry.
-- Harvesting stops being a one-shot and becomes a thing you *plan*, without ever
-  becoming a faucet.
-
----
-
-## 3. The proposal
-
-Four chains, nine nodes. Prices in the existing unit — one good run ≈ 70 stars.
+Five chains, sixteen nodes. Prices in the existing unit — one good run ≈ 70 stars.
 
 ### Chain A — THE HAND (start wide)
 
@@ -271,86 +91,136 @@ as having done nothing.
 
 ### Chain B — THE ROOM (harvest and the belt)
 
+Two axes, bought separately — how many pouches, and how deep. See
+[harvest-belt-and-ground.md](harvest-belt-and-ground.md) §1.4 for why both exist
+and what a pouch holds.
+
 | Node | Price | Requires | Effect |
 |---|---|---|---|
 | **Long Reach** | 70 | — | Harvest a fixture you are facing from two tiles, not one. |
-| **The Belt** | 90 | — | Three slots down your left side. Harvest more than you can hold. |
-| **Deep Belt** | 160 | The Belt | Five slots. |
+| **A Pouch** | 90 | — | One small pouch on your belt. Harvest more than you can hold. |
+| **Second Pouch** | 110 | A Pouch | Two. |
+| **Sturdy Pouches** | 130 | A Pouch | Every pouch holds twice as much. |
+| **Third Pouch** | 150 | Second Pouch | Three. |
+| **Deep Pouches** | 200 | Sturdy Pouches | Every pouch holds twice as much again. |
 
-**Long Reach** loosens the adjacency rule the game teaches first — the "you are
-ready for this now" unlock. **The Belt** is the on-ramp described above and
-absorbs the old `belt3`/`belt6` pair, which were priced at 70/140 for the same
-capacities; the small increase is because the belt now does something.
+Pouches four and five exist in the schema and are **not priced yet** — five is the
+ceiling, but the first three plus two depth tiers is already six purchases in one
+chain, and a tree wants proving before it is extended. The order the prices imply
+is deliberate: breadth first and cheap, depth second and dear, so a new player
+buys "I can carry a second thing" before "I can carry ten of one thing".
 
-### Chain C — THE CAGES (the roster)
+**This makes the tree much bigger than the nine this document opened with —
+sixteen live, eighteen if pouches four and five land.** Worth naming rather than
+hiding: the belt chain alone is six purchases, and it is legible only because each
+one does a single obvious thing. If that is too much sky, the first things to
+fold are **Deep Pouches** (into Sturdy, as a single tier) and **Second Servant**
+(into Lasting Infusion). Both are the top of their chain, which is where a tree can
+lose a node without losing a decision.
 
-The missing chain. It must **not** sell wizards, and it must not touch how many
-you can free — a wizard is earned by walking to a cage, and the chain's length is
-the progression.
+Worth saying plainly, though: sixteen is not bloat if every node is a system the
+game actually has. The tree stopped being a list of numbers and became the map of
+the game's mechanics — hand, room, way, mouth, servants — and that is the shape
+this document has been arguing for throughout.
+
+A **gilded** pouch — one that keeps its contents into the next descent — is
+deliberately **not** on this list. It is won at an altar, like the golden page it
+copies; see §1.5 of the mechanics doc.
+
+### Chain C — THE WAY (information, never power)
+
+Renamed from THE CAGES: both nodes here sell knowledge of the floor, which is the
+cheapest honest thing a tree can offer, and neither makes a fight easier.
 
 | Node | Price | Requires | Effect |
 |---|---|---|---|
 | **A Louder Cry** | 60 | — | The compass points at the cage on floors that hold one. |
+| **The Chart** | 120 | — | Tap the minimap for a full-screen map, and set a waypoint on it. |
 
-Information, which is the cheapest honest thing a tree can sell. One node, not
-two — see §5.
+**The Chart** is the fullscreen map and waypoint —
+[harvest-belt-and-ground.md](harvest-belt-and-ground.md) §4. The minimap itself
+stays free forever; what this buys is the reading room and the pin, which is why
+selling it does not break the winnable-at-zero invariant.
+
+Nothing here touches how many wizards a run can free — see §3.
 
 ### Chain D — THE MOUTH (where a run starts, and what it earns)
 
 | Node | Price | Requires | Effect |
 |---|---|---|---|
+| **Compound Interest** | 30 | — | Unspent stars earn interest at the end of every run. |
 | **Wider Rites** | 70 | — | Altars offer four cards instead of three. |
 | **Dungeon Mouth Blessing** | 90 | — | Choose a blessing before the first floor. |
-| **Compound Interest** | 100 | — | Unspent stars earn interest at the end of every run. |
 
-**Compound Interest** is the one node that touches a number, and it is included
-because it is about *pacing*, not power: it cannot make a floor easier, and
-everything it accelerates toward is another option.
+**Compound Interest is deliberately the cheapest thing on the tree**, and should be
+affordable almost immediately — inside the first run or two. It is the one node
+that touches a number, and pricing it *early* rather than late is what makes it
+interesting: the first real decision the tree offers becomes *"buy a wider hand
+now, or plant this and buy more later"*, which is a genuine investment choice
+instead of a rounding error bolted on at the end.
 
-Interest on the **unspent** balance is the right shape — better than "+1 star per
-run", which is a trickle nobody thinks about. Interest makes banking a decision:
-hold 200 stars and the tree pays you for patience, or spend now and take the node
-this run. That is a real choice on a screen whose job is choices.
+It stays safe because of what stars can buy. Interest cannot make a floor easier —
+it accelerates the rate at which the player acquires **options**, and every option
+on this tree is one they could already have earned by playing. Two guards keep it
+honest: **5% of the unspent balance, capped at +10 a run**, so hoarding can never
+outrun playing, and it is **interest on what is left over** rather than a flat
+stipend, so it rewards patience rather than existence.
 
-Two things it needs, or it inverts the game: a **cap** (5% of the balance, at
-most +10 a run) so hoarding cannot outrun playing, and it must be **the last
-thing** priced, because a compounding currency node bought early distorts every
-price after it. If either feels shaky in play, this is the node to cut — it is
-the only one whose absence costs the player no options.
+**A note on the blessing, and a question it raises.** The Dungeon Mouth Blessing is
+not an altar object — it is a rite at the mouth, before the first floor, and the
+order is fixed in `openTheMouth`: **where to begin → which page → the blessing**.
+So the sequence today is that the player picks their one page, the game says *"You
+carry Flame, and nothing else"*, and then a blessing may immediately hand them a
+second page. That is a contradiction in the game's own voice, and the page choice
+is the line that suffers: it is meant to be the run's identity.
+
+Three ways out, in order of preference:
+
+1. **Move the wider-book blessing's page to the first altar** — you begin with one
+   page as promised, and the blessing is a promise the dungeon keeps a floor later.
+   Keeps both lines true and costs nothing.
+2. **Reword the page choice** to "You set out with Flame" and let the blessing be
+   what it is. Cheapest, but it gives up the strongest line in the opening.
+3. **Drop the wider-book blessing** and let the other two axes (endurance, a deeper
+   page) carry the rite. Loses the breadth axis, which is the one a one-wizard
+   roster most wants.
+
+### Chain E — THE SERVANTS (the golems, live)
+
+The golem chain comes back, because the thing that shelved it is solved: the
+animation draught is **harvested from world decorations**, so animating something
+is free from floor one and needs no node at all
+([harvest-belt-and-ground.md](harvest-belt-and-ground.md) §3). What the tree sells
+is not *can you animate* — it is **does what you animated last**.
+
+| Node | Price | Requires | Effect |
+|---|---|---|---|
+| **Coffin Rites** | 90 | — | The dead animate too, not only the furniture. |
+| **Bound Servant** | 110 | — | Your golem follows you down instead of ending with the floor. |
+| **Lasting Infusion** | 160 | Bound Servant | It keeps the element it was infused with. |
+| **Second Servant** | 220 | Lasting Infusion | Keep two. |
+
+Prices are the existing ones — they were already sized for this chain and nothing
+about their shape has changed. What changes is that they now describe something the
+player has already done with their own hands before they are asked to pay for it,
+which is the right order: the draught teaches animation on floor one, and the tree
+sells permanence once the player knows what they would be keeping.
+
+`corpseRaising` keeps its id and moves off `belt3` as a prerequisite — it depended
+on the belt only because the draught used to be a belt ingredient. Now the draught
+is a harvest, so the whole chain is free-standing.
 
 ### What is deleted
 
-`corpseRaising`, `golemKeep1`, `golemInfusion`, `golemKeep2` (until §4),
-`blessingWider` (phase never landed), `slots4` (the roster owns the book's width
-now).
+Two nodes: **`blessingWider`** (its phase never landed) and **`slots4`** (the
+roster owns the book's width now, so on a one-wizard save it buys a slot with
+nothing to put in it).
 
-Deleted from the *tree*, not from the game. The `live: false` mechanism should
-stay in the schema, but a node that is not live must not be **drawn**: a priced
-star that does nothing teaches the player that the tree lies.
+Deleted from the *tree*, not from the game. The `live: false` mechanism should stay
+in the schema, but a node that is not live must not be **drawn**: a priced star
+that does nothing teaches the player that the tree lies.
 
----
-
-## 4. The golems, brought back into reach
-
-The golem chain was shelved because Animate needs an ingredient and infinite
-Animate was rejected. The belt-with-depth answers both: put the animation
-ingredient **in the world as a harvestable**, and depth is the limiter that
-`docs/DESIGN.md` was asking for.
-
-- The ingredient is harvested from world objects — so it is reachable on **floor
-  one, by a fresh player**, with no tree node required.
-- **Cap the carry at one or two.** The limit is not a cooldown or a cost, it is
-  how many you can be holding, which is the same rule the hand already teaches.
-- The old `golemKeep*` / `golemInfusion` nodes then become what they were always
-  meant to be: not *can you animate*, but *does it survive the floor*.
-
-Sequencing: this lands after chain B ships, because it depends on harvest depth
-and on the belt existing. It should re-enter the tree in the same pass that flips
-`BELT_ENABLED`.
-
----
-
-## 5. Two nodes from the first draft, and why they are gone
+## 3. Two nodes from the first draft, and why they are gone
 
 **"Two Draughts" — a harvest fills two hand slots with the same element.**
 Deleted. It spends the player's scarcest resource — hand slots — on redundancy,
@@ -367,38 +237,7 @@ earned in.
 
 ---
 
-## 6. Open question: the compass
-
-The compass was specified for **quests**, and quests were never built, so it
-currently points at one thing and is otherwise idle. There is an obvious use for
-it — the cage (chain C), the nearest unclaimed altar, the boss door, the star
-tree — and one real question: **override or second arrow?**
-
-**Recommendation: one compass, one arrow, a priority stack — never two.** Two
-arrows on a phone screen in a first-person view is two things to interpret at the
-moment the player is trying to walk. A single arrow that always means "the thing
-you most likely want next" stays readable:
-
-1. A quest target, when quests exist. Always wins.
-2. The cage, if this floor holds one and it is still shut (needs **A Louder Cry**).
-3. The boss door, once the levers are found and it is open.
-4. The nearest unclaimed altar.
-5. The stairs, once open.
-
-The arrow should **say what it is pointing at** — a one-word label under it —
-because a priority stack the player cannot see is indistinguishable from an arrow
-that changes its mind. That label is also what makes the override honest when
-quests land: the word changes, so the player knows why the arrow moved.
-
-Star-tree pointing is a different thing and does not belong on the dungeon
-compass: the tree is a screen, not a place. If the goal is "remind me what I am
-saving for", that is the **pinned route** from
-[star-tree-research.md](star-tree-research.md) §0, which already persists into
-the run.
-
----
-
-## 7. Invariants worth writing into the code
+## 4. Invariants worth writing into the code
 
 1. **Winnable at zero.** No node is required to reach depth ten. If a balance
    pass ever depends on an owned node, that is the bug.
@@ -410,19 +249,16 @@ the run.
 
 ---
 
-## 8. Still open
+## 5. Still open
 
-- **Prices.** Placed by feel against one-run-≈-70-stars; they want a pass once
-  run length settles.
-- **Harvest depths.** The 100/20/5 sketch is a language, not a table. Candles at
-  5 is the number most likely to be wrong in either direction.
-- **Whether stowing costs a turn.** Drawing and moving are free above, which
-  makes a mid-fight stow-and-swap a way to have six things available. The limiter
-  is meant to be the hand's width, but if swapping every round turns out to read
-  as free power, stowing is where the turn should be charged — not drawing.
-- **Stack caps against the volume ladder.** 20 water in three slots is 60 units of
-  ground the player can lay without casting. Pouring costs a turn each, which is
-  the brake, but the numbers in §2.4 want a pass once pouring exists.
+- **Prices.** Placed by feel against one-run-≈-70-stars, and sixteen nodes is
+  enough that the curve matters more than any single number. Wants a pass once run
+  length settles.
+- **Whether the mouth's wider-book blessing moves to the first altar** (§2). It is
+  the cleanest fix for the game promising "and nothing else" and then handing over
+  a second page, but it changes what the rite is.
+- **Pouches four and five.** In the schema, unpriced. Five is the stated ceiling;
+  three plus two depth tiers is what wants proving first.
 - **Hades' two-variant nodes.** The most praised idea in the research and unused
-  here. It would suit chain B (Long Reach *or* something else as exclusive halves
-  of one star), but it doubles the content and the nodes should settle first.
+  here. It would suit chain B or chain E — exclusive halves of one star — but it
+  doubles the content and the nodes should settle first.
