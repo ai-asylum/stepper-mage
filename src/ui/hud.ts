@@ -1116,6 +1116,7 @@ export class Hud {
     this.drawShout(ctx, W, H);
 
     this.drawBelt(ctx, W);
+    this.drawAllies(ctx, W);
     // Before the CAST bar, so that where a card's box and the bar's touch, CAST wins:
     // `hit` scans backwards, so whatever is pushed last is on top.
     this.drawCompass(ctx, W, H);
@@ -3045,6 +3046,70 @@ export class Hud {
    * override-or-second-arrow question: there is one arrow, and this is the top of its
    * priority.
    */
+  /**
+   * YOUR SERVANTS, down the right edge under the map.
+   *
+   * The player's card is top-left with their health in it, so an ally's card is the same
+   * object mirrored: a picture, a name, a bar. Anything fighting for you is worth the
+   * same furniture as you are, and a golem you spent a turn and a clay on was previously
+   * only visible as a thing standing in the room — you could not tell what health it had
+   * left without walking round it and reading a floater.
+   *
+   * The RIGHT edge because the left is the player's side and the belt hangs there. The
+   * map owns the top of this column, so the cards start under it and grow downward.
+   *
+   * A golem's picture is its own SPRITE, not a portrait: `portrait()` loads `art/<id>.png`
+   * and a golem's flat sprite lives at exactly that path, so a barrel golem is a picture
+   * of a barrel golem with no new art and nothing to keep in sync.
+   */
+  private drawAllies(ctx: CanvasRenderingContext2D, W: number): void {
+    if (!this.map) return;
+    const { floor } = this.map();
+    const mine = floor.entities.filter(
+      (e) => e.alive && e.animated && !e.hostile && e.hp > 0 && e.kind !== 'stairs');
+    if (!mine.length) return;
+
+    const ph = Math.round(MAP_SIZE * 0.66);
+    const pw = Math.round(ph * PORTRAIT_ASPECT);
+    const x = W - pw - 12;
+    let y = MAP_TOP + MAP_SIZE + 8;
+
+    for (const e of mine) {
+      const frac = Math.max(0, Math.min(1, e.hp / Math.max(1, e.maxHp)));
+      ctx.save();
+      // The frame first, then the picture clipped inside it, so a sprite that has not
+      // decoded yet leaves a card rather than a hole — the same bargain the player's
+      // portrait makes.
+      rr(ctx, x, y, pw, ph, 3);
+      ctx.fillStyle = 'rgba(10,7,13,0.9)';
+      ctx.fill();
+      ctx.save();
+      ctx.beginPath();
+      rr(ctx, x + 2, y + 2, pw - 4, ph - 4, 2);
+      ctx.clip();
+      drawPortrait(ctx, e.spriteId, x + 2, y + 2, pw - 4, ph - 4);
+      ctx.restore();
+      rr(ctx, x, y, pw, ph, 3);
+      // Golem green rather than the player's gold: two cards that look identical would
+      // read as two players.
+      ctx.strokeStyle = 'rgba(140,224,106,0.75)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      // The bar sits INSIDE the card at its foot, where the player's waterline is, so
+      // the two are read the same way.
+      const bh = 3;
+      const bx = x + 3, by = y + ph - bh - 3, bw = pw - 6;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.fillStyle = frac > 0.34 ? '#8ce06a' : '#ff5a3c';
+      ctx.fillRect(bx, by, Math.max(1, bw * frac), bh);
+      ctx.restore();
+
+      y += ph + 6;
+    }
+  }
+
   private drawChart(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     // Guarded like every other reader of `map`: the chart can be open across a floor
     // swap, and the floor is briefly not there.
