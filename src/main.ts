@@ -1969,7 +1969,22 @@ async function boot(): Promise<void> {
      * number the whole turn economy is priced against.
      */
     const held = state.pages.filter((p) => p === id).length;
-    if (held < 1 || state.pages.length >= HAND_MAX) return null;
+    if (held < 1) return null;
+    /**
+     * ONLY WHEN IT ACTUALLY GIVES YOU A SLOT.
+     *
+     * The card's whole promise is a wider hand, and the hand is
+     * `max(meta.handSize, min(HAND_MAX, pages.length))` — so a copy widens nothing
+     * whenever the tree is already the binding constraint. A player who has bought Hand
+     * III and holds one page has three slots and no use for a second Flame's WIDTH; they
+     * were being offered it at every altar anyway, which is a card that reads as
+     * progress and is furniture.
+     *
+     * Asked as "would the hand be bigger after this" rather than as a page count, so it
+     * covers both limits at once: the book's ceiling (`HAND_MAX`) and the tree's.
+     */
+    const wouldBe = Math.min(HAND_MAX, state.pages.length + 1);
+    if (wouldBe <= handSize()) return null;
     return {
       id, colour: def.colour, cost: null, amount: 0, maxRank: MAX_RANK, golden: false,
       kind: 'copy', name: def.name,
