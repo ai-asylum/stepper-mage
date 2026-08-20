@@ -113,8 +113,9 @@ beside the picture of your person.
 
 ### 2.3 The UX, decided rather than left open
 
-The messy part is fill order and movement, so here is a rule set that needs no
-dragging at all — dragging is the one gesture this game does not otherwise use.
+The messy part is fill order and movement, so here is a rule set. It borrows the
+book's gestures rather than inventing any: the belt is the second container full
+of castable things, and it should be worked the same way as the first.
 
 **Harvest fills the hand while the hand has room; the belt takes the overflow.**
 The hand is what you cast from, so the first draw goes where it can be used. Once
@@ -122,14 +123,29 @@ the hand is full, further draws stow. Nothing is ever refused for being full
 while a belt slot is empty, which is the failure the current "your hand is full"
 refusal would otherwise produce constantly.
 
-**Movement is taps, both ways.** Tap a belt slot to draw it into the hand — that
-gesture already exists (`hud.ts`: *"Draw an ingredient out of a belt pouch. A
-single tap"*). Tap a held card to stow it back. Same verb as tapping an altar, a
-lever, a captive, and now a page.
+**Drawing from the belt is a SWIPE OUT OF IT, on the belt's own axis.** Tearing a
+page is a swipe up out of the book; drawing an ingredient is a swipe sideways out
+of the belt. Same verb — *pull the thing out of the container it lives in* — and
+the axis is whichever way the container faces: the book lies along the bottom, so
+its pages come up; the belt runs down the left edge, so its pouches come out to
+the right, toward the hand.
 
-**No drag, ever.** A drag is a precision gesture on a phone held in one hand, and
-the game's whole input vocabulary is taps and swipes. Moving a stack between slots
-uses a long-press and a second tap instead — see §2.5.
+That consistency is worth more than saving the player a gesture. Two containers
+that both hold castable components should not be emptied by two unrelated inputs,
+and a swipe carries the same tension a tear does — the stack lifts under the
+thumb, and a swipe that does not finish puts it back.
+
+**And a tap does it too**, exactly as a tap now tears the open page. The swipe is
+the gesture that teaches; the tap is the cheap repeat for the player who already
+knows. Both land in the same place, so neither has to be discovered twice.
+
+**Stowing back is the reverse swipe** — a held card pushed toward the belt — with
+a tap as the same shortcut.
+
+**Belt swipes belong to the belt.** The world reads a swipe as walking or turning,
+so the belt needs the zone claim the book already has (`overBook` in `main.ts`): a
+gesture that starts on a slot is the belt's, whatever it does next. Without that,
+every draw is also a step.
 
 **Belt contents survive a cast; hand contents are spent.** That is the line
 between the two containers and it is the whole reason the belt is worth having.
@@ -166,20 +182,22 @@ with room; failing that it takes the first empty slot; failing that it is refuse
 by name — *"your belt is full of oil"* — because a refusal that does not say what
 is in the way is a refusal the player cannot act on.
 
-**Draw is one tap.** Tap a slot, one unit goes to the hand. This is the action
-players will perform hundreds of times a run and it must never become two taps.
-It is also the only splitting mechanism the belt needs: drawing one at a time
-*is* the split, so no slider and no long-press-to-split.
+**Draw is a swipe out, or a tap.** Either way one unit goes to the hand — see
+§2.3 for why it is both. This is the action players perform hundreds of times a
+run and it must never cost two inputs. It is also the only splitting the belt
+needs: drawing one at a time *is* the split, so no slider and no
+long-press-to-split.
 
 **Move is long-press, then tap.** Hold a slot to lift its stack — the column
 dims to show the drop targets — then tap another slot to place it. Same substance
 merges up to the cap and leaves the remainder behind; different substance swaps
 the two. Tap the lifted slot again to set it down unchanged.
 
-A long-press is not a drag. Nothing has to be tracked under a moving finger,
-nothing can be dropped in the wrong place by a millimetre, and it works one-handed
-on a phone — which is the objection to drag and the reason the rest of this game
-is taps.
+Long-press-then-tap rather than a drag *between slots specifically*: the slots are
+a few dozen pixels apart on the short axis of a phone, so a dragged stack lands in
+the wrong pouch on a thumb's wobble. Pulling a stack OUT of the belt is a swipe
+because it only has to leave the column; putting one INTO a particular slot has to
+be precise, and precision is what a tap gives and a drag does not.
 
 **Remove is POUR IT OUT.** While a stack is lifted, tap the floor: the stack
 empties onto the tile you are standing on as ground. Water makes a puddle, oil a
