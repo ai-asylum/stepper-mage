@@ -139,8 +139,24 @@ thumb, and a swipe that does not finish puts it back.
 the gesture that teaches; the tap is the cheap repeat for the player who already
 knows. Both land in the same place, so neither has to be discovered twice.
 
-**Stowing back is the reverse swipe** — a held card pushed toward the belt — with
-a tap as the same shortcut.
+**Stowing is a SWIPE UP off the hand.** A page comes up out of the book into the
+hand; a component carries on up, out of the hand and into the belt. Up is the
+put-it-away direction all the way through: the same flick, one stage further
+along. A tap on a held component does the same thing, for the same
+teach-then-repeat reason.
+
+**Nothing ever destroys a component implicitly.** A tap or a swipe on a held
+ingredient means *stow it*, and if the belt cannot take it — no matching stack
+with room, no empty slot — the gesture is **refused by name** (*"your belt is full
+of oil"*) and the component stays in the hand. It is never silently dropped,
+returned to nowhere, or overwritten to make space.
+
+That rule is worth stating because the cheap implementation is the destructive
+one: a full belt is easiest to handle by throwing the incoming thing away, and the
+player finds out by losing the starlight they walked three rooms for. Losing a
+component is a real cost in a game where the room is the pouch, so it has to be a
+thing the player *did*, not a thing that happened to them. The only route to
+destruction is pouring (§2.5) — explicit, aimed at a tile, and it costs a turn.
 
 **Belt swipes belong to the belt.** The world reads a swipe as walking or turning,
 so the belt needs the zone claim the book already has (`overBook` in `main.ts`): a
@@ -180,7 +196,9 @@ Four verbs, and the common one stays a single tap.
 **Harvest auto-stacks.** A draw joins an existing stack of the same substance
 with room; failing that it takes the first empty slot; failing that it is refused
 by name — *"your belt is full of oil"* — because a refusal that does not say what
-is in the way is a refusal the player cannot act on.
+is in the way is a refusal the player cannot act on. The same rule and the same
+refusal apply to stowing from the hand (§2.3): a full belt refuses, it never
+makes room by itself.
 
 **Draw is a swipe out, or a tap.** Either way one unit goes to the hand — see
 §2.3 for why it is both. This is the action players perform hundreds of times a
@@ -199,9 +217,14 @@ the wrong pouch on a thumb's wobble. Pulling a stack OUT of the belt is a swipe
 because it only has to leave the column; putting one INTO a particular slot has to
 be precise, and precision is what a tap gives and a drag does not.
 
-**Remove is POUR IT OUT.** While a stack is lifted, tap the floor: the stack
-empties onto the tile you are standing on as ground. Water makes a puddle, oil a
-slick, fire lights the tile under your own feet.
+**Remove is POUR IT OUT — the only way anything is ever destroyed.** While a
+stack is lifted, tap the floor: it empties onto the tile you are standing on as
+ground. Water makes a puddle, oil a slick, fire lights the tile under your own
+feet.
+
+Because this is the sole destructive verb, it is also the answer to a full belt.
+The loop the player learns is: belt full → refusal that names the substance → pour
+something out → room. Every step of that is visible and every step is theirs.
 
 This is the part worth arguing for. Discard is normally a delete — a bin icon, a
 confirm, and a small feeling of waste. Pouring makes room *and* makes terrain, so
