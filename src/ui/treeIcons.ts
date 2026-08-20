@@ -62,6 +62,8 @@ export const KIND: Readonly<Record<NodeId, NodeKind>> = {
   // capability — a new thing you can do
   corpseRaising: 'capability', blessing: 'capability', blessingWider: 'capability',
   altarPages: 'capability',
+  // Not capacity: it raises no ceiling, it tells you something.
+  chart: 'capability',
   // persistence — survives a boundary
   golemKeep1: 'persistence', golemInfusion: 'persistence', golemKeep2: 'persistence',
 };
@@ -83,6 +85,7 @@ export const NICK: Readonly<Record<NodeId, string>> = {
   altarPages: 'ALTARS',
   blessing: 'BLESSING', blessingWider: 'DEEPER',
   slots4: '4TH BAND',
+  chart: 'CHART',
 };
 
 /** Two characters, for a disc too small to hold a drawing. Never normally seen. */
@@ -90,6 +93,7 @@ export const MONOGRAM: Readonly<Record<NodeId, string>> = {
   hand2: 'H2', hand3: 'H3', belt3: 'B3', belt6: 'B6',
   corpseRaising: 'CR', golemKeep1: 'G1', golemInfusion: 'GI', golemKeep2: 'G2',
   altarPages: 'AP', blessing: 'BL', blessingWider: 'BW', slots4: 'S4',
+  chart: 'CH',
 };
 
 // ------------------------------------------------------------------- disc shapes
@@ -392,6 +396,27 @@ const binding: Mark = (p) => {
  * only ever as good as its worst icon, and a missing one would silently fall back
  * to a monogram nobody reviewed.
  */
+/**
+ * THE CHART: a folded sheet with a pin stuck in it.
+ *
+ * A map alone would read as any other rectangle at 16px, and the thing this node
+ * actually sells is the MARK — so the pin is the loud half: two pixels of head above
+ * the sheet and a shaft down into it. The fold lines are shade, because they are what
+ * makes the rectangle a map rather than a door.
+ */
+const chart: Mark = (p) => {
+  box(p, 2, 3, 12, 10, SHADE);          // the sheet
+  box(p, 2, 3, 12, 1, SOLID);           // its top edge, so it reads as paper not a hole
+  box(p, 2, 12, 12, 1, SOLID);
+  // The two folds. Vertical, evenly spaced: a sheet that has been in a pocket.
+  box(p, 6, 4, 1, 8, SOLID);
+  box(p, 10, 4, 1, 8, SOLID);
+  // The pin, punched clean through the sheet so the head sits on top of it.
+  cut(p, 8, 1, 3, 3);
+  box(p, 8, 1, 3, 3, SOLID);
+  box(p, 9, 4, 1, 6, SOLID);
+};
+
 const MARK: Readonly<Record<NodeId, Mark>> = {
   hand2: hand(2),
   hand3: hand(3),
@@ -405,6 +430,7 @@ const MARK: Readonly<Record<NodeId, Mark>> = {
   blessing: mouth(1),
   blessingWider: mouth(3),
   slots4: binding,
+  chart,
 };
 
 // ------------------------------------------------------------------- the cache

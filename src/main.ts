@@ -54,7 +54,7 @@ import {
 import { substanceOf, SUBSTANCE_COMPONENT } from './game/ground';
 import { setGilded, setPageRanks } from './book/pageTexture';
 import {
-  NODE_BY_ID, TREE, derivedBeltSlots, derivedGolemInfusion, derivedGolemsKept, derivedPouchTier,
+  NODE_BY_ID, TREE, derivedBeltSlots, derivedGolemInfusion, derivedGolemsKept, derivedPouchTier, derivedHasChart,
   derivedHandSize, derivedSlots, buyBlocker, isNodeId, migrateOwned, owns,
   refundBlocker, sanitizeOwned, type NodeId,
 } from './meta/tree';
@@ -1739,6 +1739,19 @@ async function boot(): Promise<void> {
    * see `Hud.drawCompass`.
    */
   const compassGoal = (): { x: number; y: number; label: string; colour: string } | null => {
+    /**
+     * A PLAYER'S OWN MARK OUTRANKS EVERYTHING.
+     *
+     * It is the one target the player chose deliberately, so nothing the game would
+     * rather they looked at gets to argue with it — and it is what makes ONE arrow
+     * enough. Cleared on arrival, because an arrow still pointing at the tile you are
+     * standing on is an arrow that has stopped meaning anything.
+     */
+    const wp = hud.waypoint;
+    if (wp) {
+      if (wp.x === stepper.x && wp.y === stepper.y) hud.waypoint = null;
+      else return { x: wp.x, y: wp.y, label: 'MARK', colour: '#8ce0ff' };
+    }
     const altar = floor.entities.find((e) => e.kind === 'altar' && e.alive && !e.spent);
     if (altar) {
       return { x: altar.sprite.tx, y: altar.sprite.ty, label: 'ALTAR', colour: '#b98cff' };
@@ -3133,6 +3146,9 @@ async function boot(): Promise<void> {
        * crashed the boot when it was written two lines earlier.
        */
       returnHand(false);
+      // The mark belongs to a floor, not to a run.
+      hud.waypoint = null;
+      hud.chartOpen = false;
       engine.scene.remove(floor.group);
       floor.dispose();
     }
@@ -4407,6 +4423,8 @@ async function boot(): Promise<void> {
     // The fusion ceiling, on screen. Nothing else in the game states it, and at a
     // hand of one the player would otherwise only ever meet it as a refusal.
     hud.handSize = handSize();
+    // The minimap is free forever; the chart and its pin are what the tree sells.
+    hud.hasChart = derivedHasChart(meta.nodes);
     hud.handHeld = fan.count;
     // The fan's cards, projected so one of them can be tapped back. Nothing while the
     // hand is merging: a card already flying into the cast cannot be taken back, and
@@ -4573,6 +4591,21 @@ async function boot(): Promise<void> {
         if (a.entity.kind === 'captive') { rescue(a.entity); break; }
         hud.target = a.entity;
         break;
+      /**
+       * The chart, and the waypoint on it.
+       *
+       * Opening it clears nothing: the pin survives being looked at, closed, and looked
+       * at again, because it is a decision the player made about the floor rather than a
+       * mode they are in.
+       */
+      case 'chart': hud.chartOpen = !hud.chartOpen; break;
+      case 'waypoint': {
+        const at = hud.waypoint;
+        // Tapping the pin again clears it — the same toggle a tile target already is.
+        hud.waypoint = at && at.x === a.x && at.y === a.y ? null : { x: a.x, y: a.y };
+        hud.addLog(hud.waypoint ? 'Marked.' : 'Mark cleared.', 0x8ce0ff);
+        break;
+      }
       case 'cycle': cycleTarget(); break;
       case 'bestiary': hud.bestiaryOpen = !hud.bestiaryOpen; break;
       /**

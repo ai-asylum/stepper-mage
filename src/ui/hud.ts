@@ -223,6 +223,10 @@ export type UiAction =
   | { kind: 'beltDrop'; n: number }
   /** Set the drop slider without dropping yet. */
   | { kind: 'beltAmount'; n: number }
+  /** Open or close the full-screen map. The minimap's own tap. */
+  | { kind: 'chart' }
+  /** Drop a waypoint on a tile, or clear it by tapping the one that is there. */
+  | { kind: 'waypoint'; x: number; y: number }
   /** Toggle the one gesture-direction preference — see `Meta.invertGestures`. */
   | { kind: 'invertGestures' }
   /** Cut a captive loose. Once ever, per hero — see `main.ts`'s `rescue`. */
@@ -636,6 +640,14 @@ export class Hud {
   beltDropAmount = 0;
   /** Set for a beat when a harvest lands while the belt is rolled up. */
   beltFlashUntil = 0;
+  /** Is the full-screen map open? Bought on the tree; the minimap itself is free. */
+  chartOpen = false;
+  /** Where the chart is scrolled to, in tiles, or null to centre on the player. */
+  chartPan: { x: number; y: number } | null = null;
+  /** The player's own waypoint, in tiles, or null. Tops the compass priority. */
+  waypoint: { x: number; y: number } | null = null;
+  /** Does this save own the chart? Set from the tree, like `handSize`. */
+  hasChart = false;
   /**
    * The FOV the slider should draw, and the range it spans. Pushed in by `main.ts`
    * rather than read from the save here, so the HUD keeps knowing nothing about
@@ -1137,6 +1149,8 @@ export class Hud {
     if (this.rescued) this.drawRescue(ctx, W, H);
     // Over the belt it belongs to, and over the book: it is a modal about one pouch.
     if (this.beltPanel !== null) this.drawPouchPanel(ctx, W, H);
+    // Over everything: it is a whole screen, and it is the only thing on it.
+    if (this.chartOpen) this.drawChart(ctx, W, H);
   }
 
   /**
@@ -1734,6 +1748,15 @@ export class Hud {
     const SIZE = MAP_SIZE;
     const ox = W - SIZE - 10, oy = MAP_TOP;
 
+    /**
+     * THE MINIMAP IS THE DOOR TO THE CHART. A tap opens the full-screen map — but only
+     * for a save that owns it, because the minimap is free forever and the chart is what
+     * the tree sells. Registered before the frame is drawn so the whole square is the
+     * target rather than whatever pixels end up lit.
+     */
+    if (this.hasChart) {
+      this.hits.push({ rect: [ox, oy, SIZE, SIZE], action: { kind: 'chart' } });
+    }
     rr(ctx, ox, oy, SIZE, SIZE, 5);
     ctx.fillStyle = 'rgba(8,5,11,0.92)';
     ctx.fill();
@@ -3006,6 +3029,125 @@ export class Hud {
     ctx.fillStyle = 'rgba(232,217,176,0.4)';
     ctx.fillText('pours onto your tile · costs a turn', W / 2, y);
     ctx.textAlign = 'left';
+  }
+
+  /**
+   * THE FLOOR AS YOU HAVE WALKED IT, full screen, with a waypoint on it.
+   *
+   * Only explored tiles are drawn. The map is MEMORY, not vision: a map that shows the
+   * floor is a different game, and this one shows the floor you walked. `grid.explored`
+   * is already accumulated per step by `Floor.cull`, and `visited` separately, so both
+   * facts exist without anything new being tracked.
+   *
+   * A tap sets a WAYPOINT, which is the job the compass was specified for and never
+   * got — quests were never built. It is the only target the player chose deliberately,
+   * so it outranks everything else the arrow could point at, and it retires the
+   * override-or-second-arrow question: there is one arrow, and this is the top of its
+   * priority.
+   */
+  private drawChart(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    // Guarded like every other reader of `map`: the chart can be open across a floor
+    // swap, and the floor is briefly not there.
+    if (!this.map) { this.chartOpen = false; return; }
+    const m = this.map();
+    const g = m.floor.grid;
+
+    /**
+     * OPAQUE, not a wash. The chart is a whole screen and the only thing on it — the
+     * grimoire and the dungeon showing faintly through it read as a rendering fault
+     * rather than as depth, and there is nothing behind this the player needs.
+     */
+    ctx.fillStyle = '#06040a';
+    ctx.fillRect(0, -this.engine.insetTop, W, this.engine.sh);
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 12px ui-monospace, monospace';
+    ctx.fillStyle = GOLD;
+    const numeral = ROMAN[Math.min(ROMAN.length, Math.max(1, this.state.depth)) - 1];
+    ctx.fillText(`DEPTH ${numeral} · THE CHART`, W / 2, H * 0.06);
+    ctx.font = '8px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.45)';
+    ctx.fillText('tap a tile to mark it · tap the mark to clear it', W / 2, H * 0.06 + 18);
+
+    /**
+     * Scaled to FIT rather than zoomed, and no pinch.
+     *
+     * A floor is 22–34 tiles square and a portrait screen is tall, so the whole floor
+     * fits at a cell size the thumb can still hit — which makes a second scale to manage
+     * a second thing to get wrong. `chartPan` exists for the day a floor does not fit.
+     */
+    const top = H * 0.13;
+    const avail = Math.min(W - 24, H * 0.72);
+    const cell = Math.max(4, Math.floor(avail / Math.max(g.w, g.h)));
+    const mw = cell * g.w, mh = cell * g.h;
+    const ox = Math.round((W - mw) / 2), oy = Math.round(top + (avail - mh) / 2);
+
+    for (let y = 0; y < g.h; y++) {
+      for (let x = 0; x < g.w; x++) {
+        const i = g.idx(x, y);
+        if (!g.explored[i]) continue;
+        const walk = g.walkable(x, y);
+        // Walked ground reads brighter than ground merely seen: the difference is
+        // already recorded, and on a map its whole value is telling you where you have
+        // actually been.
+        ctx.fillStyle = !walk ? 'rgba(52,44,58,0.85)'
+          : g.visited[i] ? 'rgba(196,168,110,0.85)' : 'rgba(120,104,74,0.6)';
+        ctx.fillRect(ox + x * cell, oy + y * cell, Math.max(1, cell - 1), Math.max(1, cell - 1));
+      }
+    }
+
+    // The tiles the player can see right now, so "where am I on this" needs no thought.
+    ctx.fillStyle = 'rgba(255,240,200,0.5)';
+    for (const i of m.floor.visible) {
+      const x = i % g.w, y = (i / g.w) | 0;
+      ctx.fillRect(ox + x * cell, oy + y * cell, Math.max(1, cell - 1), Math.max(1, cell - 1));
+    }
+
+    // The waypoint, then the player on top of it — the player is never hidden.
+    const wp = this.waypoint;
+    if (wp) {
+      ctx.strokeStyle = '#8ce0ff';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(ox + (wp.x + 0.5) * cell, oy + (wp.y + 0.5) * cell, Math.max(3, cell * 0.7), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#fff4dc';
+    ctx.beginPath();
+    ctx.arc(ox + (m.x + 0.5) * cell, oy + (m.y + 0.5) * cell, Math.max(2, cell * 0.42), 0, Math.PI * 2);
+    ctx.fill();
+
+    /**
+     * One hit rect per EXPLORED tile. Unexplored tiles are not targets, or the map
+     * becomes a way to pin a place you have never been — which is the revealed-floor
+     * problem arriving through the waypoint instead of through the drawing.
+     */
+    for (let y = 0; y < g.h; y++) {
+      for (let x = 0; x < g.w; x++) {
+        if (!g.explored[g.idx(x, y)]) continue;
+        this.hits.push({
+          rect: [ox + x * cell, oy + y * cell, cell, cell],
+          action: { kind: 'waypoint', x, y },
+        });
+      }
+    }
+
+    const close = 'CLOSE';
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    const tw = ctx.measureText(close).width + 40;
+    const bx = (W - tw) / 2, by = H - 76;
+    rr(ctx, bx, by, tw, 30, 15);
+    ctx.fillStyle = 'rgba(26,18,32,0.96)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,207,92,0.7)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff4dc';
+    ctx.fillText(close, W / 2, by + 15);
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    this.hits.push({ rect: [bx, by, tw, 30], action: { kind: 'chart' } });
   }
 
   private drawCompass(ctx: CanvasRenderingContext2D, W: number, H: number): void {

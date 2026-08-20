@@ -30,7 +30,8 @@ export type NodeId =
   | 'corpseRaising'
   | 'altarPages'
   | 'blessing' | 'blessingWider'
-  | 'slots4';
+  | 'slots4'
+  | 'chart';
 
 export interface TreeNode {
   readonly id: NodeId;
@@ -86,6 +87,7 @@ export interface TreeNode {
  */
 const PRICES: Readonly<Record<NodeId, number>> = {
   hand2: 40,
+  chart: 120,
   slots4: 60,
   belt3: 70,
   altarPages: 70,
@@ -168,6 +170,18 @@ export const TREE: readonly TreeNode[] = [
     requires: ['golemInfusion'], live: false,
     lands: 'phase 6 — Corpse_Raising_And_Golem_Persistence', golemsKept: 2,
     effect: 'Two golems survive the descent instead of one.',
+  },
+  {
+    /**
+     * INFORMATION, WHICH IS THE CHEAPEST HONEST THING A TREE CAN SELL.
+     *
+     * It makes no fight easier and grants no element: it shows the player the floor they
+     * have already walked, and lets them mark a tile so the compass points at what THEY
+     * chose rather than at what the game would rather they looked at. That mark is also
+     * what makes one arrow enough — see `compassGoal`.
+     */
+    id: 'chart', name: 'The Chart', price: PRICES.chart, requires: [], live: true,
+    effect: 'Tap the minimap for the whole floor, and mark a tile to steer by.',
   },
   {
     id: 'altarPages', name: 'Wider Rites', price: PRICES.altarPages, requires: [],
@@ -257,6 +271,18 @@ export function derivedBeltSlots(owned: readonly string[]): number {
  *
  * Zeroed with the rest of the belt while the flag is off.
  */
+/**
+ * Does this save own the chart — the full-screen map and the waypoint on it?
+ *
+ * The MINIMAP is free forever and always has been; what this buys is the reading room
+ * and the pin. Gating basic legibility behind a purchase would break the rule that the
+ * game is playable with nothing owned, and gating a convenience for information the
+ * player already has does not.
+ */
+export function derivedHasChart(owned: readonly string[]): boolean {
+  return owned.includes('chart');
+}
+
 export function derivedPouchTier(owned: readonly string[]): 0 | 1 | 2 {
   if (!BELT_ENABLED) return 0;
   const n = ceiling(owned, 0, (node) => node.pouchTier);

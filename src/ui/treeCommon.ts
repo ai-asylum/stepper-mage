@@ -80,6 +80,9 @@ export const FAMILY: Readonly<Record<NodeId, number>> = {
   corpseRaising: 0xa98cc4,
   golemKeep1: 0x8ce06a, golemInfusion: 0x8ce06a, golemKeep2: 0x8ce06a,
   altarPages: 0xb98cff,
+  // The cold blue the compass and its mark already use, so the star and the arrow it
+  // steers are the same colour.
+  chart: 0x8ce0ff,
   blessing: 0x8fc9ff, blessingWider: 0x8fc9ff,
   slots4: 0xe8d9b0,
 };

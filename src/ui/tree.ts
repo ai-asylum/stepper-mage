@@ -111,6 +111,13 @@ const COL: Readonly<Record<NodeId, number>> = {
   belt6: 3,
   altarPages: 2, slots4: 3,
   blessing: 4, blessingWider: 4,
+  /**
+   * Column ONE, at the top. It has no prerequisite, so it sits on row 0 — where
+   * columns 0, 2, 3 and 4 are already taken by the hand, the altars, the fourth
+   * binding and the blessing. The layout lint caught the collision with the blessing
+   * on first load, which is exactly what it is for.
+   */
+  chart: 1,
 };
 
 /** The rail is five wide. Set by tap targets at a 267px usable width, not by taste. */
