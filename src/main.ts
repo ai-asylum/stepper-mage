@@ -54,7 +54,7 @@ import {
 import { substanceOf, SUBSTANCE_COMPONENT } from './game/ground';
 import { setGilded, setPageRanks } from './book/pageTexture';
 import {
-  NODE_BY_ID, TREE, derivedBeltSlots, derivedGolemInfusion, derivedGolemsKept, derivedPouchTier, derivedHasChart,
+  NODE_BY_ID, TREE, derivedBeltSlots, derivedGolemInfusion, derivedGolemsKept, derivedPouchTier, derivedHasChart, derivedAltarWidth,
   derivedHandSize, derivedSlots, buyBlocker, isNodeId, migrateOwned, owns,
   refundBlocker, sanitizeOwned, type NodeId,
 } from './meta/tree';
@@ -2282,7 +2282,12 @@ async function boot(): Promise<void> {
     let pi = 0, xi = 0;
     const nextPage = (): AltarOffer | undefined => pages[pi++];
     const nextExtra = (): AltarOffer | undefined => extras[xi++];
-    while (chosen.length < 3) {
+    /**
+     * Three cards, or four with Wider Rites. The width is a purchase, and the only one
+     * — `derivedAltarWidth` refuses a fifth for the reason `docs/DESIGN.md` gives.
+     */
+    const width = derivedAltarWidth(meta.nodes);
+    while (chosen.length < width) {
       // When one side runs dry — a book with nothing left to give, or a full bar
       // with no heal to offer — the other fills, because three is not negotiable.
       const o = chosen.length < pageSlots

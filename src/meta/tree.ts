@@ -110,12 +110,22 @@ export const TREE: readonly TreeNode[] = [
   {
     id: 'hand2', name: 'Second Hand', price: PRICES.hand2, requires: [], live: true,
     handSize: 2,
-    effect: 'Hold two components at once: pair fusions, golems, and every ingredient.',
+    /**
+     * BEGIN holding two, not "can ever hold two".
+     *
+     * `handSize()` is `max(meta.handSize, min(HAND_MAX, state.pages.length))`, and altars
+     * now offer a second and third copy of a page — so the hand widens inside a run on
+     * its own and this node no longer decides whether it CAN. It decides where a run
+     * starts, which is a real thing to sell and was not what the card said: a player who
+     * bought "hold two at once" and could already hold two would read the purchase as
+     * having done nothing.
+     */
+    effect: 'Begin every run holding two: pair fusions from the first room.',
   },
   {
     id: 'hand3', name: 'Third Hand', price: PRICES.hand3, requires: ['hand2'], live: true,
     handSize: 3,
-    effect: 'Hold three: element triples, or one element and two ingredients.',
+    effect: 'Begin holding three: element triples, or an element and two ingredients.',
   },
   {
     // Live as of the Ingredient_Belt phase: the loops are real, a drop that lands
@@ -123,7 +133,7 @@ export const TREE: readonly TreeNode[] = [
     // already arrived is the one thing the `live` flag exists to prevent.
     id: 'belt3', name: 'Ingredient Belt', price: PRICES.belt3, requires: ['hand2'],
     live: true, beltSlots: 3,
-    effect: 'Three loops on the strap. Ingredients can be picked up and kept.',
+    effect: 'Three pouches down your side. Harvest more than your hand can hold.',
   },
   {
     /**
@@ -185,8 +195,8 @@ export const TREE: readonly TreeNode[] = [
   },
   {
     id: 'altarPages', name: 'Wider Rites', price: PRICES.altarPages, requires: [],
-    live: false, lands: 'phase 8 — Deeper_Dungeon',
-    effect: 'Altars draw their spell offers from a deeper pool of pages.',
+    live: true,
+    effect: 'Every altar lays out a fourth card.',
   },
   {
     id: 'blessing', name: 'Dungeon Mouth Blessing', price: PRICES.blessing, requires: [],
@@ -199,13 +209,24 @@ export const TREE: readonly TreeNode[] = [
     effect: 'More blessings enter the run-start roll.',
   },
   {
-    id: 'slots4', name: 'Fourth Binding', price: PRICES.slots4, requires: [], live: true,
+    id: 'slots4', name: 'Fourth Binding', price: PRICES.slots4, requires: [], live: false,
     slots: 4,
     // NOTE: the slot this buys has nothing to fill it today. Golden pages used to
     // be what wrote the starting book and they are now a one-run gift that never
     // touches it (`docs/DESIGN.md`, Altar), so no mechanism currently CHOOSES a
     // starting page. Stated flatly rather than papered over with copy that promises
     // one — the missing half is a design question, not a wording problem.
+    /**
+     * NOT DRAWN. The roster owns the book's width now.
+     *
+     * A fourth binding is a slot with nothing to put in it: the page pools are cut to
+     * the wizards a save has freed, so on a one-wizard roster this buys a place to keep
+     * an element the player cannot obtain. A priced star that does nothing teaches the
+     * player that the tree lies, which is worse than an empty sky.
+     *
+     * Kept in the data with `live: false` rather than deleted, so an owning save keeps
+     * its refund — see `derivedSlots`, which still reads it.
+     */
     effect: 'Your starting book binds a fourth page.',
   },
 ];
@@ -279,6 +300,18 @@ export function derivedBeltSlots(owned: readonly string[]): number {
  * game is playable with nothing owned, and gating a convenience for information the
  * player already has does not.
  */
+/**
+ * How many cards an altar lays out: three, or four with Wider Rites.
+ *
+ * Four and never five. `docs/DESIGN.md` rejects widening the roll further on the
+ * grounds that with eight pages a wider draw only makes "every offer is stars" arrive
+ * sooner — an unlock that speeds up the economy's end state is a currency generator in
+ * a costume. One extra card is a wider CHOICE; two is a faster clock.
+ */
+export function derivedAltarWidth(owned: readonly string[]): number {
+  return owned.includes('altarPages') ? 4 : 3;
+}
+
 export function derivedHasChart(owned: readonly string[]): boolean {
   return owned.includes('chart');
 }

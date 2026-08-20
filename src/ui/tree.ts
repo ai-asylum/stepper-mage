@@ -358,11 +358,20 @@ export class TreeScreen {
     ctx.fillStyle = GOLD;
     ctx.fillText(`✦ ${v.stars}`, W / 2, 19);
 
-    const owned = TREE.filter((n) => v.owned.includes(n.id)).length;
+    /**
+     * COUNTED OVER THE SKY THE PLAYER CAN SEE.
+     *
+     * `TREE.length` includes the nodes whose effect has not landed, and those are no
+     * longer drawn — so the denominator was promising stars that are not up there. A
+     * progress figure has to count the same set the screen shows or it is measuring
+     * against a catalogue nobody has.
+     */
+    const live = TREE.filter((n) => n.live);
+    const owned = live.filter((n) => v.owned.includes(n.id)).length;
     this.chipRow(ctx, W, 45, [
       [`HAND ${v.handSize}`, 0xffcf5c],
       [`BOOK ${v.slots}`, 0xe8d9b0],
-      [`${owned}/${TREE.length} OWNED`, 0xb98cff],
+      [`${owned}/${live.length} OWNED`, 0xb98cff],
     ]);
 
     // The view toggle. Small, top-right, out of the title's way even at 295px.
@@ -450,7 +459,18 @@ export class TreeScreen {
     const route = v.pinned ? routeTo(v.pinned, v.owned) : [];
     const onRoute = new Map(route.map((id, i) => [id, i + 1]));
 
-    this.cells = TREE.map((n) => {
+    /**
+     * A NODE THAT IS NOT LIVE IS NOT DRAWN.
+     *
+     * It used to be drawn locked, with a hollow pip explaining that its effect had not
+     * landed yet. That was honest and still wrong: from the player's chair it is a
+     * priced star that does nothing, and a sky half full of them teaches that the tree
+     * lies. Better an emptier sky than a catalogue of promises.
+     *
+     * `live: false` stays in the DATA rather than the node being deleted, so a save that
+     * already owns one keeps its refund and the derivations that read it keep working.
+     */
+    this.cells = TREE.filter((n) => n.live).map((n) => {
       const kind = KIND[n.id];
       const owned = v.owned.includes(n.id);
       const missing = missingPrereqs(n.id, v.owned).length > 0;
