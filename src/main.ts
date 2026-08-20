@@ -1211,8 +1211,36 @@ async function boot(): Promise<void> {
      */
     const away = g0.flood(stepper.x, stepper.y, g0.w * g0.h,
       (qx, qy) => g0.walkable(qx, qy) && !(qx === sx && qy === sz));
+    /**
+     * AND THE SHOT IS TAKEN ON THE GATE'S OWN AXIS, square to the bars.
+     *
+     * The vantage is the neighbour on the player's side, and in a one-wide corridor both
+     * of a door's open neighbours lie along the passage — so this came out flat-on by
+     * luck of the geometry rather than by rule. Where the geometry did not cooperate the
+     * nearest reachable neighbour could be a tile beside the threshold, and the camera
+     * filmed the portcullis edge-on: a bar's width of moving metal, with the room behind
+     * it filling the frame. A gate is a flat thing that rises, so the one shot that shows
+     * the mechanism is the one square to its face.
+     *
+     * The axis is read the same way the DRAWN orientation is (`gateAcross`), because the
+     * camera and the bars disagreeing is exactly how a shot ends up looking along the
+     * plane of the thing it is pointing at. Restricted to that axis and then decided by
+     * reachability, so of the two ends of the passage the shot still comes from the side
+     * the player is standing on.
+     */
+    const axisX = (() => {
+      const w = g0.walkable(sx - 1, sz), e = g0.walkable(sx + 1, sz);
+      const n = g0.walkable(sx, sz - 1), so = g0.walkable(sx, sz + 1);
+      if (w && e && !n && !so) return true;
+      if (n && so && !w && !e) return false;
+      return null;                       // not a straight passage: take any side
+    })();
     let ax = 0, az = 0, bestD = Infinity;
     for (const [ddx, ddz] of DIR_VEC) {
+      // Off-axis tiles are not candidates at all — a side-on shot is worse than a
+      // slightly worse-placed square one.
+      if (axisX === true && ddx === 0) continue;
+      if (axisX === false && ddz === 0) continue;
       const nx = sx + ddx, nz = sz + ddz;
       if (!g0.inside(nx, nz) || !g0.walkable(nx, nz)) continue;
       const d = away[g0.idx(nx, nz)];

@@ -599,7 +599,22 @@ export class Floor {
     for (const i of vis) this.grid.explored[i] = 1;
     if (this.grid.inside(px, py)) this.grid.visited[this.grid.idx(px, py)] = 1;
     for (const e of this.entities) {
-      if (e.kind === 'stairs' && !e.sprite.group.visible) continue;
+      /**
+       * THE STAIRS ARE HIDDEN UNTIL THE BOSS FALLS, and after that they are furniture
+       * like anything else.
+       *
+       * This asked `!group.visible` — "is it drawn" — as a stand-in for "has it been
+       * opened yet", and the two agree exactly once: before the first time the door
+       * leaves the player's sight. Walk away from an open staircase and the ordinary
+       * cull below hides it; from then on this guard reads that as "not revealed" and
+       * skips it forever, so the way down is invisible for the rest of the floor. It
+       * still worked — the tile is a target and a tap descends — which is why it read
+       * as a graphical glitch rather than the door being gone.
+       *
+       * `stairsOpen` is the fact, and `revealStairs` is its one writer. The same
+       * distinction that comment already draws for the minimap.
+       */
+      if (e.kind === 'stairs' && !this.stairsOpen) continue;
       const on = vis.has(this.grid.idx(e.sprite.tx, e.sprite.ty));
       e.sprite.group.visible = on && e.alive;
     }

@@ -71,7 +71,23 @@ const AFFINITY: Record<string, Affinity> = {
   f2_enemy_cleaver: { weak: ['gust', 'stone'], resist: ['fire'] },
   f2_enemy_imp: { weak: ['fire'], resist: ['oil'] },        // rendered fat, and it is already greasy
   f2_enemy_hound: { weak: ['frost', 'stone'], resist: ['fire', 'rot'] },
-  f2_boss: { weak: ['gust', 'stone'], resist: ['fire'] },
+  /**
+   * THE BOSS OF FLOOR TWO DOES NOT RESIST FIRE, though everything around it does.
+   *
+   * Bone resisting flame is the right reading and the cleaver and the hound keep it.
+   * On the BOSS it collided with the roster: a new save holds fire and only fire until
+   * Kela is out on floor three, so a fire-resistant wall on floor two was a check the
+   * player's book had no answer to. Stone is harvestable off a fixture and gust is not
+   * a page they own, so the intended out — harvest stone, hit the bone with it — is a
+   * play you have to already know exists, two floors before the game has taught that
+   * fixtures are components at all.
+   *
+   * The weakness stays, so finding the stone is still the good line and still hits half
+   * again as hard. What is gone is the punishment for not finding it: flame is now
+   * ordinary against this boss rather than blunted, which makes floor two a fight a
+   * one-element book can win slowly and a two-element one can win well.
+   */
+  f2_boss: { weak: ['gust', 'stone'] },
 
   // ---- III, the fungal deep. Wet, alive, and rooted — which is three different
   // vulnerabilities and used to be written as one. Burning was the answer to every
