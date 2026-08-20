@@ -51,6 +51,7 @@ import {
   chestHealBase, fallDamage, healable,
   POUR_TURNS_PER_UNIT, GROUND_ARM_DRAIN,
 } from './game/tuning';
+import type { StatusId } from './spells/spells';
 import { substanceOf, SUBSTANCE_COMPONENT } from './game/ground';
 import { setGilded, setPageRanks } from './book/pageTexture';
 import {
@@ -3141,6 +3142,39 @@ async function boot(): Promise<void> {
     loading = true;
     busy = true;
     document.getElementById('boot')?.classList.remove('gone');
+    /**
+     * WHO FOLLOWS YOU DOWN.
+     *
+     * Read off the OLD floor before it is disposed, because after that the entities are
+     * gone and their combatants with them. A servant is not carried as a sprite id — it
+     * is carried as what the player MADE: the body it was woken in, the health it has
+     * left, the damage the cast gave it, and the status its infusion applies.
+     *
+     * `golemsKept` is how many, and `golemInfusion` is whether the infusion survives the
+     * stairs or is left behind with the floor. Both come off the tree, and with neither
+     * node owned this list is empty and nothing about a descent changes.
+     */
+    const carried: { sprite: string; hp: number; maxHp: number; damage: number; infuse: StatusId[] }[] = [];
+    if (floor) {
+      const keep = derivedGolemsKept(meta.nodes);
+      if (keep > 0) {
+        const mine = floor.entities.filter(
+          (e) => e.alive && e.animated && !e.hostile && e.hp > 0);
+        // Strongest first, so a player who has two and may keep one keeps the one worth
+        // keeping rather than whichever the array happened to hold first.
+        mine.sort((a, b) => b.hp - a.hp);
+        for (const e of mine.slice(0, keep)) {
+          const c = combat.combatantOf(e);
+          carried.push({
+            sprite: e.spriteId,
+            hp: e.hp,
+            maxHp: e.maxHp,
+            damage: c?.damage ?? 0,
+            infuse: derivedGolemInfusion(meta.nodes) ? [...(c?.infuse ?? [])] : [],
+          });
+        }
+      }
+    }
     if (floor) {
       /**
        * Everything comes out of the hand, the floor's own card included: the tile that
@@ -3191,6 +3225,38 @@ async function boot(): Promise<void> {
 
     stepper = new Stepper(floor.grid, floor.grid.start.x, floor.grid.start.y, floor.grid.start.dir);
     combat = new Combat(floor, state, `${runSeed}-floor-${depth}`);
+    /**
+     * AND THEY ARRIVE WITH YOU, beside the stairs you both came down.
+     *
+     * After `combat` exists, because a golem is half floor and half combatant: the floor
+     * can place the sprite and only combat can make it the same servant again
+     * (`enlistGolem`). Placed on the tiles around the start, skipping anything occupied,
+     * so two servants do not stack and neither lands inside the furniture.
+     *
+     * A servant that cannot be fitted is simply lost. That is better than the
+     * alternatives — stacking bodies, or holding a queue of golems that appear later —
+     * and it cannot happen in practice: the start tile is walkable by construction and
+     * it has open neighbours or the floor could not be entered.
+     */
+    for (const g of carried) {
+      const spot = [...DIR_VEC]
+        .map(([dx, dy]) => ({ x: floor.grid.start.x + dx, y: floor.grid.start.y + dy }))
+        .find((q) => floor.grid.walkable(q.x, q.y) && !floor.entityAt(q.x, q.y));
+      if (!spot) continue;
+      const e = await floor.place({
+        kind: 'prop', sprite: g.sprite, x: spot.x, y: spot.y,
+        ox: 0, oz: 0, hover: 0, roomId: floor.grid.roomAt(spot.x, spot.y)?.id ?? 0,
+      });
+      if (!e) continue;
+      // The body it was, not a fresh prop: animated (so it acts), friendly, and holding
+      // the health it walked down with.
+      e.animated = true;
+      e.hostile = false;
+      e.hp = g.hp;
+      e.maxHp = g.maxHp;
+      combat.enlistGolem(e, g.damage, g.infuse);
+      hud.addLog(`${displayName(g.sprite)} came down with you.`, 0x8ce06a);
+    }
     hud = new Hud(engine, state, combat, () => fan.gameIds, returnHand);
     hud.bookClosed = book.closed;
     // The floor's name, permanently in the top-left beside the depth. It used to

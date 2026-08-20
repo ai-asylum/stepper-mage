@@ -394,6 +394,38 @@ export class Combat {
     });
   }
 
+  /**
+   * Enlist a golem that walked down the stairs, with what it was.
+   *
+   * A carried servant is not a fresh body: it kept the damage the cast gave it and the
+   * status its infusion applies (`golemInfusion`), and both live on the combatant
+   * rather than on the entity — so the floor can place the sprite but only combat can
+   * make it the same golem again.
+   *
+   * Its own method rather than `register` plus two assignments at the call site, because
+   * `register` reads its damage off the DEPTH: a golem re-registered on floor four would
+   * quietly be given floor four's enemy damage, which is neither what the player built
+   * nor what they were promised.
+   */
+  enlistGolem(e: Entity, damage: number, infuse: readonly StatusId[]): void {
+    this.register(e);
+    const c = this.combatants.get(e);
+    if (!c) return;
+    c.damage = damage;
+    c.infuse = [...infuse];
+  }
+
+  /**
+   * The combatant behind an entity, read-only in practice.
+   *
+   * Exposed so a descent can ask what a golem WAS — its damage and its infusion live
+   * here and nowhere else, and the alternative is `enlistGolem` guessing them back from
+   * the depth, which is exactly the drift that method exists to avoid.
+   */
+  combatantOf(e: Entity): Combatant | undefined {
+    return this.combatants.get(e);
+  }
+
   statusesOf(e: Entity): ActiveStatus[] {
     return this.combatants.get(e)?.statuses ?? [];
   }

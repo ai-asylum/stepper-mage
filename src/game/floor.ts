@@ -281,6 +281,24 @@ export class Floor {
     return f;
   }
 
+  /**
+   * Put a body on the floor after it has been built.
+   *
+   * `create` spawns everything `populate` asked for and then the floor is closed; this
+   * is the one thing that arrives later — a golem that followed the player down the
+   * stairs. It goes through the SAME `spawn` as everything else, so a carried servant is
+   * built by the same code that built it the first time and cannot drift from it.
+   *
+   * Returns the entity so the caller can restore what the golem was: its health, its
+   * damage and its infusion live on the combatant, which is `Combat`'s business and not
+   * the floor's.
+   */
+  async place(p: Placed): Promise<Entity | null> {
+    await preloadSprites([p.sprite]);
+    await this.spawn(p);
+    return this.entities[this.entities.length - 1] ?? null;
+  }
+
   private async spawn(p: Placed): Promise<void> {
     const tex = await loadSprite(p.sprite);
     const hostile = p.kind === 'enemy' || p.kind === 'boss';

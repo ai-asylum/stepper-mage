@@ -164,20 +164,30 @@ export const TREE: readonly TreeNode[] = [
   },
   {
     // A golem you keep is a golem you first made, and animation is an ingredient.
+    /**
+     * LIVE. A golem you woke walks down the stairs with you, keeping the health it has
+     * left and the damage the cast gave it (`enterFloor`'s carry, `Combat.enlistGolem`).
+     *
+     * No longer under the BELT: the clay is a harvest now, so animation needs no pouch.
+     * Under the HAND instead, which is the thing every animation actually needs — clay
+     * is the material and an element is what goes into it, so waking a body is a
+     * two-component cast and always was. A player buying permanence for their servants
+     * has already bought the hand that makes them.
+     */
     id: 'golemKeep1', name: 'Bound Servant', price: PRICES.golemKeep1,
-    requires: ['belt3'], live: false, lands: 'phase 6 — Corpse_Raising_And_Golem_Persistence',
+    requires: ['hand2'], live: true,
     golemsKept: 1,
-    effect: 'Your nearest surviving golem follows you down the stairs.',
+    effect: 'Your strongest surviving golem follows you down the stairs.',
   },
   {
     id: 'golemInfusion', name: 'Lasting Infusion', price: PRICES.golemInfusion,
-    requires: ['golemKeep1'], live: false,
+    requires: ['golemKeep1'], live: true,
     lands: 'phase 6 — Corpse_Raising_And_Golem_Persistence', golemInfusion: true,
-    effect: 'A golem that follows you keeps its rank and its elemental infusion.',
+    effect: 'A golem that follows you keeps the element packed into it.',
   },
   {
     id: 'golemKeep2', name: 'Second Servant', price: PRICES.golemKeep2,
-    requires: ['golemInfusion'], live: false,
+    requires: ['golemInfusion'], live: true,
     lands: 'phase 6 — Corpse_Raising_And_Golem_Persistence', golemsKept: 2,
     effect: 'Two golems survive the descent instead of one.',
   },
