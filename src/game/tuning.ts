@@ -615,3 +615,11 @@ export const POUR_TURNS_PER_UNIT = 2;
  * temporary by construction, and nobody can camp a bonfire and farm it.
  */
 export const GROUND_ARM_DRAIN = 1;
+
+/**
+ * Max health an altar gives when there is nothing to mend.
+ *
+ * The old dungeon-mouth blessing's number, kept: it was sized for a choice made before
+ * the first floor, which is exactly the altar this card now answers most often.
+ */
+export const MAX_HP_GIFT = 8;

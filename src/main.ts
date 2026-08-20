@@ -49,7 +49,7 @@ import { DEFAULT_STEP, setPixelStep } from './art/steps';
 import {
   CATCH_UP_DRAWS, CHEST_HEAL_SPREAD, ENGAGE_RADIUS, PLAYER_MAX_HP, THREAT_REACH,
   chestHealBase, fallDamage, healable,
-  POUR_TURNS_PER_UNIT, GROUND_ARM_DRAIN,
+  POUR_TURNS_PER_UNIT, GROUND_ARM_DRAIN, MAX_HP_GIFT,
 } from './game/tuning';
 import type { StatusId } from './spells/spells';
 import { substanceOf, SUBSTANCE_COMPONENT } from './game/ground';
@@ -1918,7 +1918,6 @@ async function boot(): Promise<void> {
    * extra exchange with a floor-three enemy — enough to be the reason a run
    * survives, never enough to be the only card worth taking.
    */
-  const BLESSING_HP = 8;
 
   /**
    * How often a golden page is on the table at all.
@@ -2066,6 +2065,27 @@ async function boot(): Promise<void> {
   const rollExtras = (rng: Rng): AltarOffer[] => {
     const pool: AltarOffer[] = [];
     const weights: number[] = [];
+    /**
+     * FULL HEALTH GETS A BIGGER BAR INSTEAD OF A WASTED CARD.
+     *
+     * A heal offered to a player standing at full health is a card that grants nothing,
+     * and it was simply withheld — which is worse than it sounds at the one altar where
+     * everybody is always full: the rite before the first floor. So the same slot pays
+     * MAX health instead, which is the one thing a mending card can honestly give
+     * somebody who has nothing to mend.
+     *
+     * Both, and in that order, so the bar is bigger AND full — raising the ceiling alone
+     * would hand the player a bar that starts already missing what they just took.
+     */
+    if (state.hp >= state.maxHp) {
+      pool.push({
+        kind: 'heal', id: '', name: `A Deeper Well`, tag: 'MENDING',
+        colour: 0x8ce06a,
+        detail: `Nothing to close. The altar makes room instead: ${MAX_HP_GIFT} more health, kept for the descent.`,
+        cost: null, amount: MAX_HP_GIFT, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
+      });
+      weights.push(4);
+    }
     if (state.hp < state.maxHp) {
       // Sized off the CHEST curve rather than a new one, because an altar heal and a
       // chest heal are the same kind of thing now that the descent heal is gone: HP you
@@ -2348,109 +2368,6 @@ async function boot(): Promise<void> {
   };
 
   /** Apply the offer the player picked, and empty the altar. */
-  /**
-   * The three blessings, offered at the dungeon mouth before floor 1.
-   *
-   * Floor 1 had no shape to it: every run opened identically — same three pages, same
-   * rank, same hand — so the first floor was a fixed sequence rather than a hand you
-   * were dealt. One choice at the mouth changes what the run is about before the
-   * first tile.
-   *
-   * All three are RUN-LEVEL, and that is the non-overlap rule rather than a shortage
-   * of ideas. A blessing that granted an element would duplicate a page; one that
-   * shaped a cast would duplicate an ingredient. What is left — and what is actually
-   * interesting — is what you START with, and the three sit on three different axes
-   * so the choice is about how you want to play rather than which number is largest:
-   * BREADTH (a fourth page), ENDURANCE (a longer bar), POWER (a page already deep).
-   *
-   * The middle axis used to be AGENCY, a banked reroll charge, and it was the axis
-   * that never got picked. A reroll is not a thing you get, it is a thing you get to
-   * ask for later — you trade a certain prize now against a hope that some altar
-   * further down offers better, which is a worse bargain the moment either of the
-   * other two cards is a spell. Rerolls are gone from the game entirely; endurance
-   * replaces it because it is the one run-level axis left that is neither a page nor
-   * a cast, and unlike a charge it is worth exactly as much at the mouth as it is on
-   * floor five.
-   */
-  const rollBlessings = (): AltarOffer[] => {
-    const rng = new Rng(`${meta.best}:${state.depth}:blessing`);
-    const roster = rosterPages();
-    const unowned = roster.filter((sp) => !state.pages.includes(sp.id));
-    /**
-     * A WIDER BOOK MEANS A SPELL YOU DO NOT HAVE. Never a second copy of the one you
-     * are carrying.
-     *
-     * This fell back to the whole roster when there was nothing new, which on a narrow
-     * roster is most of the time — so the card offered the element the player had just
-     * been given as their starting page. That is not a wider book, it is the same spell
-     * twice, and it is worthless the moment the hand can hold two of anything: a second
-     * Flame does nothing the first did not, where a Frost beside a Flame is a fusion.
-     * Widening the run is the whole job of this card, and duplicating is the one outcome
-     * that cannot do it.
-     *
-     * With nothing new to offer the card is DROPPED rather than faked (`canWiden`). Two
-     * real choices beat three where one is furniture.
-     */
-    const extra = unowned.length ? rng.pick(unowned) : null;
-    /**
-     * A DEEPER PAGE, and the run may not have one yet.
-     *
-     * The blessings are offered at the mouth, and the mouth now asks which single page
-     * you carry BEFORE it asks anything else — so at the moment this rolls, `pages` is
-     * empty. `rng.pick` of an empty array is `undefined`, and reading `.id` off it
-     * threw before the first floor ever built: the whole run died on the boot screen.
-     *
-     * The fallback keeps the card's meaning rather than dropping it. Deepening
-     * something you do not own is exactly what "begin with Spark at rank 2" says, and
-     * it is offered on a page the wider-book card is not already offering, so the
-     * three choices stay three choices.
-     */
-    const owned = state.pages.map((id) => SPELL_BY_ID[id]).filter(Boolean);
-    const spare = roster.filter((sp) => sp.id !== extra?.id);
-    const deepen = rng.pick(owned.length ? owned : (spare.length ? spare : roster));
-
-    const blank = {
-      cost: null, amount: 0, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
-    };
-    /**
-     * A WIDER BOOK IS ONLY OFFERED WHEN THE HAND CAN HOLD ONE MORE.
-     *
-     * The card's whole promise is a page you begin holding, and the hand is the book's
-     * length capped at `HAND_MAX` — so at three pages a fourth is a card that grants a
-     * sheet nothing can ever pick up. With the pools cut to the roster this stopped being
-     * a corner case: a one-wizard save has an empty `unowned`, the card falls back to an
-     * element already in the book, and the player is offered a Flame they cannot use for
-     * the rest of the run. Two real axes beat three cards where one is furniture.
-     */
-    const canWiden = extra !== null && state.pages.length < HAND_MAX;
-    return [
-      ...(canWiden && extra ? [{
-        ...blank, kind: 'blessing' as const, id: extra.id, name: extra.name,
-        tag: 'a wider book',
-        colour: extra.colour,
-        detail: `Begin the run with ${extra.name} in the book.`,
-      }] : []),
-      {
-        ...blank, kind: 'blessing', id: '', name: 'A Longer Breath', tag: 'a deeper well',
-        colour: 0x8ce06a, amount: BLESSING_HP,
-        detail: `Begin with ${BLESSING_HP} more health, and keep it for the whole `
-          + 'descent — the bar itself is bigger, not merely full.',
-      },
-      /**
-       * Named off the LADDER and not as "<page> II". A deepened Frost is a
-       * Frostbolt — that is the whole of what the rank ladder is for — so a card
-       * offering "Frost II" would be teaching the player a notation the game does
-       * not otherwise use, on the one screen where they are reading rather than
-       * reacting.
-       */
-      {
-        ...blank, kind: 'blessing', id: deepen.id, name: rankName(deepen.id, 2),
-        tag: 'a deeper page', colour: deepen.colour, rank: 1, toRank: 2,
-        detail: `Begin with ${rankName(deepen.id, 1)} already deepened — it casts as `
-          + `two copies, and two is a ${rankName(deepen.id, 2)}.`,
-      },
-    ];
-  };
 
   /**
    * Offer them, if the star tree has bought the right to be asked.
@@ -2560,6 +2477,14 @@ async function boot(): Promise<void> {
   };
 
   let catchUpDraws = 0;
+  /**
+   * The nonce the mouth's rite rolls on.
+   *
+   * Its own number so it cannot collide with a catch-up draw (`payCatchUp` counts down
+   * from `CATCH_UP_DRAWS`) — two rolls sharing a nonce on the same depth would be the
+   * same three cards twice.
+   */
+  const BLESSING_NONCE = 99;
 
   /** Roll the owed rites, one chooser at a time, before the run begins. */
   const payCatchUp = async (): Promise<void> => {
@@ -2574,11 +2499,29 @@ async function boot(): Promise<void> {
     hud.offerSubtitle = 'choose one';
   };
 
+  /**
+   * A REAL ALTAR DRAW, before the first floor.
+   *
+   * The blessing is an altar offering you get at the start — the same table an altar in
+   * the dungeon rolls, with the same cards: a spell you do not have, a rank on one you
+   * do, stars, an ingredient bundle. Not a separate menu of three fixed axes.
+   *
+   * The three fixed cards were the wrong shape for this node twice over. One of them
+   * could only ever hand you a page, which on a narrow roster meant a second copy of
+   * the spell you had just chosen; and a bespoke table meant the one screen that looks
+   * like an altar behaved like nothing else in the game. `rollAltarOffers(null, ...)` is
+   * exactly this draw and already exists — it is what the deep-start rites use, an altar
+   * roll with no stone in front of the player.
+   *
+   * Rolled here rather than at boot, so it draws against the book the player has just
+   * chosen: an altar offers ranks on what you hold and pages you lack, and it cannot do
+   * either with an empty grimoire.
+   */
   const offerBlessings = (): boolean => {
     if (!owns(meta.nodes, 'blessing')) return false;
-    hud.offerTitle = 'A BLESSING AT THE MOUTH';
+    hud.offerTitle = 'A RITE AT THE MOUTH';
     hud.offerSubtitle = 'choose one, before the first floor';
-    hud.offers = rollBlessings();
+    hud.offers = rollAltarOffers(null, BLESSING_NONCE);
     return true;
   };
 
@@ -2757,58 +2700,6 @@ async function boot(): Promise<void> {
       hud.setShout(o.name.toUpperCase(), o.colour);
       return;
     }
-    if (o.kind === 'blessing') {
-      hud.offers = null;
-      hud.offerTitle = 'THE ALTAR OFFERS';
-      hud.offerSubtitle = 'choose one';
-      if (o.toRank > 0) {
-        state.ranks[o.id] = o.toRank;
-        hud.addLog(`You set out with ${o.name}. ${o.detail}`, o.colour);
-      } else if (o.id) {
-        /**
-         * CHECKED AGAIN AT CLAIM TIME, because the card may have been rolled before the
-         * book had its page in it.
-         *
-         * The page comes from the roster pick and that resolves asynchronously, so the
-         * blessing cards can be built while `state.pages` is still empty — which is
-         * exactly how "a wider book" ended up offering the element the player was about
-         * to start with. Filtering at roll time is not enough on its own; the question
-         * has to be asked again at the moment the page would actually be granted.
-         *
-         * A duplicate is swapped for something genuinely new. If the roster has nothing
-         * new left, the blessing pays the OTHER thing it can honestly give — a rank on
-         * the page you hold — rather than a second copy that does nothing.
-         */
-        const dupe = state.pages.includes(o.id);
-        const fresh = dupe
-          ? rosterPages().find((sp) => !state.pages.includes(sp.id))?.id ?? null
-          : o.id;
-        if (fresh) {
-          state.ranks[fresh] = 1;
-          learnPage(fresh);
-          const name = SPELL_BY_ID[fresh]?.name ?? fresh;
-          hud.addLog(`You set out with ${name} already in the book.`, SPELL_BY_ID[fresh]?.colour);
-        } else {
-          state.ranks[o.id] = 2;
-          syncPageRanks();
-          hud.addLog(
-            `Nothing new to carry — you set out with ${rankName(o.id, 2)} instead.`, o.colour,
-          );
-        }
-      } else {
-        // Both, and in that order. Raising the ceiling alone would hand the player a
-        // bar that begins the run already missing the blessing they just took.
-        state.maxHp += o.amount;
-        state.hp += o.amount;
-        hud.addLog(
-          `You set out with a deeper well — ${state.maxHp} health, and all of it.`,
-          o.colour,
-        );
-      }
-      syncPageRanks();
-      hud.setShout('BLESSED', o.colour);
-      return;
-    }
 
     const e = hud.offerAltar;
     hud.offers = null;
@@ -2909,9 +2800,24 @@ async function boot(): Promise<void> {
         );
         break;
       case 'heal': {
-        // Recomputed rather than trusted: the offer's number was clamped when the
-        // card was built, and the bar has not moved since, but the bar is the
-        // authority on what it can take.
+        /**
+         * MENDING, or a bigger bar when there is nothing to mend.
+         *
+         * Which one is decided HERE off the bar rather than off a second offer kind,
+         * because it is the same card answering the same question — what can this altar
+         * do about your health — and two kinds would be two places for the answer to
+         * drift. Recomputed rather than trusted for the same reason it always was: the
+         * bar is the authority on what it can take.
+         */
+        if (state.hp >= state.maxHp) {
+          state.maxHp += o.amount;
+          state.hp += o.amount;
+          hud.setShout(`+${o.amount} MAX HEALTH`, 0x8ce06a);
+          hud.addLog(
+            `Nothing to close, so the altar makes room. +${o.amount} max health.`, 0x8ce06a,
+          );
+          break;
+        }
         const got = healable(state.hp, state.maxHp, o.amount);
         state.hp += got;
         hud.setShout(`+${got} HEALTH`, 0x8ce06a);
