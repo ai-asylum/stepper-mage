@@ -128,18 +128,86 @@ single tap"*). Tap a held card to stow it back. Same verb as tapping an altar, a
 lever, a captive, and now a page.
 
 **No drag, ever.** A drag is a precision gesture on a phone held in one hand, and
-the game's whole input vocabulary is taps and swipes.
+the game's whole input vocabulary is taps and swipes. Moving a stack between slots
+uses a long-press and a second tap instead — see §2.5.
 
 **Belt contents survive a cast; hand contents are spent.** That is the line
 between the two containers and it is the whole reason the belt is worth having.
 
-### 2.4 What this buys the design
+### 2.4 Stacks, and what a stack is worth
+
+A belt slot holds a **stack of one substance**, and the cap is per substance —
+the second rarity dial after fixture depth, and it must agree with the first.
+
+| Substance | Stack | Fixture depth | Reads as |
+|---|---|---|---|
+| Water | 20 | ~100 | carry as much as you like |
+| Stone | 10 | ~40 | plentiful, heavy |
+| Oil | 5 | ~20 | worth planning a room around |
+| Fire | 3 | ~5 | you are carrying an open flame |
+| Starlight | 2 | ~3 | precious |
+| Golem draught | 2 | ~2 | the reason the cap exists |
+
+The two numbers say the same thing twice on purpose: a candle is shallow *and*
+fire stacks small, water is bottomless *and* stacks deep. A player who never
+reads a number still learns the hierarchy, because the shallow things run out in
+both directions.
+
+Three slots at these caps is a real inventory — 60 water or 6 starlight — without
+ever being a warehouse. And a cap of 2 on the golem draught is what keeps §4
+honest: the limiter on golems is how much draught you can carry, not a cooldown.
+
+### 2.5 Inventory management
+
+Four verbs, and the common one stays a single tap.
+
+**Harvest auto-stacks.** A draw joins an existing stack of the same substance
+with room; failing that it takes the first empty slot; failing that it is refused
+by name — *"your belt is full of oil"* — because a refusal that does not say what
+is in the way is a refusal the player cannot act on.
+
+**Draw is one tap.** Tap a slot, one unit goes to the hand. This is the action
+players will perform hundreds of times a run and it must never become two taps.
+It is also the only splitting mechanism the belt needs: drawing one at a time
+*is* the split, so no slider and no long-press-to-split.
+
+**Move is long-press, then tap.** Hold a slot to lift its stack — the column
+dims to show the drop targets — then tap another slot to place it. Same substance
+merges up to the cap and leaves the remainder behind; different substance swaps
+the two. Tap the lifted slot again to set it down unchanged.
+
+A long-press is not a drag. Nothing has to be tracked under a moving finger,
+nothing can be dropped in the wrong place by a millimetre, and it works one-handed
+on a phone — which is the objection to drag and the reason the rest of this game
+is taps.
+
+**Remove is POUR IT OUT.** While a stack is lifted, tap the floor: the stack
+empties onto the tile you are standing on as ground. Water makes a puddle, oil a
+slick, fire lights the tile under your own feet.
+
+This is the part worth arguing for. Discard is normally a delete — a bin icon, a
+confirm, and a small feeling of waste. Pouring makes room *and* makes terrain, so
+emptying a slot is a play: dumping five oil in a doorway and backing away is a
+setup, and pouring fire on your own tile is a mistake the game already knows how
+to punish. It reuses the ground system rather than adding a system, it needs no
+new art beyond what a poured substance already draws, and it means the answer to
+"my belt is full" is a decision instead of an apology.
+
+The golem draught pours as nothing — a wasted slot and a stain. That is the game
+saying out loud what the cap of 2 implies.
+
+**What each verb costs:** drawing is free, moving is free, pouring **costs a
+turn**. Free terrain creation would be the strongest thing in the game, and
+pouring a slick is exactly the kind of act a room should get an answer to. Nothing
+that changes the floor is ever free — same rule as a cast.
+
+### 2.6 What this buys the design
 
 - The belt gets a **reason to exist and a place to be taught**: you unlock it,
   you harvest into it, and the perk itself is the tutorial. That is the
   gradual-tutorial pattern from the research, applied to the one feature that has
   been shelved for lack of an on-ramp.
-- **The golems come back** (§4).
+- **The golems come back** (§4), limited by how much draught a belt can carry.
 - Harvesting stops being a one-shot and becomes a thing you *plan*, without ever
   becoming a faucet.
 
@@ -307,9 +375,13 @@ the run.
   run length settles.
 - **Harvest depths.** The 100/20/5 sketch is a language, not a table. Candles at
   5 is the number most likely to be wrong in either direction.
-- **Whether stowing costs a turn.** Drawing from the belt is presumably free, but
-  a free stow-and-swap mid-fight is a way to hold six things at once. Leaning:
-  drawing is free, stowing is free, and the limiter stays the hand's width.
+- **Whether stowing costs a turn.** Drawing and moving are free above, which
+  makes a mid-fight stow-and-swap a way to have six things available. The limiter
+  is meant to be the hand's width, but if swapping every round turns out to read
+  as free power, stowing is where the turn should be charged — not drawing.
+- **Stack caps against the volume ladder.** 20 water in three slots is 60 units of
+  ground the player can lay without casting. Pouring costs a turn each, which is
+  the brake, but the numbers in §2.4 want a pass once pouring exists.
 - **Hades' two-variant nodes.** The most praised idea in the research and unused
   here. It would suit chain B (Long Reach *or* something else as exclusive halves
   of one star), but it doubles the content and the nodes should settle first.
