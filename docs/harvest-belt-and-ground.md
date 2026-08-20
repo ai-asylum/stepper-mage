@@ -399,12 +399,25 @@ Animate was rejected. The belt-with-depth answers both: put the animation
 ingredient **in the world as a harvestable**, and depth is the limiter that
 `docs/DESIGN.md` was asking for.
 
-**Golem clay** is the ingredient, and the name is the design: clay is a material
-you press into a shape, so animating a thing is *packing clay into it* rather than
-pouring a potion over it. It comes off earthen decorations — unfired pots, clay
-urns, the wet heap beside a kiln, a cracked statue — which is a prop class that can
-sit on floor one without explanation and gives the art a reason to put pottery in a
-dungeon.
+**Golem clay** is the ingredient, and it comes off an **unfinished golem** — a
+half-sculpted body on a wooden armature, faceless, one arm still a bare strut. One
+stands on every floor and it holds two clay.
+
+That is the source rather than pottery, and it is better for three reasons. It is an
+ALCHEMICAL material taken from a body, not a craft supply, which is what the
+ingredient actually is. It explains itself on sight: a half-made golem tells you what
+clay is for without a word of text. And it makes the act a small robbery — you strip
+an unfinished body to wake something else — which is a better beat than opening a pot.
+
+It cannot itself be animated, and that falls out of the data rather than needing a
+rule: `theme.props` is index-paired with `theme.golems`, this prop is deliberately in
+neither list, and `Floor.animateProp` refuses anything with no golem form. The
+half-made body is raw material, which is exactly why you are taking clay off it.
+
+**Clay does not animate alone.** It needs an element beside it, same as any shaper —
+the clay is the material and the element is what goes into it. That is a hand of two,
+which the altar on floor one already supplies: its offers include a second copy of a
+page you hold, and the hand is the book's length.
 
 - Harvested like any other fixture element, so animation is reachable on **floor
   one, by a fresh player**, with no tree node required.

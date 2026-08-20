@@ -30,7 +30,7 @@
  */
 import { SIGILS, type SigilFn } from '../book/pageTexture';
 import { colorsOf, type SpellDef } from './pages';
-import { FIXTURE_SPELLS, SPELL_BY_ID } from './spells';
+import { SPELLS, SPELL_BY_ID } from './spells';
 
 /** The page canvas is 512x660 (`book/pageTexture.ts`). */
 const W = 512;
@@ -258,7 +258,16 @@ const MARKS: Record<string, SigilFn> = {
  * off a real page.
  */
 export const HARVEST_CARDS: Record<string, SpellDef> = {};
-for (const s of FIXTURE_SPELLS) {
+/**
+ * Every component the ROOM supplies gets a card, not only the elemental ones.
+ *
+ * This iterated `FIXTURE_SPELLS`, which is `kind === 'element'` — so golem clay, a
+ * fixture INGREDIENT, had no card. The harvest then spent the fixture's draw and put
+ * nothing in the hand: the clay vanished between the prop and the fan, which is the
+ * worst shape a bug can take here because it costs the player a resource and says
+ * nothing. Keyed on `source` for the same reason `harvestOf` is.
+ */
+for (const s of SPELLS.filter((sp) => sp.source === 'fixture')) {
   const id = `harvest-${s.id}`;
   SIGILS[id] = harvestFace(MARKS[s.id] ?? SIGILS.stone);
   HARVEST_CARDS[s.id] = {
@@ -269,7 +278,18 @@ for (const s of FIXTURE_SPELLS) {
     // and the stamp are there to say. There is no fourth school to put it in
     // without adding a chapter to a book that must never hold one of these.
     school: 'elementalism',
-    role: 'bolt',
+    /**
+     * The card's role is the BOOK's vocabulary (`pages.ts`: bolt / modifier / summon),
+     * not the game's (`spells.ts`, which also has animate / raise / tempo). It decides
+     * how the sheet is drawn and nothing else — every rule about what a hand can DO
+     * reads the real role off `gameId`.
+     *
+     * So an animating component is drawn as a SUMMON, which is what it is from the
+     * page's point of view: a body arrives.
+     */
+    role: s.role === 'animate' || s.role === 'raise' ? 'summon'
+      : s.role === 'tempo' ? 'modifier'
+      : s.role,
     cost: s.cost,
     colors: colorsOf(s.colour),
     effect: s.effect,

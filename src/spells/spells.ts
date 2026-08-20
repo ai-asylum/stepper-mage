@@ -54,6 +54,9 @@ export type StatusId =
 export type Element =
   | 'fire' | 'frost' | 'spark' | 'gust' | 'rot' | 'plant'
   | 'stone' | 'water' | 'oil' | 'starlight'
+  // Golem clay. A component rather than a damage type: it is what a body is MADE of,
+  // and the only thing in the game that wakes one.
+  | 'clay'
   | 'none';
 
 /**
@@ -519,6 +522,26 @@ export const SPELLS: SpellDef[] = [
    * working id describing the mechanic and nothing more; naming it is the designer's
    * call, and inventing a name here would be filling in that section by inference.
    */
+  {
+    /**
+     * GOLEM CLAY: the alchemical stuff a body is made of, scavenged off an unfinished
+     * one.
+     *
+     * A fixture component, so it is harvested and carried like water or oil rather than
+     * dropped by a chest — which is what makes animation reachable on floor one by a
+     * fresh player with no tree node at all. Its role is `animate`, so every rule that
+     * already keys on "is this cast an animation" picks it up untouched
+     * (`wantsObject`, the reticle, `animateProp`).
+     *
+     * Weight 10 in `belt.ts` and depth 2 here: an unfinished golem holds two, a deep
+     * pouch carries two, and a small pouch cannot carry any. The cap on golems is what
+     * you can lift rather than a cooldown, which is the same rule the hand teaches.
+     */
+    id: 'clay', name: 'Golem Clay', glyph: '🗿', role: 'animate', kind: 'ingredient',
+    source: 'fixture', element: 'clay', cost: 3,
+    colour: 0xb58b62, effect: 'Packed into a thing, it stands up and fights for you.',
+    flavor: '"Somebody got bored halfway. Their loss."',
+  },
   {
     // Owns: turning something in the room into a body on your side. No page and no
     // fixture produces an ally at all, so there is nothing to duplicate.
@@ -1117,6 +1140,15 @@ const INFUSE: Record<Element, { prefix: string; status: StatusId | null }> = {
   // No status: what plant does happens to the FLOOR, and a golem is not a floor.
   // The prefix is all it has to give, which is the same bargain Stone makes.
   plant: { prefix: 'Bramble', status: null },
+  /**
+   * Clay infuses NOTHING, and the empty prefix is the point.
+   *
+   * It is what the golem is made of rather than a second element packed into it — a
+   * clay golem infused with clay is just a golem. The table has to be total, so it
+   * answers with no prefix and no status instead of inventing an adjective for the
+   * material the body already is.
+   */
+  clay: { prefix: '', status: null },
   stone: { prefix: 'Granite', status: null },
   water: { prefix: 'Drowned', status: 'soaked' },
   oil: { prefix: 'Slick', status: 'oiled' },
@@ -1131,6 +1163,7 @@ const BODY_NAME: Record<string, string> = {
   f2_prop_cauldron: 'Cauldron', f2_prop_meatrack: 'Meat Rack', f2_prop_bonepile: 'Bone',
   f2_prop_alebarrel: 'Ale',
   f3_prop_fungus: 'Fungus', f3_prop_root: 'Root', f3_prop_statue: 'Statue',
+  prop_unfinished_golem: 'unfinished golem',
   f3_prop_planter: 'Planter',
   f4_prop_forge: 'Anvil', f4_prop_gears: 'Gear', f4_prop_oildrum: 'Oil',
   f4_prop_hoist: 'Hoist',
@@ -1168,6 +1201,10 @@ const PROP_ELEMENT: Record<string, Element> = {
   f2_prop_cauldron: 'water',
   f2_prop_alebarrel: 'oil',
   f3_prop_statue: 'stone',
+  // Every floor's, not one floor's — see `theme.ts`. Clay is the one component the
+  // dungeon supplies at any depth, because a golem is a thing you should be able to
+  // make on floor one.
+  prop_unfinished_golem: 'clay',
   f4_prop_forge: 'fire',
   f4_prop_gears: 'stone',
   f4_prop_oildrum: 'oil',
@@ -1222,6 +1259,9 @@ export const HARVEST_DEPTH: Readonly<Record<Element, number>> = {
   // Page elements are never harvested from a fixture; the entries exist so the
   // record is total and a lookup can never be undefined. Golem clay joins the
   // shallow end when it lands.
+  // Two, which is the whole stock of an unfinished golem — and exactly what a deep
+  // pouch can carry (`belt.ts`, weight 10). The scarcity is the limiter on golems.
+  clay: 2,
   frost: 0, spark: 0, gust: 0, plant: 0, rot: 0, none: 0,
 };
 
@@ -1247,13 +1287,26 @@ export function harvestDepthOf(propId: string): number {
  * fire arrives as `flame` precisely so it cannot inherit a Fireball rank.
  */
 export function isFixtureComponent(id: string): boolean {
-  return FIXTURE_SPELLS.some((s) => s.id === id);
+  // Same rule as `harvestOf`: what the ROOM supplies, elements and clay alike.
+  return SPELLS.some((sp) => sp.id === id && sp.source === 'fixture');
 }
 
 export function harvestOf(propId: string): string | null {
   const el = PROP_ELEMENT[propId];
   if (!el) return null;
-  return FIXTURE_SPELLS.find((s) => s.element === el)?.id ?? null;
+  /**
+   * Any component the ROOM supplies, not only the elemental ones.
+   *
+   * This searched `FIXTURE_SPELLS`, which is `kind === 'element'` — correct while every
+   * harvest was an element, and wrong the moment golem clay arrived as a fixture
+   * INGREDIENT. The lookup found nothing, so the unfinished golem was not harvestable
+   * and the whole chain quietly did not exist: no refusal, no message, just a prop that
+   * ignored you.
+   *
+   * Keyed on `source` instead, which is the thing that actually means "the room has
+   * this": a fixture component is one the dungeon hands out, whatever kind it is.
+   */
+  return SPELLS.find((sp) => sp.source === 'fixture' && sp.element === el)?.id ?? null;
 }
 
 /**
@@ -1368,9 +1421,18 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
   };
 
   // ---- 0. the element invariant -----------------------------------------
-  // Ahead of the animate branch, so even Animate cannot fire on its own: the
-  // vessel needs something to be made OF. Every caller resolves through here, so
-  // this is the one gate the rule needs.
+  /**
+   * Ahead of the animate branch, so even an animating component cannot fire on its
+   * own: the vessel needs something to be made OF. Every caller resolves through here,
+   * so this is the one gate the rule needs.
+   *
+   * Golem clay does not get an exception, and the reason is the altar. Every floor has
+   * one and its offers include a second copy of a page you already hold — which widens
+   * the hand, because `handSize` counts `state.pages`. So a hand of two is reachable on
+   * the first floor of a first playthrough, and clay plus an element is a hand of two.
+   * The rule costs nobody their golems; it just means you hold the material AND what
+   * you are putting into it.
+   */
   if (!elements.length) {
     return { ...base, name: 'Nothing', refusal: 'Nothing to shape — a cast needs an element.' };
   }

@@ -62,6 +62,25 @@ export function weightOf(id: string): number {
   return WEIGHT[id] ?? 1;
 }
 
+/**
+ * A HARD CEILING on how many of a thing the whole belt may hold, whatever it costs.
+ *
+ * Weight gives a pouch its shape; this is a design limit that weight cannot express.
+ * Golem clay is the case: at ten units a deep pouch holds two, which is the intended
+ * cap — but a belt of three deep pouches would hold six, and six golems is not a
+ * mechanic anybody asked for. The limiter on golems is meant to be how much clay you
+ * can carry, so the cap is on the CLAY and not on the pouch.
+ *
+ * Anything absent is limited by weight alone, which is the normal case.
+ */
+const CARRY_CAP: Readonly<Record<string, number>> = {
+  clay: 2,
+};
+
+export function carryCapOf(id: string): number {
+  return CARRY_CAP[id] ?? Infinity;
+}
+
 /** Units a pouch of this tier holds. */
 export function pouchUnits(tier: PouchTier): number {
   return POUCH_UNITS[tier];
@@ -181,7 +200,9 @@ export function beltRoom(belt: BeltState, id: string): number {
     if (slot.id === id) room += Math.floor((units - slotUnits(slot)) / w);
   }
   const empty = Math.max(0, belt.capacity - belt.slots.length);
-  return room + empty * Math.floor(units / w);
+  room += empty * Math.floor(units / w);
+  // And never past the thing's own ceiling, counting what is already carried.
+  return Math.max(0, Math.min(room, carryCapOf(id) - beltHeld(belt, id)));
 }
 
 export function beltRefusalFor(belt: BeltState, id: string): string | null {
@@ -200,6 +221,14 @@ export function beltRefusalFor(belt: BeltState, id: string): string | null {
     return `${name} is too heavy for a pouch this size.`;
   }
   if (beltRoom(belt, id) > 0) return null;
+  /**
+   * A CAPPED thing says so in its own terms. "Every pouch is full" would be a lie with
+   * two clay and three empty pouches, and the player would go looking for room that
+   * would not have helped.
+   */
+  if (beltHeld(belt, id) >= carryCapOf(id)) {
+    return `You cannot carry more than ${carryCapOf(id)} ${name}.`;
+  }
   return `Every pouch is full. Drop something before taking ${name}.`;
 }
 

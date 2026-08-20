@@ -215,6 +215,13 @@
       "prompt": "A MOSSY STATUE: a weathered stone statue of a robed hooded figure with its face eroded smooth and featureless, one arm broken off at the elbow, thick green moss and pale lichen swallowing its lower half, ivy wrapped around the plinth, deep cracks up the torso."
     },
     {
+      "id": "prop_unfinished_golem",
+      "kind": "prop",
+      "height": 190,
+      "seed": 2711,
+      "prompt": "AN UNFINISHED GOLEM: a half-sculpted humanoid figure of wet grey-brown clay standing on a low wooden armature, its head a smooth featureless lump with no face cut into it yet, one arm finished and raised, the other arm still a bare wooden strut with clay packed roughly around the shoulder, the torso ribbed with the sculptor's thumb marks, a pail of slip and a bone modelling tool at its feet, a damp cloth draped over one hip."
+    },
+    {
       "id": "f3_prop_planter",
       "kind": "prop",
       "height": 125,

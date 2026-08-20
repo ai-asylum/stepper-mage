@@ -66,12 +66,26 @@ export interface CaptiveSpot {
   sprite: string;
 }
 
+/**
+ * The clay source, shared by every theme.
+ *
+ * Not a themed prop: `theme.props` is index-paired with `theme.golems` and this has no
+ * golem form on purpose. One id, so a floor at any depth can supply the one component
+ * that makes a body.
+ */
+const CLAY_PROP = 'prop_unfinished_golem';
+
 export function populate(
   grid: Grid, theme: Theme, seed: string, depth: number, captive: CaptiveSpot | null = null,
 ): Placed[] {
   const rng = new Rng(`${seed}-pop`);
   const out: Placed[] = [];
   const taken = new Set<number>();
+  /**
+   * Has this floor had its unfinished golem yet? One per floor, and one is enough: it
+   * holds two clay, which is a deep pouch full and two golems' worth.
+   */
+  let clayPlaced = false;
 
   const claim = (x: number, y: number) => taken.add(grid.idx(x, y));
 
@@ -344,6 +358,35 @@ export function populate(
       const [x, y] = spots[i];
       if (!canFurnish(x, y)) continue;
       put++;
+      /**
+       * ONE UNFINISHED GOLEM PER FLOOR, whatever the theme.
+       *
+       * It is the only source of clay, and clay is the only thing that wakes a body — so
+       * a floor without one is a floor where animation does not exist. It is placed in
+       * the prop loop rather than by its own pass so it competes for the same wall spots
+       * everything else does, and it is deliberately NOT in `theme.props`: those lists
+       * are index-paired with `theme.golems`, and this thing has no golem form.
+       *
+       * That absence is the fiction working. `Floor.animateProp` refuses anything with no
+       * `golem`, so the half-made body cannot itself be woken — it is raw material, which
+       * is exactly why you are taking clay off it.
+       */
+      const claySource = !clayPlaced && room.kind !== 'entrance'
+        && (put === 1 || i === spots.length - 1);
+      if (claySource) {
+        clayPlaced = true;
+        out.push({
+          kind: 'prop',
+          sprite: CLAY_PROP,
+          x, y,
+          ox: rng.range(-0.16, 0.16),
+          oz: rng.range(-0.16, 0.16),
+          hover: 0,
+          roomId: room.id,
+        });
+        furnish(x, y);
+        continue;
+      }
       const pi = rng.int(0, theme.props.length - 1);
       out.push({
         kind: 'prop',
@@ -409,6 +452,8 @@ export function populate(
 export function spriteIdsFor(theme: Theme): string[] {
   return [
     'altar', 'altar_empty', 'chest', 'chest_open', 'stairs_down', 'lever', 'lever_pulled',
+    // Every floor has one, so it preloads with the fixed set rather than with a theme.
+    CLAY_PROP,
     ...theme.props, ...theme.golems, ...theme.enemies, theme.boss,
   ];
 }
