@@ -1323,12 +1323,40 @@ export interface CastTarget {
   propId?: string;
 }
 
+/**
+ * The most times one cast may hit the same body — the rank ladder's ceiling.
+ *
+ * Three, because that is where ranks stop. Kept here beside the resolution rather than
+ * imported from `combat.ts` so this file does not depend on the game layer for a number
+ * about spells.
+ */
+export const MAX_STRIKES = 3;
+
 export interface ResolvedCast {
   name: string;
   colour: number;
   output: CastOutput;
   damage: number;
+  /**
+   * How many DISTINCT bodies this cast reaches.
+   *
+   * Authored on the fusion rows — Whiteout is a three-body freeze because that is what
+   * Whiteout is — and never raised by rank. See `strikes` for what a rank does instead.
+   */
   count: number;
+  /**
+   * How many times the PRIMARY target is hit.
+   *
+   * A rank deepens a page rather than widening it: a Fireball is a Flame that lands
+   * twice on the thing you aimed at, not a Flame that also singes the creature beside
+   * it. Splashing a neighbour is the one thing a single-page cast must never do, because
+   * the whole positional game is built on choosing which body a turn is spent on.
+   *
+   * Separate from `count` so the two cannot be confused: `count` spreads, `strikes`
+   * repeats, and an authored spread of three at rank three is three bodies hit three
+   * times each rather than nine bodies.
+   */
+  strikes: number;
   statuses: CastStatus[];
   shove: number;
   cost: number;
@@ -1414,7 +1442,7 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
 
   const base: ResolvedCast = {
     name: '', colour: 0xffffff, output: 'projectile',
-    damage: 0, count: 1, statuses: [], shove: 0, cost,
+    damage: 0, count: 1, strikes: 1, statuses: [], shove: 0, cost,
     elements: [...new Set(elements)],
     volume: isVolume(elements) ? volumeTiles(elements, extraBolt) : POINT_VOLUME,
     pierce: elements.includes('starlight'), infuse: [], authored: false,
@@ -1523,6 +1551,8 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
   let name = combo.name;
   let damage = combo.damage;
   let count = combo.count ?? 1;
+  /** Hits on the primary. Raised by rank; authored rows never set it. */
+  let strikes = 1;
   let statuses = (combo.statuses ?? []).map((s) => ({ ...s }));
   let shove = combo.shove ?? 0;
 
@@ -1582,8 +1612,36 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
      * and three WRAPPED projectiles, which is what this used to be, a rank-3
      * Fireball put 36 on one target and beat the triple outright.)
      */
-    count += extraBolt;
-    damage = Math.round(damage * (1 + 0.15 * extraBolt));
+    /**
+     * RANK GOES DEEPER, NOT WIDER. This raised `count`, which spread the cast across
+     * distinct hostiles — so a rank-2 Flame aimed at one creature also hit the one
+     * standing next to it. That is the single thing a one-page cast must not do: the
+     * whole game is choosing which body your turn is spent on, and a splash spends it
+     * on whatever happened to be nearby.
+     *
+     * So the copies land on the SAME target, which is what the altar card says out loud
+     * ("One page, strikes twice"). The old +15% is gone with the spread: the extra hits
+     * ARE the empowerment now, and keeping a multiplier on top would be paying for the
+     * same rank twice.
+     *
+     * This is a real change to the ladder's shape. It was priced so that slots stayed
+     * ahead of ranks on every body count — a rank-3 page put 22 on one body and 39
+     * across three, against a three-slot fusion's 24 and 72 — and focusing puts a rank-3
+     * page at 30 on one body. Ranks are now the single-target answer and fusions the
+     * multi-body one, which is a cleaner split than both being spreads, but the numbers
+     * behind it want a pass.
+     */
+    /**
+     * Capped at three, which is the rank ladder's own ceiling.
+     *
+     * `extraBolt` counts every duplicate element in the cast, so it stacks the rank
+     * ladder with the hand: three rank-3 Flames is nine copies, and nine strikes on one
+     * body is ninety damage from a single turn — three times the deepest thing the
+     * ladder was ever meant to buy. The hand's value in a same-element cast is already
+     * paid out in the volume ladder (`varietyStep`, `volumeTiles`); the DEPTH tops out
+     * where the ranks do.
+     */
+    strikes = Math.min(MAX_STRIKES, strikes + extraBolt);
   }
 
   /**
@@ -1599,7 +1657,7 @@ export function resolveCast(ids: string[], target: CastTarget): ResolvedCast {
 
   return {
     ...base,
-    name, colour: combo.colour, damage, count, statuses, shove,
+    name, colour: combo.colour, damage, count, strikes, statuses, shove,
     // An authored floor, never a ceiling: rank still grows the patch past it, so a
     // deepened Whiteout is bigger than a plain one rather than pinned to the row.
     volume: Math.max(base.volume, combo.volume ?? 0),

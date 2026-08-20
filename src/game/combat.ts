@@ -725,8 +725,25 @@ export class Combat {
 
     const lands = this.onCastFx(cast, null, targets);
 
+    /**
+     * EVERY BODY ONCE, AND THE PRIMARY AS MANY TIMES AS THE RANK SAYS.
+     *
+     * `count` is the spread an authored fusion buys and `strikes` is the depth a rank
+     * buys — see `ResolvedCast`. A rank used to raise the spread, so a Fireball aimed at
+     * one creature also hit the one beside it; the repeats land on the thing the player
+     * actually aimed at now.
+     *
+     * The extra hits are separate applications rather than one multiplied number,
+     * because that is what makes them read as strikes: each one rolls affinity, each one
+     * lands its status, and a body that dies to the first does not soak the second.
+     */
     for (let i = 0; i < targets.length; i++) {
-      await this.applyCast(cast, targets[i], i === 0, targets);
+      const hits = i === 0 ? Math.max(1, cast.strikes) : 1;
+      for (let k = 0; k < hits; k++) {
+        // Stop hammering a corpse: later strikes go nowhere if the first killed it.
+        if (!targets[i].alive) break;
+        await this.applyCast(cast, targets[i], i === 0 && k === 0, targets);
+      }
     }
 
     /**
