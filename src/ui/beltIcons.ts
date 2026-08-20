@@ -252,11 +252,66 @@ const sand: BeltIcon = (ctx, s) => {
  * still owns (`spells.ts`), so this is keyed off the same strings `INGREDIENT_IDS`
  * yields and a rename shows up as a missing glyph in one place rather than five.
  */
-const ICON: Readonly<Record<string, BeltIcon>> = { animate, moss, grow, split, sand };
+/**
+ * THE HARVESTED SUBSTANCES, which the belt now holds beside its ingredients.
+ *
+ * Drawn rather than lettered because a pouch is read at a glance and mid-fight: `WA`
+ * and `OI` are two dark marks that have to be parsed, and a droplet and a flame are
+ * recognised without reading. Each is one silhouette in the substance's own colour,
+ * on the same terms as the ingredient glyphs above — no outline, no detail that dies
+ * at 16px.
+ */
+const droplet: BeltIcon = (ctx, s) => {
+  ctx.beginPath();
+  ctx.moveTo(0, -s);
+  ctx.bezierCurveTo(s * 0.78, -s * 0.1, s * 0.62, s * 0.86, 0, s * 0.86);
+  ctx.bezierCurveTo(-s * 0.62, s * 0.86, -s * 0.78, -s * 0.1, 0, -s);
+  ctx.fill();
+};
+
+const flame: BeltIcon = (ctx, s) => {
+  ctx.beginPath();
+  ctx.moveTo(0, -s);
+  ctx.bezierCurveTo(s * 0.7, -s * 0.3, s * 0.5, s * 0.9, 0, s * 0.9);
+  ctx.bezierCurveTo(-s * 0.5, s * 0.9, -s * 0.7, -s * 0.2, -s * 0.15, -s * 0.45);
+  ctx.bezierCurveTo(-s * 0.05, -s * 0.7, 0, -s * 0.85, 0, -s);
+  ctx.fill();
+};
+
+/** A blunt wedge of rock: flat-bottomed, so it reads as heavy. */
+const rock: BeltIcon = (ctx, s) => {
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.9, s * 0.7);
+  ctx.lineTo(-s * 0.5, -s * 0.4);
+  ctx.lineTo(s * 0.1, -s * 0.85);
+  ctx.lineTo(s * 0.85, -s * 0.1);
+  ctx.lineTo(s * 0.7, s * 0.7);
+  ctx.closePath();
+  ctx.fill();
+};
+
+/** Four-pointed star, the one shape in the set with no mass to it. */
+const star: BeltIcon = (ctx, s) => {
+  ctx.beginPath();
+  ctx.moveTo(0, -s);
+  ctx.quadraticCurveTo(s * 0.16, -s * 0.16, s, 0);
+  ctx.quadraticCurveTo(s * 0.16, s * 0.16, 0, s);
+  ctx.quadraticCurveTo(-s * 0.16, s * 0.16, -s, 0);
+  ctx.quadraticCurveTo(-s * 0.16, -s * 0.16, 0, -s);
+  ctx.fill();
+};
+
+const ICON: Readonly<Record<string, BeltIcon>> = {
+  animate, moss, grow, split, sand,
+  // Oil is the droplet too — the COLOUR is what separates it from water, the same way
+  // the ground already tells a slick from a puddle.
+  water: droplet, oil: droplet, flame, stone: rock, starlight: star,
+};
 
 /** Two characters, for a loop too small to hold a drawing. Never normally seen. */
 const MONOGRAM: Readonly<Record<string, string>> = {
   animate: 'AN', moss: 'MO', grow: 'GR', split: 'MS', sand: 'SA',
+  water: 'WA', oil: 'OI', flame: 'FL', stone: 'ST', starlight: 'SL',
 };
 
 /**

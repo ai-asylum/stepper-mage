@@ -133,9 +133,15 @@ export const TREE: readonly TreeNode[] = [
      * Sized off the roster rather than off a round number, so a sixth ingredient
      * would move this deliberately instead of quietly making the node correct.
      */
+    /**
+     * And DEEPER, which is what the name has always said: this raises the pouch tier as
+     * well as the count, so every pouch holds twice as much (`POUCH_UNITS`). Interim —
+     * the proposal splits count and depth into two axes bought separately, and this node
+     * is doing both jobs until that re-cut lands.
+     */
     id: 'belt6', name: 'Deep Belt', price: PRICES.belt6, requires: ['belt3'],
-    live: true, beltSlots: 5,
-    effect: 'A loop for every shape. Carry them all instead of choosing at the drop.',
+    live: true, beltSlots: 5, pouchTier: 1,
+    effect: 'A pouch for every shape, and each one holds twice as much.',
   },
   {
     // Corpse raising is a CAPABILITY and Coffin Moss is its per-use limiter

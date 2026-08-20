@@ -1691,6 +1691,21 @@ export class Combat {
   }
 
   /**
+   * A THIRD THING THAT COSTS A TURN: changing the floor from your belt.
+   *
+   * The comment below says there is no third caller and that adding one would be
+   * adding a third thing that costs a turn. This is that third thing, added
+   * deliberately: emptying a pouch lays GROUND — a slick, a puddle, a fire on your own
+   * tile — and free terrain creation would be the strongest thing in the game.
+   *
+   * Deliberately NOT `playerStepped`, which also asks about trapdoors and wakes a room
+   * on arrival. Nobody arrived anywhere; a turn was spent standing still.
+   */
+  async playerActed(): Promise<void> {
+    await this.enemyRound();
+  }
+
+  /**
    * Every hostile and every allied golem takes its turn, then statuses tick.
    *
    * **This is the turn.** There is exactly one round in the game and both prices
@@ -2217,7 +2232,12 @@ export class Combat {
   }
 
   /** Push the ground layer at the thing that draws it. One truth, one direction. */
-  private syncGround(): void {
+  /**
+   * Public, because the belt can now change the ground without casting: dropping a
+   * pouch pours a substance, and the picture has to catch up by the same one path
+   * every cast uses rather than by a second copy of these two lines.
+   */
+  syncGround(): void {
     this.floor.fireView.sync(this.floor.ground.patches(), this.floor.grid.w);
     // Briar stands up rather than lying on the floor, so it is a separate view with
     // a separate sync — see `growthView.ts`.

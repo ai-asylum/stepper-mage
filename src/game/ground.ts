@@ -197,6 +197,21 @@ const DOUSES: Partial<Record<Substance, readonly Element[]>> = {
   fire: ['water'],
 };
 
+/**
+ * The substance a component leaves on the floor, or null when it leaves nothing.
+ *
+ * The inverse of `SUBSTANCE_ELEMENT`, keyed by component ID because that is what a
+ * hand and a pouch hold. Stone and starlight have no ground form — a dropped stone is
+ * a stone on the flagstones, not terrain — and neither will the clay, which is the
+ * point of it being the precious one.
+ */
+export function substanceOf(id: string): Substance | null {
+  if (id === 'water') return 'water';
+  if (id === 'oil') return 'oil';
+  if (id === 'flame' || id === 'fire') return 'fire';
+  return null;
+}
+
 export function groundUse(what: Substance, elements: readonly Element[]): GroundUse {
   // Gust is the extinguisher and outranks everything: a cast that both clears and
   // feeds is a cast that clears.

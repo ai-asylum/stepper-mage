@@ -269,8 +269,14 @@ export function beltDrop(belt: BeltState, index: number, n: number): number {
  */
 export function beltMove(belt: BeltState, from: number, to: number): boolean {
   const a = belt.slots[from], b = belt.slots[to];
-  if (!a || from === to) return false;
-  if (!b) { belt.slots[to] = a; belt.slots.splice(from, 1); return true; }
+  /**
+   * `slots` is the FILLED pouches in order, not a fixed array with holes in it — an
+   * empty pouch is an absence rather than an entry. So a move onto one is meaningless
+   * (the stack is already in a pouch of its own) and writing past the end would put a
+   * hole in the list, which is what it did: `slots[2]` on a two-entry list made the
+   * belt sparse and every later reader disagreed about how many pouches were full.
+   */
+  if (!a || !b || from === to) return false;
   if (a.id !== b.id) { belt.slots[from] = b; belt.slots[to] = a; return true; }
   const w = weightOf(a.id);
   const fits = Math.floor((pouchUnits(belt.tier) - slotUnits(b)) / w);

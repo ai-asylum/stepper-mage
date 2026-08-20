@@ -16,12 +16,13 @@ import type { Engine } from '../core/engine';
 import { isCastableObject, type Entity } from '../game/floor';
 import { DENIAL_STATUSES, reactionFor, type Combat, type PlayerState } from '../game/combat';
 import {
-  INGREDIENT_IDS, SPELL_BY_ID, STATUS_META, displayName, harvestOf, isElement,
+  SPELL_BY_ID, STATUS_META, displayName, harvestOf, isElement,
   rankName, wantsCorpse, wantsObject,
   type Element, type ResolvedCast,
 } from '../spells/spells';
 import type { BeltSlot } from '../spells/belt';
 import { drawBeltIcon } from './beltIcons';
+import { beltTotal, weightOf, pouchUnits, slotUnits } from '../spells/belt';
 import { BELT_ENABLED } from '../flags';
 import type { HitFx } from '../game/hitfx';
 import { Pix, hex } from '../art/pixel';
@@ -210,6 +211,18 @@ export type UiAction =
   | { kind: 'wizardPick'; id: string }
   /** Back out of a profile to the roster. */
   | { kind: 'wizardBack' }
+  /** Roll the belt out of the portrait, or back into it. The portrait is the handle. */
+  | { kind: 'beltToggle' }
+  /** Open one pouch's panel: what is in it, where it can go, how much to drop. */
+  | { kind: 'beltOpen'; index: number }
+  /** Close the pouch panel without doing anything. */
+  | { kind: 'beltClose' }
+  /** Move the open pouch onto another one — merge if they match, else swap. */
+  | { kind: 'beltMove'; to: number }
+  /** Drop `n` from the open pouch onto the floor. The only destructive verb. */
+  | { kind: 'beltDrop'; n: number }
+  /** Set the drop slider without dropping yet. */
+  | { kind: 'beltAmount'; n: number }
   /** Toggle the one gesture-direction preference — see `Meta.invertGestures`. */
   | { kind: 'invertGestures' }
   /** Cut a captive loose. Once ever, per hero — see `main.ts`'s `rescue`. */
@@ -236,7 +249,7 @@ export type UiAction =
    * sits under the grimoire, inside the book's own gesture zone, so without that a
    * tap on a pouch would leaf the book instead.
    */
-  | { kind: 'belt'; id: string }
+  | { kind: 'belt'; id: string; index?: number }
   /**
    * Put ONE component back — the card tapped in the fan above the grimoire. Free,
    * and it is the only way to undo a single choice: CLEAR still dumps the lot.
@@ -341,7 +354,6 @@ const CARD_BADGE_WAS = 14;
  */
 const STRAP_H = 12;
 const LOOP_H = 22;
-const LAP = 5;
 /** How long the strap tugs after a refused pickup, and how long the line stays up. */
 const PULSE_S = 1.9;
 const SAID_S = 3.2;
@@ -604,6 +616,26 @@ export class Hud {
    * panel.
    */
   bundleVersion: string | null = null;
+  /**
+   * How far the belt is rolled out, 0 at the portrait and 1 fully hung.
+   *
+   * Eased in `drawBelt` rather than stored as a boolean, because the roll IS the
+   * affordance: a strip that appeared and vanished would read as a bug, and the
+   * unroll is what tells the player where the pouches came from.
+   */
+  beltRoll = 0;
+  /**
+   * Does the player want the belt out? Follows the book by default — the two are one
+   * piece of furniture — and a tap on the portrait overrides it until the book moves
+   * again.
+   */
+  beltWanted: boolean | null = null;
+  /** Which pouch has its panel open, or null. */
+  beltPanel: number | null = null;
+  /** The panel's drop amount. Defaults to the whole stack when a panel opens. */
+  beltDropAmount = 0;
+  /** Set for a beat when a harvest lands while the belt is rolled up. */
+  beltFlashUntil = 0;
   /**
    * The FOV the slider should draw, and the range it spans. Pushed in by `main.ts`
    * rather than read from the save here, so the HUD keeps knowing nothing about
@@ -1103,6 +1135,8 @@ export class Hud {
     if (this.settingsOpen) this.drawSettings(ctx, W, H);
     // Last of all: a rescue interrupts everything, because it happens once ever.
     if (this.rescued) this.drawRescue(ctx, W, H);
+    // Over the belt it belongs to, and over the book: it is a modal about one pouch.
+    if (this.beltPanel !== null) this.drawPouchPanel(ctx, W, H);
   }
 
   /**
@@ -2823,6 +2857,157 @@ export class Hud {
     this.hits.push({ rect: [bx, by, bw, 32], action: { kind: 'rescueDone' } });
   }
 
+  /**
+   * ONE POUCH, AND EVERYTHING YOU CAN DO TO IT.
+   *
+   * Opened by a long-press on a pouch. Both management verbs live here rather than on
+   * gestures aimed at the world: the player long-pressed a pouch, so the pouch is what
+   * the panel is about, and the tile they are standing on is the only place a dropped
+   * thing could go — asking them to then aim at the floor was making them point at the
+   * only possible answer.
+   *
+   * MOVE TO offers the other pouches as buttons, greyed where the move would do
+   * nothing, because only the panel can know which targets have room. DROP takes an
+   * amount that defaults to the whole stack, since making room is the common case and
+   * the default should be the common case — but a partial drop is a real want, and how
+   * much you drop is how much terrain you get.
+   */
+  private drawPouchPanel(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+    const belt = this.state.belt;
+    const i = this.beltPanel!;
+    const slot = belt.slots[i];
+    if (!slot) { this.beltPanel = null; return; }
+
+    const units = pouchUnits(belt.tier);
+    const w = weightOf(slot.id);
+    const def = SPELL_BY_ID[slot.id];
+    const name = def?.name ?? slot.id;
+    const colour = def?.colour ?? 0xffcf5c;
+
+    ctx.fillStyle = 'rgba(6,4,9,0.9)';
+    ctx.fillRect(0, -this.engine.insetTop, W, this.engine.sh);
+    // Tapping the scrim closes, which is the escape every other panel here offers.
+    this.hits.push({
+      rect: [0, -this.engine.insetTop, W, this.engine.sh], action: { kind: 'beltClose' },
+    });
+
+    const pw = Math.min(W - 36, 300);
+    const px = Math.round((W - pw) / 2);
+    let y = Math.round(H * 0.2);
+
+    ctx.save();
+    rr(ctx, px, y, pw, 200, 10);
+    ctx.fillStyle = 'rgba(18,13,22,0.98)';
+    ctx.fill();
+    ctx.strokeStyle = hexCss(colour, 0.7);
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.restore();
+
+    // ---- what is in it -------------------------------------------------
+    y += 18;
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 13px ui-monospace, monospace';
+    ctx.fillStyle = hexCss(colour, 1);
+    ctx.fillText(name.toUpperCase(), W / 2, y);
+    y += 18;
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.7)';
+    // Units, not just a count: the pouch's fullness is the thing that decides whether
+    // the next harvest fits, and weight is why five water and one starlight can be the
+    // same amount of pouch.
+    ctx.fillText(`${slot.count} · ${slotUnits(slot)}/${units} units`, W / 2, y);
+
+    // ---- MOVE TO -------------------------------------------------------
+    y += 22;
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.5)';
+    ctx.fillText('MOVE TO', W / 2, y);
+    y += 14;
+    const n = Math.max(0, belt.capacity);
+    const bw = 30, gap = 6;
+    const totalW = n * bw + (n - 1) * gap;
+    let bx = Math.round((W - totalW) / 2);
+    for (let k = 0; k < n; k++) {
+      const other = belt.slots[k];
+      /**
+       * Only FILLED pouches are targets. `slots` holds the full ones in order and an
+       * empty pouch is an absence, so "move it to an empty pouch" is asking for the
+       * state it is already in — and offering it would be a button that does nothing.
+       *
+       * Greyed rather than hidden, because a button that vanishes is a layout that
+       * moves under the thumb.
+       */
+      const can = k !== i && !!other && (other.id !== slot.id
+        || Math.floor((units - slotUnits(other)) / w) > 0);
+      rr(ctx, bx, y, bw, 26, 5);
+      ctx.fillStyle = can ? 'rgba(38,26,12,0.96)' : 'rgba(20,16,22,0.9)';
+      ctx.fill();
+      ctx.strokeStyle = can ? 'rgba(255,207,92,0.75)' : 'rgba(120,110,120,0.4)';
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+      ctx.font = 'bold 10px ui-monospace, monospace';
+      ctx.fillStyle = can ? '#fff4dc' : 'rgba(180,170,180,0.5)';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(k + 1), bx + bw / 2, y + 13);
+      ctx.textBaseline = 'top';
+      if (can) this.hits.push({ rect: [bx, y, bw, 26], action: { kind: 'beltMove', to: k } });
+      bx += bw + gap;
+    }
+
+    // ---- DROP ----------------------------------------------------------
+    y += 38;
+    const amount = Math.max(1, Math.min(slot.count, this.beltDropAmount || slot.count));
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.5)';
+    ctx.fillText(`DROP ${amount} OF ${slot.count}`, W / 2, y);
+    y += 14;
+    /**
+     * The slider is a TRACK OF STEPS, not a continuous rail: a stack is at most twenty
+     * and usually two or three, so a discrete cell per unit is both easier to hit than
+     * a knob and self-labelling — you can see how many you are dropping without reading
+     * the number.
+     */
+    const tw = Math.min(pw - 40, 240);
+    const tx = Math.round((W - tw) / 2);
+    const cell = tw / slot.count;
+    for (let k = 1; k <= slot.count; k++) {
+      const cxk = tx + cell * (k - 1);
+      rr(ctx, cxk + 1, y, Math.max(2, cell - 2), 12, 2);
+      ctx.fillStyle = k <= amount ? hexCss(colour, 0.85) : 'rgba(60,52,64,0.8)';
+      ctx.fill();
+      this.hits.push({
+        rect: [cxk, y - 6, cell, 24], action: { kind: 'beltAmount', n: k },
+      });
+    }
+
+    // ---- the button ----------------------------------------------------
+    y += 26;
+    const label = amount >= slot.count ? 'EMPTY IT' : `DROP ${amount}`;
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    const dw = Math.max(ctx.measureText(label).width + 40, 150);
+    const dx = Math.round((W - dw) / 2);
+    rr(ctx, dx, y, dw, 30, 7);
+    ctx.fillStyle = 'rgba(58,20,16,0.96)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,120,90,0.85)';
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffd9cd';
+    ctx.fillText(label, W / 2, y + 15);
+    ctx.textBaseline = 'top';
+    this.hits.push({ rect: [dx, y, dw, 30], action: { kind: 'beltDrop', n: amount } });
+
+    // It costs a turn, and that has to be on the button rather than learned by losing
+    // one: nothing that changes the floor is ever free.
+    y += 34;
+    ctx.font = '8px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.4)';
+    ctx.fillText('pours onto your tile · costs a turn', W / 2, y);
+    ctx.textAlign = 'left';
+  }
+
   private drawCompass(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     const goal = this.compassGoal;
     if (!goal) return;
@@ -3062,214 +3247,135 @@ export class Hud {
     /**
      * Flagged off: not even the locked strap.
      *
-     * The bare strap exists to ADVERTISE an unlock, and there is nothing to advertise
-     * while the chain that buys it cannot be bought — a perforated strap with a
-     * BELT · LOCKED caption would be selling a purchase the star tree refuses. So the
-     * whole strip goes, hit rects included, and `BELT_BAND` gives its 46px back.
+     * The bare belt exists to ADVERTISE an unlock, and there is nothing to advertise
+     * while the chain that buys it cannot be bought.
      */
     if (!BELT_ENABLED) return;
-    /**
-     * The one exception to "always": the altar modal owns the whole frame. Under the
-     * veil the strip is a ghost, but its hit rects would still be live — and a pouch tap
-     * spends a hand slot and a turn, which is not something an invisible control should
-     * be able to do while the player is reading three offers.
-     */
+    /** The altar modal owns the whole frame — an invisible pouch must not be tappable. */
     if (this.offers) return;
     const belt = this.state.belt;
-    const B = this.bookTop;
-    const strapBottom = B + LAP;
-    const strapTop = strapBottom - STRAP_H;
-    const loopBottom = strapTop + 6;
-    const loopTop = loopBottom - LOOP_H;
-    // Narrower gutters on a narrow stage. Six loops have to fit a 295px SE, and 4px a
-    // side is 8px of pitch — the difference between a 40px tap target and a 44px one.
-    const mx = W < 340 ? 10 : 14;
-    /** 0 means the tree node is unbought: bare strap, no loops, unlit. */
     const n = Math.max(0, belt.capacity);
-    const locked = n === 0;
+    if (n === 0) return;                     // no pouches bought: nothing to hang
 
     /**
-     * How fresh the last refusal is. `belt.refusal.at` is a `performance.now()` stamp
-     * and it is only cleared by a successful pickup, so without reading the clock the
-     * strap would pulse for a refusal from two rooms ago — which is precisely what
-     * `belt.ts` says the timestamp is there to prevent.
+     * THE BELT HANGS OFF THE PORTRAIT, and rolls back into it when the book is away.
+     *
+     * The left edge is contested: walking and turning are swipes in the world area and
+     * that is exactly where a thumb lands for them, so a permanent column of touch
+     * targets there would eat movement gestures during the part of the game that is
+     * nothing but movement. Rolled up, the pouches have no hit rects at all.
+     *
+     * It follows the BOOK by default because the two are one piece of furniture, and a
+     * tap on the portrait overrides that until the book next moves (`beltWanted`).
+     */
+    const flashing = performance.now() < this.beltFlashUntil;
+    const want = (this.beltWanted ?? !this.bookClosed) || flashing;
+    // Eased per frame toward the target. 0.18 is the book's own feel; anything faster
+    // reads as a pop and anything slower is a wait before a tap.
+    this.beltRoll += ((want ? 1 : 0) - this.beltRoll) * 0.18;
+    if (this.beltRoll < 0.01 && !want) this.beltRoll = 0;
+
+    const ph = MAP_SIZE;
+    const pw = Math.round(ph * PORTRAIT_ASPECT);
+    const px = 12;
+    const top = MAP_TOP + ph + 6;
+    const size = Math.min(pw, 34);
+    const pitch = size + 6;
+
+    /**
+     * THE HANDLE, always. Tapping the portrait rolls the belt out or back, so the
+     * pouches are reachable without opening the book — and the badge is what a
+     * collapsed belt still has to say, because a container that hides how full it is
+     * turns "can I harvest this" into a guess.
+     */
+    this.hits.push({ rect: [px, MAP_TOP, pw, ph], action: { kind: 'beltToggle' } });
+    const carried = beltTotal(belt);
+    if (this.beltRoll < 0.6 && carried > 0) {
+      const bx = px + pw - 7, by = MAP_TOP + ph - 7;
+      ctx.beginPath();
+      ctx.arc(bx, by, 8, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(12,8,14,0.92)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,207,92,0.7)';
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+      ctx.font = 'bold 9px ui-monospace, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff4dc';
+      ctx.fillText(String(Math.min(99, carried)), bx, by + 0.5);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    }
+    if (this.beltRoll <= 0.01) return;       // rolled up: no pouches, no hit rects
+
+    /**
+     * How fresh the last refusal is — the strap pulses for it, and only for a fresh
+     * one. `belt.refusal.at` is only cleared by a successful pickup, so without the
+     * clock the belt would pulse for something two rooms ago.
      */
     const age = belt.refusal ? (performance.now() - belt.refusal.at) / 1000 : Infinity;
     const pulse = age < PULSE_S ? 1 - age / PULSE_S : 0;
     const said = age < SAID_S ? belt.refusal!.why : null;
 
-    // ---- the strap ------------------------------------------------------
     ctx.save();
-    // A physical TUG rather than a flash: the strap is leather and the thing that just
-    // happened is a drop bouncing off it. Horizontal, because vertical would read as
-    // the whole HUD juddering.
+    // The column grows downward out of the portrait, and is clipped to however far it
+    // has unrolled — so a pouch emerges from under the picture rather than fading in.
+    const shown = Math.round(pitch * n * this.beltRoll);
+    ctx.beginPath();
+    ctx.rect(px - 4, top - 1, pw + 8, shown + 2);
+    ctx.clip();
     if (pulse > 0) ctx.translate(Math.sin(age * 34) * 2.4 * pulse, 0);
 
-    const sw = W - mx * 2;
-    const grad = ctx.createLinearGradient(0, strapTop, 0, strapBottom);
-    if (locked) {
-      // Unlit, not absent: the same leather with the warmth taken out of it. A near-black
-      // bar read as a drawn rule rather than as an object you could own one day.
-      grad.addColorStop(0, 'rgba(58,50,46,0.88)');
-      grad.addColorStop(1, 'rgba(24,19,20,0.88)');
-    } else {
-      grad.addColorStop(0, 'rgba(92,58,33,0.95)');
-      grad.addColorStop(1, 'rgba(38,23,15,0.95)');
-    }
-    rr(ctx, mx, strapTop, sw, STRAP_H, STRAP_H / 2);
-    ctx.fillStyle = grad;
-    ctx.fill();
+    /** A full hand cannot draw anything, whatever is in the pouches. */
+    const handFull = this.handHeld >= Math.max(this.handSize, 1);
 
-    if (pulse > 0) {
-      ctx.shadowColor = hexCss(0xff6a3c, 0.5 + pulse * 0.5);
-      ctx.shadowBlur = 5 + pulse * 14;
-    }
-    ctx.strokeStyle = pulse > 0 ? hexCss(0xff6a3c, 0.5 + pulse * 0.5)
-      : locked ? 'rgba(176,160,140,0.34)'
-      : 'rgba(255,207,92,0.42)';
-    ctx.lineWidth = pulse > 0 ? 1.7 : 1.1;
-    /**
-     * Perforated while locked, and that is a borrowed word rather than a new one: the
-     * star tree draws every unbought node with a dashed rim, so dashed means "not yours
-     * yet" on both screens. A LONG dash, for the reason `treeIcons.ts` gives about a
-     * hexagon's corners: at [3, 3] the rim read as marching ants around a selection
-     * rather than as an edge that happens to be broken.
-     */
-    if (locked && pulse <= 0) ctx.setLineDash([6, 4.5]);
-    rr(ctx, mx, strapTop, sw, STRAP_H, STRAP_H / 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.shadowBlur = 0;
-
-    // Stitching: two dashed hairlines, which is what makes the band read as leather
-    // instead of as a drawn rule. Drawn while locked too, dimmer — the strap is the same
-    // object either way and "unlit" is a lighting state, not a different strap.
-    ctx.strokeStyle = locked ? 'rgba(198,182,158,0.16)' : 'rgba(255,214,140,0.26)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([2, 3]);
-    for (const y of [strapTop + 2.5, strapBottom - 2.5]) {
-      ctx.beginPath();
-      ctx.moveTo(mx + 7, y);
-      ctx.lineTo(W - mx - 7, y);
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
-    // The buckle, so a strap has a direction and is not a ladder — `treeIcons.ts`'s
-    // belt glyph makes the same call, and the strip and the node it is bought from
-    // should be recognisably the same object.
-    const bs = STRAP_H + 2;
-    rr(ctx, mx - 1, strapTop - 1, bs, bs, 2.5);
-    ctx.strokeStyle = locked ? 'rgba(176,160,140,0.5)' : 'rgba(255,214,140,0.78)';
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
-    // the pin, so the buckle is a buckle and not an empty square
-    ctx.beginPath();
-    ctx.moveTo(mx - 1 + bs / 2, strapTop);
-    ctx.lineTo(mx - 1 + bs / 2, strapTop + bs - 2);
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-
-    // ---- the pouches ----------------------------------------------------
-    /**
-     * The strap absorbs a tap wherever it is hit, pushed FIRST so the loops (pushed
-     * after, and `hit` scans backwards) win their own area. Without it, the gap between
-     * two loops is a page flip, because every pixel here is below the book's edge.
-     *
-     * On a LOCKED strap that catch-all carries a real ingredient id, which is what makes
-     * the bare strap explain itself when you poke it: `takeIngredient` refuses on
-     * capacity before it ever looks at which ingredient was asked for, so any id lands
-     * on the locked line. It is a coupling and it is noted in the report — an empty
-     * `id` would be the cleaner ask.
-     */
-    /** The whole band, loops included, so the catch-all is never shorter than a loop. */
-    const band: [number, number, number, number] = [mx, loopTop - 6, sw, LOOP_H + 24];
-    this.hits.push({ rect: band, action: { kind: 'belt', id: locked ? INGREDIENT_IDS[0] : '' } });
-
-    if (!locked) {
+    for (let i = 0; i < n; i++) {
+      const y = top + pitch * i;
+      const cx = px + pw / 2;
+      const slot = belt.slots[i];
+      if (slot) this.drawPouch(ctx, cx, y, size, y + size, slot, handFull);
       /**
-       * Laid out in the strap CLEAR OF THE BUCKLE rather than centred on the screen.
-       * Centred, six loops on a 295px stage put the first one straight through the
-       * buckle — and the buckle is what makes the strip a strap, so it is the fixed
-       * thing and the loops are what move.
+       * An empty pouch is a THIN MARK, not a drawn pocket.
+       *
+       * `drawEmptyLoop` was written for the horizontal strap, where an empty loop was a
+       * mouth in a piece of leather. Hanging vertically it reads as an object of its own
+       * — five of them are five things to look at, and four of those are nothing. So the
+       * empties are a hairline outline: capacity is still visible, and the eye goes to
+       * the pouches that have something in them.
        */
-      const x0 = mx + bs + 4;
-      const room = W - mx - x0;
-      const pitch = Math.min(46, room / n);
-      const loopW = Math.min(28, pitch - 12);
-      const startX = x0 + (room - pitch * n) / 2;
-      /** A full hand cannot draw anything, whatever is on the strap. */
-      const handFull = this.handHeld >= Math.max(this.handSize, 1);
-
-      for (let i = 0; i < n; i++) {
-        const cx = startX + pitch * (i + 0.5);
-        const slot = belt.slots[i];
-        if (slot) this.drawPouch(ctx, cx, loopTop, loopW, strapTop, slot, handFull);
-        else this.drawEmptyLoop(ctx, cx, loopTop, loopW);
+      else {
+        const x = cx - size / 2;
+        rr(ctx, x, y, size, size * 0.66, 3);
+        ctx.strokeStyle = 'rgba(214,168,96,0.22)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      // Only rects that have actually unrolled are live, so a half-open belt cannot be
+      // tapped where nothing is drawn yet.
+      if (y + size <= top + shown + 2) {
         this.hits.push({
-          rect: [cx - pitch / 2, band[1], pitch, band[3]],
-          action: { kind: 'belt', id: slot?.id ?? '' },
+          rect: [px - 2, y - 2, pw + 4, size + 4],
+          action: { kind: 'belt', id: slot?.id ?? '', index: i },
         });
       }
     }
     ctx.restore();
 
-    // ---- the one caption row -------------------------------------------
+    if (!said) return;
     /**
-     * One line, two jobs, and never both at once: the refusal the belt just recorded,
-     * else the fact that the strap has no loops. An always-on label would be permanent
-     * noise on the one band of this screen that has no pixels to spare, and both of
-     * these are things the player cannot find out any other way.
-     *
-     * There was a third — TimeSand's remaining free components — and it is gone with
-     * the thing it read. Under cast = 1 turn every component is free to take, so
-     * `BeltState.free` is 0 for every hand ever held and a caption gated on `> 0`
-     * could never draw. A readout of a constant is noise even when the constant is 0.
-     *
-     * The refusal COPY is `belt.refusal.why` verbatim. The belt owns the wording of its
-     * own rules; the strip only decides that it appears here, next to the strap that is
-     * pulsing for it, rather than only in a log line that scrolls.
+     * The refusal, in the belt's own words, beside the belt rather than only in a log
+     * line that scrolls. Drawn under the column and shrunk to fit rather than wrapped.
      */
-    const caption = said ?? (locked ? 'BELT · LOCKED' : null);
-    if (!caption) return;
-
-    let size = 8.5;
-    ctx.font = `${size}px ui-monospace, monospace`;
-    // Shrunk to fit rather than wrapped: a second line would come out of the CAST bar's
-    // row, and the longest refusal (the full-belt one, which names an ingredient) still
-    // clears 6.5px on a 295px stage.
-    while (size > 6.5 && ctx.measureText(caption).width + 16 > W - 24) {
-      size -= 0.5;
-      ctx.font = `${size}px ui-monospace, monospace`;
+    let size2 = 8.5;
+    ctx.font = `${size2}px ui-monospace, monospace`;
+    const maxW = W - px - 16;
+    while (size2 > 6.5 && ctx.measureText(said).width > maxW) {
+      size2 -= 0.5;
+      ctx.font = `${size2}px ui-monospace, monospace`;
     }
-    const tw = Math.min(W - 24, ctx.measureText(caption).width + 16);
-    /**
-     * As close to the strap as the loops allow. `BELT_BAND` is the reservation the CAST
-     * bar is laid out against and it has to clear an open flap's tip, but a LOCKED strap
-     * has no flaps and no loops — parked at the full height the line floated 39px above
-     * the thing it was about and read as belonging to the world, not to the belt.
-     */
-    const cx0 = (W - tw) / 2, cy0 = B - (locked ? 26 : BELT_BAND);
-    rr(ctx, cx0, cy0, tw, 14, 7);
-    ctx.fillStyle = 'rgba(14,9,16,0.88)';
-    ctx.fill();
-    ctx.strokeStyle = said ? hexCss(0xff6a3c, 0.5 + pulse * 0.5) : 'rgba(178,166,148,0.42)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = said ? '#ffb0a0' : 'rgba(214,204,186,0.78)';
-    ctx.fillText(caption, W / 2, cy0 + 7.5);
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
+    ctx.fillStyle = hexCss(0xff9a6a, 0.9);
+    ctx.fillText(said, px, top + pitch * n + 4);
   }
 
-  /**
-   * A filled loop: the ingredient standing in its pouch, with the count on the strap.
-   *
-   * The badge hangs at the pouch's foot rather than over its shoulder, and that is a
-   * layout decision worth 10px: on the strap it costs no height at all, and the row of
-   * brass tags along the leather is how a real bandolier is labelled.
-   */
   private drawPouch(
     ctx: CanvasRenderingContext2D, cx: number, loopTop: number, loopW: number,
     strapTop: number, slot: BeltSlot, handFull: boolean,
@@ -3363,52 +3469,6 @@ export class Hud {
    * off the mouth says the pocket is open and there is nothing in it, which is the exact
    * thing this state has to communicate to a player who has just bought the node.
    */
-  private drawEmptyLoop(
-    ctx: CanvasRenderingContext2D, cx: number, loopTop: number, loopW: number,
-  ): void {
-    const x = cx - loopW / 2;
-    // darker than the strap, so it reads as a hole and not as a raised panel
-    rr(ctx, x, loopTop, loopW, LOOP_H, 4);
-    ctx.fillStyle = 'rgba(9,6,11,0.55)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(214,168,96,0.72)';
-    ctx.lineWidth = 1.3;
-    ctx.stroke();
-    // The inside of the mouth, caught by the same light the brass is: one hairline
-    // across the top makes the dark rectangle a pocket with a depth instead of a hole
-    // cut in the strap.
-    ctx.strokeStyle = 'rgba(232,200,150,0.22)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x + 3, loopTop + 3.5);
-    ctx.lineTo(x + loopW - 3, loopTop + 3.5);
-    ctx.stroke();
-
-    // the flap, hinged on the mouth's near corner and fallen open to the left
-    ctx.save();
-    ctx.translate(x + 3, loopTop + 2);
-    ctx.rotate(0.42);
-    rr(ctx, -loopW * 0.44, -3.2, loopW * 0.44, 6.4, 2.4);
-    ctx.fillStyle = 'rgba(84,55,32,0.97)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(232,186,110,0.72)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.restore();
-
-    // the stud the flap buttons onto, with its highlight — the "brass catching light"
-    const sy = loopTop + LOOP_H * 0.52;
-    ctx.beginPath();
-    ctx.arc(cx, sy, 2.6, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(226,182,104,0.95)';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(cx - 0.8, sy - 0.9, 0.95, 0, Math.PI * 2);
-    ctx.fillStyle = '#fff4d8';
-    ctx.fill();
-  }
-
-  /** One small readout pill, in the HUD's one shape. Returns its width. */
   private pill(
     ctx: CanvasRenderingContext2D, x: number, y: number, label: string, fg: string, edge: string,
   ): number {

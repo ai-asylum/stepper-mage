@@ -13,7 +13,7 @@ import { CastFx } from './spells/vfx';
 import { StunView } from './dungeon/stunView';
 import {
   Hud, isTileTarget, sameTarget,
-  type AimTarget, type AltarOffer, type HandCard,
+  type AimTarget, type AltarOffer, type HandCard, type UiAction,
 } from './ui/hud';
 import { TreeScreen, type TreeAction } from './ui/tree';
 import { routeCost, routeTo } from './ui/treeCommon';
@@ -34,7 +34,7 @@ import { ingredientCard, ingredientColour } from './spells/ingredientCards';
 import {
   ALTAR_INGREDIENTS, BELT_LOCKED, CHEST_INGREDIENTS, beltAdd, beltConsume, beltHeld,
   beltRefusalFor, beltRefuse, beltSetCapacity, beltTotal, newBelt, rollDropCount,
-  rollIngredient,
+  rollIngredient, beltDrop, beltMove, pouchable,
 } from './spells/belt';
 import { BELT_ENABLED } from './flags';
 import { Rng } from './core/rng';
@@ -49,7 +49,9 @@ import { DEFAULT_STEP, setPixelStep } from './art/steps';
 import {
   CATCH_UP_DRAWS, CHEST_HEAL_SPREAD, ENGAGE_RADIUS, PLAYER_MAX_HP, THREAT_REACH,
   chestHealBase, fallDamage, healable,
+  POUR_TURNS_PER_UNIT,
 } from './game/tuning';
+import { substanceOf } from './game/ground';
 import { setGilded, setPageRanks } from './book/pageTexture';
 import {
   NODE_BY_ID, TREE, derivedBeltSlots, derivedGolemInfusion, derivedGolemsKept, derivedPouchTier,
@@ -737,6 +739,35 @@ async function boot(): Promise<void> {
       return false;
     }
     if (fan.count >= handSize()) {
+      /**
+       * A FULL HAND IS ONLY A REFUSAL WHEN THE BELT CANNOT TAKE IT EITHER.
+       *
+       * The hand is what you cast from, so a draw goes there while there is room; past
+       * that the belt takes the overflow. Refusing a harvest for a full hand while a
+       * pouch stands empty is the failure this ordering exists to prevent — and at a
+       * hand of one, which is where a new save lives for three floors, it would be the
+       * normal case rather than an edge.
+       */
+      if (BELT_ENABLED && state.belt.capacity > 0) {
+        const why2 = beltRefusalFor(state.belt, id);
+        if (!why2) {
+          beltAdd(state.belt, id, 1);
+          if (e.draws !== undefined) e.draws--;
+          hud.addLog(
+            `You draw ${SPELL_BY_ID[id]?.name ?? id} into your belt.`,
+            SPELL_BY_ID[id]?.colour,
+          );
+          // Rolled up, the player cannot see where it went — so it unrolls for a beat.
+          hud.beltFlashUntil = performance.now() + 1400;
+          if (e.draws === 0) {
+            hud.addLog(`The ${displayName(e.spriteId).toLowerCase()} is spent.`, 0x9aa3ad);
+          }
+          return true;
+        }
+        speakRefusal(beltRefuse(state.belt, why2));
+        sfx.deny();
+        return false;
+      }
       // Its own line rather than the tear's, because "put the page back" is the wrong
       // instruction for a card that is not one — through the same say-it-once guard,
       // because at a hand of one this is refused constantly.
@@ -849,7 +880,9 @@ async function boot(): Promise<void> {
      * player cannot see would be the game explaining a control it never offered.
      */
     if (!BELT_ENABLED) return false;
-    if (!canTakeComponent() || !isIngredient(id)) return false;
+    // Harvested substances live in pouches now too, so the guard is "can a pouch
+    // hold it" rather than "is it an ingredient".
+    if (!canTakeComponent() || !pouchable(id)) return false;
     const name = SPELL_BY_ID[id]?.name ?? id;
     /**
      * A locked strap says so out loud, and records the moment so the strip can pulse
@@ -875,12 +908,89 @@ async function boot(): Promise<void> {
       sfx.deny();
       return false;
     }
-    addIngredientCard(id);
+    /**
+     * An ingredient arrives on a vial card and a harvested substance on a harvest card
+     * — the two read as different objects in the hand, and the belt now holds both, so
+     * which card is drawn follows what the thing IS rather than where it came from.
+     */
+    if (isIngredient(id)) addIngredientCard(id);
+    else addHarvestCard(id);
     hud.addLog(`You draw ${name} off your belt.`, SPELL_BY_ID[id]?.colour);
     // What is in the hand decides what is targetable — and for an animating
     // ingredient it decides it completely.
     refreshTargets();
     return true;
+  };
+
+  /**
+   * STOW WHAT IS IN YOUR HAND, into the belt.
+   *
+   * The reverse of `takeIngredient` and the other half of the swipe pair: a page comes
+   * up out of the book into the hand, and a component carries on up, out of the hand
+   * into a pouch.
+   *
+   * NOTHING IS DESTROYED HERE. If no pouch can take it the component stays in the
+   * hand and the belt says why — the cheap implementation is the destructive one, and
+   * a player who loses the starlight they walked three rooms for to an automatic
+   * discard has been robbed by a convenience. Dropping is a separate, deliberate,
+   * turn-costing verb (`dropFromPouch`).
+   */
+  const stowComponent = (index: number): boolean => {
+    if (!BELT_ENABLED) return false;
+    const card = fan.gameIds[index];
+    if (!card) return false;
+    if (!pouchable(card)) {
+      speakRefusal('A pouch will not hold a page.');
+      return false;
+    }
+    const why = beltRefusalFor(state.belt, card);
+    if (why) { speakRefusal(beltRefuse(state.belt, why)); sfx.deny(); return false; }
+    // The card leaves the hand only once the belt has accepted it, so a refusal in
+    // `beltAdd` can never lose the component between the two containers.
+    if (beltAdd(state.belt, card, 1)) return false;
+    fan.removeAt(index);
+    hud.tornIds = fan.gameIds;
+    hud.addLog(`You stow ${SPELL_BY_ID[card]?.name ?? card}.`, SPELL_BY_ID[card]?.colour);
+    refreshTargets();
+    return true;
+  };
+
+  /**
+   * Empty some of a pouch onto the tile the player is standing on.
+   *
+   * The only destructive verb on the belt, and it pays a turn for it: what it leaves
+   * is GROUND, and nothing that changes the floor is ever free. How much you drop is
+   * how much terrain you get, which is what makes the panel's amount a decision rather
+   * than a chore.
+   */
+  const dropFromPouch = async (index: number, n: number): Promise<void> => {
+    const slot = state.belt.slots[index];
+    if (!slot || busy || loading) return;
+    const id = slot.id;
+    const took = beltDrop(state.belt, index, n);
+    if (!took) return;
+    const name = SPELL_BY_ID[id]?.name ?? id;
+    hud.beltPanel = null;
+    hud.beltDropAmount = 0;
+    /**
+     * Poured as the substance the component IS — `SUBSTANCE_OF` is the same lookup the
+     * cast path uses, so a dropped flame lights a tile by exactly the rule a cast
+     * would. Anything with no ground form (the clay, when it lands) leaves nothing but
+     * the log line, which is the game saying out loud that it was the precious thing.
+     */
+    const what = substanceOf(id);
+    if (what) {
+      const i = floor.grid.idx(stepper.x, stepper.y);
+      floor.ground.pour([{ i, d: 0 }], what, POUR_TURNS_PER_UNIT * took);
+      combat.syncGround();
+      hud.addLog(`You empty ${took} ${name} onto the floor.`, SPELL_BY_ID[id]?.colour);
+    } else {
+      hud.addLog(`You tip ${took} ${name} out. It is wasted.`, 0x9aa3ad);
+    }
+    // A turn, once, whatever the amount: the floor changed.
+    busy = true;
+    try { await combat.playerActed(); } finally { busy = false; }
+    refreshTargets();
   };
 
   /**
@@ -1478,6 +1588,8 @@ async function boot(): Promise<void> {
    * exist yet", which always must.
    */
   let loading = false;
+  /** The book's state last frame, so the belt can notice it MOVING rather than being. */
+  let bookWas = true;
   /** Altars already claimed, so a floor grants exactly one page. */
   const claimedAltars = new Set<Entity>();
   /**
@@ -4183,6 +4295,16 @@ async function boot(): Promise<void> {
      * moving under it.
      */
     if (!book.busy) book.closed = !bookOnScreen();
+    /**
+     * THE BELT FOLLOWS THE BOOK, and the portrait's override lasts until the book
+     * itself next moves.
+     *
+     * Without the reset, one tap on the portrait would pin the belt open or shut for
+     * the rest of the run and the two pieces of furniture would stop agreeing. With it,
+     * the override is a decision about NOW — hold the pouches open while you walk this
+     * corridor — and opening the book puts the pair back in step.
+     */
+    if (book.closed !== bookWas) { hud.beltWanted = null; bookWas = book.closed; }
     hud.bookClosed = book.closed;
     hud.bookBusy = book.busy;
     hud.compassGoal = compassGoal();
@@ -4405,8 +4527,54 @@ async function boot(): Promise<void> {
       case 'rescueDone': hud.rescued = null; break;
       case 'altar': takeFromAltar(a.entity); break;
       case 'harvest': harvestFrom(a.entity); break;
-      case 'belt': takeIngredient(a.id); break;
-      case 'card': returnComponent(a.index); break;
+      case 'belt':
+        // A plain tap draws one out — the cheap repeat of the swipe. Long-press is what
+        // opens the panel, and that is decided in the pointer handler, not here.
+        takeIngredient(a.id);
+        break;
+      /**
+       * THE PORTRAIT IS THE BELT'S HANDLE. It overrides the book-follows default until
+       * the book itself next moves, so a player who wants the pouches while walking can
+       * have them and is not fighting the automatic behaviour to keep them.
+       */
+      case 'beltToggle':
+        hud.beltWanted = !(hud.beltWanted ?? !hud.bookClosed);
+        break;
+      case 'beltOpen':
+        hud.beltPanel = a.index;
+        // Defaulted to the whole stack, because making room is the common case.
+        hud.beltDropAmount = state.belt.slots[a.index]?.count ?? 0;
+        break;
+      case 'beltClose': hud.beltPanel = null; break;
+      case 'beltAmount': hud.beltDropAmount = a.n; break;
+      case 'beltMove': {
+        const from = hud.beltPanel;
+        if (from === null) break;
+        if (beltMove(state.belt, from, a.to)) {
+          // The panel follows the stack it was opened on: after a merge the pouch may
+          // be gone, and a panel pointing at nothing closes rather than showing a hole.
+          hud.beltPanel = state.belt.slots[a.to] ? a.to : null;
+          hud.beltDropAmount = state.belt.slots[a.to]?.count ?? 0;
+        }
+        break;
+      }
+      case 'beltDrop': {
+        const at = hud.beltPanel;
+        if (at !== null) void dropFromPouch(at, a.n);
+        break;
+      }
+      /**
+       * A tap on a held card STOWS it, and never destroys it. If no pouch can take it
+       * the component stays in the hand and the belt says why — see `stowComponent`.
+       * With no belt at all this falls back to what it always did: put the page back.
+       */
+      case 'card':
+        if (BELT_ENABLED && state.belt.capacity > 0 && pouchable(fan.gameIds[a.index] ?? '')) {
+          stowComponent(a.index);
+        } else {
+          returnComponent(a.index);
+        }
+        break;
       case 'offer': chooseOffer(a.offer); break;
       case 'chest': openChest(a.entity); break;
       case 'move': stepper.press({ kind: 'move', m: a.m }); break;
@@ -4418,6 +4586,15 @@ async function boot(): Promise<void> {
 
   const stage = document.getElementById('stage') as HTMLElement;
   let st = 0;
+  /** How long a press has to be held on a pouch before its panel opens. */
+  const LONG_PRESS_MS = 340;
+  /** The pouch a press started on, so the belt keeps the gesture. */
+  let beltGrab: { index: number; id: string } | null = null;
+  /** Pending long-press timer, cleared by movement or release. */
+  let longPress = 0;
+  const cancelLongPress = (): void => {
+    if (longPress) { clearTimeout(longPress); longPress = 0; }
+  };
   /**
    * Gesture routing. The grimoire owns the bottom third of the screen: drags
    * there flip and tear pages. Above it, drags move the player and taps hit the
@@ -4517,6 +4694,9 @@ async function boot(): Promise<void> {
     'cast', 'clear', 'descend', 'cycle', 'altar', 'chest', 'harvest',
     'belt', 'card', 'tree', 'bestiary', 'settings', 'resetProgress',
     'wizardPeek', 'wizardPick', 'wizardBack', 'invertGestures', 'rescue', 'rescueDone',
+    // The belt's own controls, for the reason the whole set exists: these sit over the
+    // world and the book, and a tap that leaked past them would step the player.
+    'beltToggle', 'beltOpen', 'beltClose', 'beltMove', 'beltDrop', 'beltAmount',
   ]);
 
   /**
@@ -4558,12 +4738,41 @@ async function boot(): Promise<void> {
     st = performance.now();
     px0 = x; py0 = y; lastX = x; lastT = st; vx = 0;
     deniedThisDrag = false;
+    /**
+     * A PRESS THAT STARTS ON A POUCH BELONGS TO THE BELT, whatever it does next.
+     *
+     * The same claim the book has (`overBook`): the world reads a swipe as walking or
+     * turning, so without this every draw off the belt would also be a step. Recorded
+     * on the way down because the decision has to survive the finger moving.
+     */
+    const onPouch = hud.hit(x, y);
+    beltGrab = onPouch.kind === 'belt' ? { index: onPouch.index ?? -1, id: onPouch.id } : null;
+    if (beltGrab) {
+      /**
+       * And a HOLD opens the pouch panel. Fired on a timer rather than measured on
+       * release, so the panel appears under a finger that is still down — a long-press
+       * that only resolves when you let go feels like a tap that was ignored.
+       */
+      longPress = window.setTimeout(() => {
+        longPress = 0;
+        if (!beltGrab || beltGrab.index < 0) return;
+        if (!state.belt.slots[beltGrab.index]) return;
+        act({ kind: 'beltOpen', index: beltGrab.index });
+        sfx.pageFlip();
+      }, LONG_PRESS_MS);
+    }
     onBook = overBook(x, y);
     if (onBook) hud.bookClosed = book.closed;
   });
 
   stage.addEventListener('pointermove', (e) => {
     if (touches.has(e.pointerId)) touches.set(e.pointerId, local(e));
+    // A press that has started travelling is a swipe, not a hold. Cancelled on the
+    // first real movement so a drawing gesture never also opens the panel behind it.
+    if (longPress) {
+      const q = local(e);
+      if (Math.hypot(q.x - px0, q.y - py0) > 8) cancelLongPress();
+    }
     if (treeOpen) {
       if (!treeDown) return;
       const dy = local(e).y - treeY0;
@@ -4668,6 +4877,29 @@ async function boot(): Promise<void> {
     // the tree is a real control — and `act` sends every other tap the same way.
     if (dead) { act(hud.hit(x, y)); return; }
     const moved = Math.hypot(x - px0, y - py0);
+
+    /**
+     * THE BELT'S OWN GESTURES, resolved before the world sees the swipe.
+     *
+     * A pouch is emptied the way a page is torn — the book lies along the bottom so its
+     * pages come UP, the belt runs down the left edge so its pouches come OUT to the
+     * right. Same verb, different axis, and both containers hold castable things.
+     *
+     * A tap does it too, exactly as a tap now tears the open page: the swipe teaches
+     * and the tap repeats. The long-press that opens the panel has already fired on its
+     * own timer by this point, and cancelled itself if the finger travelled.
+     */
+    if (beltGrab) {
+      const grabbed = beltGrab;
+      beltGrab = null;
+      cancelLongPress();
+      if (hud.beltPanel !== null) return;      // the panel owns its own taps
+      const dx = x - px0, dy = y - py0;
+      const drew = moved < 14                                  // a tap
+        || (Math.abs(dx) > Math.abs(dy) && dx > 18);           // or a pull to the right
+      if (drew && grabbed.id) takeIngredient(grabbed.id);
+      return;
+    }
 
     if (onBook) {
       onBook = false;
@@ -5087,6 +5319,15 @@ async function boot(): Promise<void> {
       act(a);
       return a.kind;
     },
+    /**
+     * Fire a UI action directly, bypassing the hit test.
+     *
+     * The belt's panel is a modal whose buttons move with the stack in it, so driving it
+     * by pixel means re-deriving the layout in the test — which tests the arithmetic of
+     * the test rather than the behaviour of the game. `tapHud` stays for anything whose
+     * POSITION is the thing in question.
+     */
+    doAction: (a: UiAction) => { act(a); return a.kind; },
     /**
      * Stand a body on a tile.
      *

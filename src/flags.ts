@@ -34,4 +34,4 @@
  * one way round is a flag nobody can flip. The emitted JS is `false` either way, so the
  * bundler still folds the dead branches out.
  */
-export const BELT_ENABLED: boolean = false;
+export const BELT_ENABLED: boolean = true;

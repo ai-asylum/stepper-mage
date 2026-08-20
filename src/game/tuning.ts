@@ -596,3 +596,13 @@ export const CATCH_UP_DRAWS = 3;
  * one back up to.
  */
 export const PLANT_TURNS = 3;
+
+/**
+ * How many turns of life one dropped unit is worth.
+ *
+ * Dropping is not casting: a cast pays a turn for a volume decided by the spell, and
+ * this pays a turn for a volume decided by how much you were carrying. Per-unit, so
+ * the amount slider means something on the floor — five oil is a slick worth walking
+ * around and one is a smear.
+ */
+export const POUR_TURNS_PER_UNIT = 2;
