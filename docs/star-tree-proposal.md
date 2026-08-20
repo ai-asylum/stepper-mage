@@ -6,8 +6,7 @@ constellation rail, the ring geometry, the pinned route — and its recommendati
 stands. This one is about **what the nodes should be**, because the game the tree
 was written for is no longer the game being played.
 
-Revised after design review. Two nodes from the first draft are **deleted, not
-parked** — see §3. Nothing in `src/meta/tree.ts` has been changed.
+Nothing in `src/meta/tree.ts` has been changed.
 
 The mechanics several of these nodes unlock — harvest depth, the belt and its
 inventory, standing in a substance, the golem draught, the compass — are core-game
@@ -110,18 +109,9 @@ chain, and a tree wants proving before it is extended. The order the prices impl
 is deliberate: breadth first and cheap, depth second and dear, so a new player
 buys "I can carry a second thing" before "I can carry ten of one thing".
 
-**This makes the tree much bigger than the nine this document opened with —
-sixteen live, eighteen if pouches four and five land.** Worth naming rather than
-hiding: the belt chain alone is six purchases, and it is legible only because each
-one does a single obvious thing. If that is too much sky, the first things to
-fold are **Deep Pouches** (into Sturdy, as a single tier) and **Second Servant**
-(into Lasting Infusion). Both are the top of their chain, which is where a tree can
-lose a node without losing a decision.
-
-Worth saying plainly, though: sixteen is not bloat if every node is a system the
-game actually has. The tree stopped being a list of numbers and became the map of
-the game's mechanics — hand, room, way, mouth, servants — and that is the shape
-this document has been arguing for throughout.
+Six purchases is a lot for one chain. If it needs trimming, **Deep Pouches** folds
+into Sturdy as a single tier — the top of a chain is where a node goes without
+costing a decision.
 
 A **gilded** pouch — one that keeps its contents into the next descent — is
 deliberately **not** on this list. It is won at an altar, like the golden page it
@@ -142,7 +132,9 @@ cheapest honest thing a tree can offer, and neither makes a fight easier.
 stays free forever; what this buys is the reading room and the pin, which is why
 selling it does not break the winnable-at-zero invariant.
 
-Nothing here touches how many wizards a run can free — see §3.
+Nothing here touches how many wizards a run can free: the roster chain is the
+progression, and a node that shortcuts it would be selling the content the stars
+were earned in.
 
 ### Chain D — THE MOUTH (where a run starts, and what it earns)
 
@@ -220,24 +212,7 @@ Deleted from the *tree*, not from the game. The `live: false` mechanism should s
 in the schema, but a node that is not live must not be **drawn**: a priced star
 that does nothing teaches the player that the tree lies.
 
-## 3. Two nodes from the first draft, and why they are gone
-
-**"Two Draughts" — a harvest fills two hand slots with the same element.**
-Deleted. It spends the player's scarcest resource — hand slots — on redundancy,
-and the hand exists to be filled with *different* things: a hand of two identical
-elements is a worse version of a hand of two, and the player would never choose
-it. The belt is the correct answer to "I want more than one draw", because it
-stores instead of crowding.
-
-**"Two Cells" — two captives per run.** Deleted. The roster chain is the
-progression: five wizards, one per descent, each freeing the next. A node that
-frees two at once collapses that into a purchase, and it is exactly the shape the
-research warns about — spending currency to skip the content the currency was
-earned in.
-
----
-
-## 4. Invariants worth writing into the code
+## 3. Invariants worth writing into the code
 
 1. **Winnable at zero.** No node is required to reach depth ten. If a balance
    pass ever depends on an owned node, that is the bug.
@@ -249,7 +224,7 @@ earned in.
 
 ---
 
-## 5. Still open
+## 4. Still open
 
 - **Prices.** Placed by feel against one-run-≈-70-stars, and sixteen nodes is
   enough that the curve matters more than any single number. Wants a pass once run

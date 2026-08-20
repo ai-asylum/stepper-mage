@@ -10,8 +10,10 @@ Deliverable is a proposal. No code has been changed.
 
 ## 1. Harvesting gets an inventory
 
-This is the centre of the proposal. It replaces the first draft's worst idea
-(the tree proposal, §6) and it resolves three separate problems at once.
+Harvesting is a one-shot today: adjacent, facing, one hand slot, and the fixture
+never runs down. Giving it an inventory resolves three problems at once — the belt
+has no reason to exist, the golems have no ingredient, and a harvest cannot be
+planned.
 
 ### 1.1 Fixtures get depth
 
@@ -109,13 +111,11 @@ between the two containers and it is the whole reason the belt is worth having.
 
 ### 1.4 Pouches: how many, and how deep
 
-**Read of the brief, stated so it is cheap to correct:** the belt is a column of
-**pouches bought one at a time, five at most**, and a pouch's **size** is a
-separate upgrade — so a player can start with one small pouch and end with five
-deep ones, and the two axes are bought separately.
+The belt is a column of **pouches bought one at a time, five at most**, and a
+pouch's **size** is a separate upgrade — so a player can start with one small pouch
+and end with five deep ones.
 
-That is a better shape than a flat "3 slots, then 5 slots" pair, because the two
-axes answer different questions. **How many pouches** is *how many different
+Two axes, because they answer different questions. **How many pouches** is *how many different
 things can I carry* — breadth, and it is what lets a player hold oil and water at
 once instead of choosing. **How deep** is *how much of one thing* — depth, and it
 is what turns a pouch from a convenience into a supply. A player who wants to set
