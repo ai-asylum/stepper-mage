@@ -2003,7 +2003,16 @@ async function boot(): Promise<void> {
     if (rank === 1) {
       return {
         ...base, kind: 'upgrade', name: rankName(id, 2), tag: 'UPGRADE',
-        detail: `${rankName(id, 1)} becomes ${rankName(id, 2)}. Casts as two copies.`,
+        /**
+         * "Strikes twice", not "casts as two copies".
+         *
+         * The old wording read as two SLOTS — a hand of two — which is what the second
+         * copy card actually sells, and the two cards sit side by side at the first
+         * altar. A player took the upgrade, saw Fireball in the book, and reasonably
+         * expected a wider hand. A rank makes ONE page hit harder; a copy makes the hand
+         * hold two. The words have to keep those apart.
+         */
+        detail: `${rankName(id, 1)} becomes ${rankName(id, 2)}. One page, strikes twice.`,
         rank: 1, toRank: 2,
       };
     }
@@ -2013,7 +2022,7 @@ async function boot(): Promise<void> {
       return {
         ...base, kind: 'sacrifice', name: rankName(id, rank + 1), tag: 'SACRIFICE',
         detail: `${rankName(id, rank)} becomes ${rankName(id, rank + 1)}. `
-          + `Casts as ${rank + 1} copies.`,
+          + `One page, strikes ${rank + 1} times.`,
         cost: `Tears out your rank-2 ${sp ? rankName(spend, 2) : spend} for good.`,
         rank, toRank: rank + 1, spendId: spend,
       };
