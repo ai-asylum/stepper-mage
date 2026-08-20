@@ -1194,6 +1194,44 @@ const PROP_ELEMENT: Record<string, Element> = {
 };
 
 /**
+ * HOW MANY DRAWS A FIXTURE HAS IN IT, by the element it yields.
+ *
+ * Fixtures used to be bottomless, and that was correct while a harvest was also
+ * non-storable: `docs/DESIGN.md` rejects depleting them precisely because
+ * "fixtures are non-depleting *and* non-storable; those two rules hold each other
+ * up". The belt takes the second rule away — a harvest can now be carried — so the
+ * first one has to be paid for, or a candelabra is an unlimited fire faucet with a
+ * pouch under it.
+ *
+ * Depth is also the value language, and it is deliberately extreme rather than
+ * balanced-looking. A player who never reads a number still learns the hierarchy by
+ * running a candle dry in one room and never running a cistern dry at all. It is
+ * the same statement pouch weight makes (`belt.ts`), said in the world instead of
+ * in the inventory: what is cheap is deep, what is precious is shallow.
+ *
+ * Keyed by ELEMENT and not by prop, so a new brazier inherits fire's depth without
+ * anybody remembering to add a row — the same reason `PROP_ELEMENT` maps to
+ * elements rather than to counts.
+ */
+export const HARVEST_DEPTH: Readonly<Record<Element, number>> = {
+  water: 100,
+  stone: 40,
+  oil: 20,
+  fire: 5,
+  starlight: 3,
+  // Page elements are never harvested from a fixture; the entries exist so the
+  // record is total and a lookup can never be undefined. Golem clay joins the
+  // shallow end when it lands.
+  frost: 0, spark: 0, gust: 0, plant: 0, rot: 0, none: 0,
+};
+
+/** How many times this prop can be harvested before it runs dry. */
+export function harvestDepthOf(propId: string): number {
+  const el = PROP_ELEMENT[propId];
+  return el ? (HARVEST_DEPTH[el] ?? 0) : 0;
+}
+
+/**
  * The spell id a fixture yields, or null if it is a body and not a tap.
  *
  * Returns an ID rather than an `Element` because the id is what the hand holds and

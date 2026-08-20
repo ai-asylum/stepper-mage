@@ -714,6 +714,18 @@ async function boot(): Promise<void> {
     if (!e.alive || e.hp <= 0 || e.kind !== 'prop' || e.animated) return false;
     const id = harvestOf(e.spriteId);
     if (!id) return false;
+    /**
+     * AND IT HAS TO HAVE SOMETHING LEFT IN IT.
+     *
+     * Refused in the fixture's own words rather than with a generic denial, because
+     * "the candelabra is burnt out" teaches the rule and "you cannot do that" teaches
+     * nothing. This is the first thing in the game that a player can use up, so the
+     * first time it happens has to explain itself.
+     */
+    if (e.draws !== undefined && e.draws <= 0) {
+      speakRefusal(`The ${displayName(e.spriteId).toLowerCase()} has nothing left.`);
+      return false;
+    }
     const why = reachRefusal(e, displayName(e.spriteId).toLowerCase());
     if (why) {
       hud.addLog(why, 0xffcf5c);
@@ -728,10 +740,26 @@ async function boot(): Promise<void> {
       return false;
     }
     addHarvestCard(id);
+    /**
+     * The draw is spent HERE, after every refusal above has had its chance — so a
+     * harvest that did not happen never costs the fixture anything.
+     */
+    if (e.draws !== undefined) e.draws--;
     hud.addLog(
       `You draw ${SPELL_BY_ID[id]?.name ?? id} out of the ${displayName(e.spriteId).toLowerCase()}.`,
       SPELL_BY_ID[id]?.colour,
     );
+    /**
+     * AND IT SAYS SO WHEN IT GOES OUT, once, on the draw that emptied it.
+     *
+     * The world is where this should read — a snuffed candelabra, a barrel with its
+     * lid off — and that art does not exist yet. A line is the honest placeholder:
+     * it is said at the exact moment the fixture changes state, so when the sprite
+     * swap lands it replaces the line rather than being added beside it.
+     */
+    if (e.draws === 0) {
+      hud.addLog(`The ${displayName(e.spriteId).toLowerCase()} is spent.`, 0x9aa3ad);
+    }
     // What is in the hand decides what is targetable, exactly as after a tear.
     refreshTargets();
     return true;
@@ -2748,6 +2776,10 @@ async function boot(): Promise<void> {
     const [fx, fy] = DIR_VEC[stepper.dir];
     const e = floor.entityAt(stepper.x + fx, stepper.y + fy);
     if (!e || !e.alive || e.hp <= 0 || e.kind !== 'prop' || e.animated) return null;
+    // A spent fixture is furniture. The pill that offers a harvest must go quiet
+    // with the fixture, or the game keeps offering something it will then refuse —
+    // the same defect as a crossed-out-but-castable target.
+    if (e.draws !== undefined && e.draws <= 0) return null;
     return harvestOf(e.spriteId) ? e : null;
   };
 
@@ -4908,8 +4940,11 @@ async function boot(): Promise<void> {
      */
     harvestable: () => hud.candidates
       .filter((e): e is Entity => !isTileTarget(e)
-        && e.alive && e.kind === 'prop' && !e.animated && !!harvestOf(e.spriteId))
-      .map((e) => ({ e, spriteId: e.spriteId, yields: harvestOf(e.spriteId) })),
+        && e.alive && e.kind === 'prop' && !e.animated && !!harvestOf(e.spriteId)
+        && !(e.draws !== undefined && e.draws <= 0))
+      .map((e) => ({
+        e, spriteId: e.spriteId, yields: harvestOf(e.spriteId), draws: e.draws,
+      })),
     /**
      * Harvest the fixture in reach, or a given one. Same path as the pill, so it
      * spends the same slot AND meets the same reach rule. There is no round to wait

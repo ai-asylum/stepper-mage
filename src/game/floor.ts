@@ -13,6 +13,7 @@ import { DungeonView } from '../dungeon/render';
 import { STEP_H } from '../art/tiles';
 import { Sprite, preloadSprites, loadSprite } from '../dungeon/sprites';
 import { viewsFor, type SpriteView } from '../art/views';
+import { harvestDepthOf } from '../spells/spells';
 import { populate, spriteIdsFor, type CaptiveSpot, type Placed, type PlacedKind } from './populate';
 import { themeForDepth, type Theme } from '../art/theme';
 import { bossHp, enemyHp, isFast, FAST_HP_MULT, FAST_SPEED } from './tuning';
@@ -50,6 +51,19 @@ export interface Entity {
   facing: Dir;
   /** Set once an altar has given up its page. */
   spent: boolean;
+  /**
+   * Draws left in a harvestable fixture, or undefined on anything that is not one.
+   *
+   * A fixture used to be bottomless, which was safe only while a harvest could not
+   * be stored (`docs/DESIGN.md`, and `HARVEST_DEPTH` in `spells/spells.ts` for the
+   * whole argument). It lives on the ENTITY rather than on the prop type because two
+   * candelabra in the same room are two candles: emptying one must not empty the
+   * other, and the count has to survive the room being left and re-entered.
+   *
+   * Per FLOOR, deliberately — it is not persisted between runs. A floor is generated
+   * fresh, so its candles are fresh.
+   */
+  draws?: number;
   /** Wizard id, on a `captive` entity only. */
   captiveId?: string;
   /**
@@ -304,6 +318,14 @@ export class Floor {
       spent: false, speed: fast ? FAST_SPEED : 1,
       // Carried through so the rescue can name who it freed without a second lookup table.
       captiveId: p.captiveId,
+      /**
+       * A harvestable prop is stocked when it is placed, and `undefined` on
+       * everything else — so "is this a tap" and "has it anything left" stay two
+       * questions, and a body can never be mistaken for an empty barrel.
+       */
+      draws: p.kind === 'prop' && harvestDepthOf(p.sprite) > 0
+        ? harvestDepthOf(p.sprite)
+        : undefined,
       // Spawned facing an arbitrary but STABLE direction, derived from the tile so
       // the same seed lays out the same room twice. Arbitrary is the point: a room
       // where every creature happens to be looking at the door has nothing to
