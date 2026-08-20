@@ -221,12 +221,13 @@ Every gesture, in one place:
 |---|---|---|
 | Put a component **in** the belt | swipe up off the hand, or tap it | free |
 | Take one **out** | swipe right out of the pouch, or tap it | free |
-| **Move or merge** a stack | long-press the pouch to lift, tap the target pouch | free |
-| **Delete** a stack | long-press the pouch to lift, tap the floor — it pours out | one turn |
+| **Open a pouch** (move or drop it) | long-press the pouch | free |
+| **Move or merge** a stack | in the pouch panel, tap another pouch | free |
+| **Drop** some or all of a stack | in the pouch panel, set the amount and confirm | one turn |
 
-Deleting is pouring, and pouring **empties the whole stack** onto the tile you are
-standing on. To keep part of it, draw the units you want into the hand first and
-pour the rest — there is no partial pour and no slider.
+Long-press opens the **pouch panel** and every management action lives in it. The
+panel is the answer to "what can I do with this pouch", and both things you can do
+are on it, so nothing has to be discovered by trying gestures on the world.
 
 **Harvest auto-stacks.** A draw joins an existing stack of the same substance
 with room; failing that it takes the first empty slot; failing that it is refused
@@ -237,24 +238,44 @@ makes room by itself.
 
 **Draw is a swipe out, or a tap.** Either way one unit goes to the hand — see
 §1.3 for why it is both. This is the action players perform hundreds of times a
-run and it must never cost two inputs. It is also the only splitting the belt
-needs: drawing one at a time *is* the split, so no slider and no
-long-press-to-split.
+run and it must never cost two inputs. Drawing one at a time is also how you take a
+precise handful into the hand; the panel's slider is for what leaves the belt
+altogether.
 
-**Move is long-press, then tap.** Hold a slot to lift its stack — the column
-dims to show the drop targets — then tap another slot to place it. Same substance
-merges up to the cap and leaves the remainder behind; different substance swaps
-the two. Tap the lifted slot again to set it down unchanged.
+**Long-press opens the pouch panel.** It names what is in the pouch and how full
+it is, and it carries the two management verbs:
 
-Long-press-then-tap rather than a drag *between slots specifically*: the slots are
-a few dozen pixels apart on the short axis of a phone, so a dragged stack lands in
-the wrong pouch on a thumb's wobble. Pulling a stack OUT of the belt is a swipe
-because it only has to leave the column; putting one INTO a particular slot has to
-be precise, and precision is what a tap gives and a drag does not.
+- **MOVE TO** — the other pouches, as buttons, and only the ones that can actually
+  take this stack. Same substance merges up to the cap and leaves the remainder
+  behind; an empty pouch takes the lot; a pouch holding something else swaps.
+- **DROP** — an amount and a confirm. See below.
 
-**Pouring is the only way anything is ever destroyed**, and it is the answer to a
-full belt: refusal names the substance, you pour something out, you have room.
-Water makes a puddle, oil a slick, fire lights the tile under your own feet.
+Buttons rather than a drag or a tap-the-column step: the pouches are a few dozen
+pixels apart on the short axis of a phone, so a dragged stack lands in the wrong
+one on a thumb's wobble, and only the panel can grey out the pouches that have no
+room. Pulling a stack OUT of the belt is a swipe because it only has to leave the
+column; putting one INTO a particular pouch has to be precise, and precision is
+what a labelled button gives.
+
+**DROP is the only way anything is ever destroyed**, and it is the answer to a full
+belt: the refusal names the substance, you drop some of it, you have room. What you
+drop lands on the tile you are standing on: water makes a puddle, oil a slick, fire
+lights the ground under your own feet.
+
+**The amount is a slider, and it defaults to the whole stack.** Making room is the
+common case and the default should be the common case — but "drop three of my eight
+oil" is a real thing to want, because oil is worth keeping and a doorway only needs
+so much. Nothing about that needs the player to tap the floor: they long-pressed a
+pouch, so the pouch is what the panel is about, and the tile they are standing on is
+the only place a dropped thing could go.
+
+**How much you drop is how much terrain you get.** Three oil is a smaller slick
+than eight. That is what makes the slider a decision rather than a chore — you are
+not choosing how much to throw away, you are choosing how big a puddle to make and
+how much to keep.
+
+It costs **one turn** whatever the amount. The turn is for changing the floor, and
+the floor changes either way.
 
 Discard is normally a delete — a bin icon, a confirm, and a small feeling of waste.
 Pouring makes room *and* makes terrain, so emptying a pouch is a play: five oil in
@@ -263,15 +284,15 @@ the game already knows how to punish. It reuses the ground system rather than
 adding one, needs no art a poured substance does not already have, and makes the
 answer to "my belt is full" a decision instead of an apology.
 
-Clay is the exception to the verb rather than to the rule: it is tipped out, not
-poured, and it leaves nothing but a smear on the tile. Every other substance you
+Clay is the exception to the result rather than to the verb: dropping it leaves
+nothing but a smear on the tile. Every other substance you
 empty becomes terrain; the clay just goes. That is the game saying out loud what
 weight 10 already implied — this was the expensive thing to be carrying.
 
-**What each verb costs:** drawing is free, moving is free, pouring **costs a
-turn**. Free terrain creation would be the strongest thing in the game, and
-pouring a slick is exactly the kind of act a room should get an answer to. Nothing
-that changes the floor is ever free — same rule as a cast.
+**What each verb costs:** drawing is free, moving is free, dropping **costs a
+turn**. Free terrain creation would be the strongest thing in the game, and laying
+a slick is exactly the kind of act a room should get an answer to. Nothing that
+changes the floor is ever free — same rule as a cast.
 
 ### 1.7 What this buys the design
 
