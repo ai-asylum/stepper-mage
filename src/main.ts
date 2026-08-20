@@ -1654,6 +1654,13 @@ async function boot(): Promise<void> {
   let loading = false;
   /** The book's state last frame, so the belt can notice it MOVING rather than being. */
   let bookWas = true;
+  /**
+   * The page the mouth's blessing owes this run, paid by the first altar reached.
+   *
+   * Run-level and deliberately not persisted: it is a promise about THIS descent, and a
+   * run that ends before an altar simply never collected. Cleared the moment it is paid.
+   */
+  let promisedPage: string | null = null;
   /** Altars already claimed, so a floor grants exactly one page. */
   const claimedAltars = new Set<Entity>();
   /**
@@ -2412,7 +2419,8 @@ async function boot(): Promise<void> {
       ...(canWiden ? [{
         ...blank, kind: 'blessing' as const, id: extra.id, name: extra.name,
         tag: 'a wider book',
-        colour: extra.colour, detail: `Begin the run with ${extra.name} in the book.`,
+        colour: extra.colour,
+        detail: `The first altar you reach adds ${extra.name} to your book.`,
       }] : []),
       {
         ...blank, kind: 'blessing', id: '', name: 'A Longer Breath', tag: 'a deeper well',
@@ -2723,9 +2731,21 @@ async function boot(): Promise<void> {
         state.ranks[o.id] = o.toRank;
         hud.addLog(`You set out with ${o.name}. ${o.detail}`, o.colour);
       } else if (o.id) {
-        state.ranks[o.id] = 1;
-        learnPage(o.id);
-        hud.addLog(`You set out with ${o.name} already in the book.`, o.colour);
+        /**
+         * PROMISED, NOT GIVEN — and the first altar is where it is kept.
+         *
+         * The mouth asks which page you carry and then says, in the game's own voice,
+         * "You carry Flame, and nothing else." A blessing that handed over a second page
+         * one breath later made that line false, and it is the strongest line in the
+         * opening: the one page IS the run's subject.
+         *
+         * So the wider book becomes a debt the dungeon owes you. You still set out with
+         * one page, and the first altar you reach pays the second — which also gives the
+         * blessing somewhere to land that the player watches happen, instead of a card
+         * quietly appearing in a book they have not opened yet.
+         */
+        promisedPage = o.id;
+        hud.addLog(`Promised: ${o.name}, at the first altar you reach.`, o.colour);
       } else {
         // Both, and in that order. Raising the ceiling alone would hand the player a
         // bar that begins the run already missing the blessing they just took.
@@ -2753,6 +2773,24 @@ async function boot(): Promise<void> {
     if (e) {
       claimedAltars.add(e);
       void floor.spendAltar(e);
+      /**
+       * AND THE ALTAR KEEPS THE MOUTH'S PROMISE, before the offer it was tapped for.
+       *
+       * Only at a real altar — the catch-up rites at the dungeon mouth have no stone in
+       * front of the player, and paying a debt owed BY an altar at the place there is no
+       * altar would put the second page back where the blessing already tried to put it.
+       */
+      if (promisedPage) {
+        const owed = promisedPage;
+        promisedPage = null;
+        const def = SPELL_BY_ID[owed];
+        if ((state.ranks[owed] ?? 0) === 0) state.ranks[owed] = 1;
+        learnPage(owed);
+        hud.setShout(`${(def?.name ?? owed).toUpperCase()} GRANTED`, def?.colour);
+        hud.addLog(
+          `The altar keeps the mouth's promise: ${def?.name ?? owed}.`, def?.colour,
+        );
+      }
     }
     // At the rank the player actually holds it, so "already mastered" names the
     // mastered thing — an Inferno, not the Flame it was three altars ago.
@@ -3688,6 +3726,9 @@ async function boot(): Promise<void> {
    */
   const endRun = (kind: 'died' | 'won', earned: number): void => {
     dead = true;
+    // A promise the dungeon never got to keep dies with the run. It is about THIS
+    // descent, so carrying it into the next one would be paying a debt twice.
+    promisedPage = null;
     meta.stars += earned;
     meta.best = Math.max(meta.best, state.depth);
     saveMeta(meta);

@@ -248,12 +248,25 @@ export function beltRefuse(belt: BeltState, why: string): string {
 export function beltAdd(belt: BeltState, id: string, n = 1): string | null {
   const why = beltRefusalFor(belt, id);
   if (why) return beltRefuse(belt, why);
-  if (beltRoom(belt, id) < n) {
-    return beltRefuse(belt, `There is not room for ${n} ${SPELL_BY_ID[id]?.name ?? id}.`);
-  }
+  /**
+   * TAKES WHAT FITS. A partial grant is not a failure.
+   *
+   * This refused the whole amount when the whole amount would not fit, which is right
+   * for a single draw and wrong for anything that pays several at once — a chest asked
+   * to give three onto a belt with room for two would have given nothing. Every caller
+   * today passes 1, so this was a trap rather than a bug; it is closed now instead of
+   * being left for whoever writes the next multi-unit source.
+   *
+   * The shortfall is REPORTED rather than swallowed, because a source that pays less
+   * than it said has to say so — the alternative is a chest that quietly short-changes
+   * the player, which is the same shape as a component vanishing between two containers.
+   */
+  const room = beltRoom(belt, id);
+  const take = Math.min(n, room);
+  const short = n - take;
   const w = weightOf(id);
   const units = pouchUnits(belt.tier);
-  let left = n;
+  let left = take;
   // Top up the pouches already holding this before opening a new one: a substance
   // spread across two half-empty pouches is two pouches the player cannot use for
   // anything else.
@@ -270,6 +283,12 @@ export function beltAdd(belt: BeltState, id: string, n = 1): string | null {
     left -= take;
   }
   belt.refusal = null;
+  if (short > 0) {
+    // Recorded so the strap pulses and the caption says it, but NOT returned as a
+    // refusal: something did land, and a caller that treats this as failure would throw
+    // away the part that worked.
+    beltRefuse(belt, `Only ${take} ${SPELL_BY_ID[id]?.name ?? id} would fit.`);
+  }
   return null;
 }
 
