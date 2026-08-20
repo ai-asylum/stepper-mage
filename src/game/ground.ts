@@ -180,10 +180,30 @@ const FEEDS: Record<Substance, readonly Element[]> = {
  * three times — at the fuel lookup, at the pour, and in whatever draws the promise —
  * and those three drifting apart is how a mechanic stops being predictable.
  */
+/**
+ * WHAT PUTS WHAT OUT — the other half of `FEEDS`, and the half that was missing.
+ *
+ * `react` has always known that water onto fire leaves bare floor, but nothing
+ * upstream asked: water does not feed fire, so a cast of water at a burning tile fell
+ * through to `consume` and the fire was folded into the cast as a component. The
+ * player aimed water at a fire, got a Steam Burst, and the thing they were trying to
+ * do — put it out — was not expressible at all.
+ *
+ * Kept as its own table rather than derived from `react` returning null, because these
+ * are the pairs where dousing is the POINT and not a side effect: the cast takes no
+ * fuel, and what it leaves behind is whatever it was carrying.
+ */
+const DOUSES: Partial<Record<Substance, readonly Element[]>> = {
+  fire: ['water'],
+};
+
 export function groundUse(what: Substance, elements: readonly Element[]): GroundUse {
   // Gust is the extinguisher and outranks everything: a cast that both clears and
   // feeds is a cast that clears.
   if (elements.includes('gust')) return 'clear';
+  // Then anything that PUTS THIS OUT, before the feed test — a douse is not a feed and
+  // must never be charged as fuel.
+  if ((DOUSES[what] ?? []).some((e) => elements.includes(e))) return 'clear';
   if (elements.some((e) => FEEDS[what].includes(e))) return 'grow';
   return 'consume';
 }

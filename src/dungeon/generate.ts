@@ -849,6 +849,7 @@ function placeCaptiveGate(g: Grid, rng: Rng, withPlate: boolean): number | null 
 
     // A mouth: walkable, outside the room, and touching it.
     const mouths = new Set<number>();
+    let wide = false;
     for (const [x, y] of room.tiles) {
       for (const [dx, dy] of DIR_VEC) {
         const nx = x + dx, ny = y + dy, ni = g.idx(nx, ny);
@@ -857,9 +858,26 @@ function placeCaptiveGate(g: Grid, rng: Rng, withPlate: boolean): number | null 
         if (g.surface[ni] !== Surface.Plain) continue;
         if (g.hazards.some((h) => g.idx(h.x, h.y) === ni)) continue;
         if (sacred.has(ni)) continue;
+        /**
+         * ONE TILE WIDE, OR IT IS NOT A DOORWAY.
+         *
+         * `placeGate` has always asked this of its corridor (`passageAxis`) and this
+         * search never did, so a room reached through a two-wide gap got a portcullis in
+         * each half of it. That is the "one gate opens and the other does not" report: the
+         * pair are separate doors sharing a mechanism, and a bar hung in a tile whose
+         * neighbours run both ways has no axis to be drawn across — `gateAcross` has to
+         * guess, so one of the two ends up facing along the gap it is meant to block.
+         *
+         * A mouth that is not a straight one-wide passage disqualifies the ROOM rather
+         * than being skipped: leaving it out would seal the other mouth and call the room
+         * shut while the wide gap stood open beside it.
+         */
+        if (!passageAxis(g, nx, ny)) { wide = true; break; }
         mouths.add(ni);
       }
+      if (wide) break;
     }
+    if (wide) continue;
     if (!mouths.size || mouths.size > 2) continue;
 
     const was = [...mouths].map((k) => [k, g.tiles[k]] as const);

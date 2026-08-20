@@ -753,9 +753,28 @@ export class Combat {
      * exactly the claim `groundUse` already makes one function away, which is why the two
      * had to disagree for this to be wrong at all.
      */
+    /**
+     * THE TILE IS A REAGENT, NOT A VOTER.
+     *
+     * `groundLeaves` asks two questions in one: "did these make a third thing" (the
+     * reaction pairs) and "which of these wins" (the priority list). Folding the tile's
+     * own substance into BOTH is what broke the floor. Fire leads `GROUND_ELEMENTS`, so a
+     * burning tile won the priority vote against whatever was thrown at it: water aimed at
+     * a fire left FIRE, and the douse `react` has always known about could never be
+     * reached. Every element became unable to answer the one substance that matters most.
+     *
+     * So the pairs still see the tile — that is the whole point of them, and aiming Decay
+     * at bramble must stay `plant + rot` — and the priority vote is settled by the HAND
+     * alone. What the player threw is what the floor is left holding, unless the two of
+     * them together make a third thing.
+     *
+     * Gust keeps its guard for the same reason, one layer up: the `gust + fire` row
+     * describes a hand holding both pages, so reading it off the tile made the eraser
+     * relight its own target.
+     */
     const leaves = ownElements.includes('gust') && groundReaction(ownElements) === null
       ? 'gust'
-      : groundLeaves(reagents);
+      : groundReaction(reagents) ?? groundLeaves(ownElements);
     if (leaves) {
       const g = this.floor.grid;
       const away: [number, number] = [

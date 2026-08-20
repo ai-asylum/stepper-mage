@@ -406,18 +406,23 @@ export class Stepper {
     const rise = Math.max(0, this.grid.heightAt(this.x, this.y) - this.grid.heightAt(this.fromX, this.fromY));
     this.moveScale = slid ? 1 + slid * 0.35 : 1 + rise * 0.85;
     /**
-     * THE COST IS THE EDGE, not the tile.
+     * EVERY STEP THAT TOUCHES IT COSTS, not only the edge.
      *
-     * Getting INTO rubble or briar costs the double move, and so does getting OUT of
-     * it — but moving from one briar tile to the next does not, because you are
-     * already in it and there is no second edge to fight through. Charging per tile
-     * instead made a wide patch cost its own area, which turns a thicket into a wall
-     * the moment it is more than one tile across; charging on the boundary makes it
-     * a thing with an inside, which is what terrain is.
+     * This charged on the BOUNDARY — into rubble and out of it, but never between two
+     * tiles of it — on the argument that a patch should have an inside you are already
+     * in. In play that reads as broken: you clamber into the rubble, and then cross the
+     * rest of the field at walking pace, so the field is a doorway with a lip rather than
+     * difficult ground. Whatever it costs to be in it has to be paid for as long as you
+     * are in it, or the surface is decoration everywhere except its first tile.
+     *
+     * A wide patch therefore costs its width, which is the thing the old note was
+     * avoiding. That is the intended price: rubble is the one surface a cast can lay and
+     * a gust can sweep, so a field worth walking around is a field worth spending a cast
+     * on — and the way around it is to remove it rather than to trudge through.
      */
     const hard = (x: number, y: number): boolean =>
       this.grid.surfaceAt(x, y) === Surface.Rubble || this.snagged(x, y);
-    this.holdAt = this.onHalfway && !slid && hard(this.fromX, this.fromY) !== hard(nx, ny)
+    this.holdAt = this.onHalfway && !slid && (hard(this.fromX, this.fromY) || hard(nx, ny))
       ? 0.5 : 1;
     /**
      * AND IT TAKES TWICE AS LONG TO WATCH.

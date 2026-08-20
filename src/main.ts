@@ -2142,11 +2142,23 @@ async function boot(): Promise<void> {
     const blank = {
       cost: null, amount: 0, rank: 0, toRank: 0, maxRank: MAX_RANK, golden: false,
     };
+    /**
+     * A WIDER BOOK IS ONLY OFFERED WHEN THE HAND CAN HOLD ONE MORE.
+     *
+     * The card's whole promise is a page you begin holding, and the hand is the book's
+     * length capped at `HAND_MAX` — so at three pages a fourth is a card that grants a
+     * sheet nothing can ever pick up. With the pools cut to the roster this stopped being
+     * a corner case: a one-wizard save has an empty `unowned`, the card falls back to an
+     * element already in the book, and the player is offered a Flame they cannot use for
+     * the rest of the run. Two real axes beat three cards where one is furniture.
+     */
+    const canWiden = state.pages.length < HAND_MAX;
     return [
-      {
-        ...blank, kind: 'blessing', id: extra.id, name: extra.name, tag: 'a wider book',
+      ...(canWiden ? [{
+        ...blank, kind: 'blessing' as const, id: extra.id, name: extra.name,
+        tag: 'a wider book',
         colour: extra.colour, detail: `Begin the run with ${extra.name} in the book.`,
-      },
+      }] : []),
       {
         ...blank, kind: 'blessing', id: '', name: 'A Longer Breath', tag: 'a deeper well',
         colour: 0x8ce06a, amount: BLESSING_HP,
@@ -2335,8 +2347,24 @@ async function boot(): Promise<void> {
    * and a page. The dungeon staying a component pouch is a pillar (`docs/DESIGN.md`); the
    * BOOK is what the roster gates.
    */
-  const rosterPages = () =>
-    ELEMENT_SPELLS.filter((sp) => meta.wizards.includes(sp.id as WizardElement));
+  const rosterPages = () => {
+    /**
+     * BOTH LISTS, because a rescue writes two and the pool must not depend on which.
+     *
+     * `meta.wizards` is who you may PLAY and `meta.freed` is who you have cut out of a
+     * cage; `rescue` pushes to both, so they should never disagree. This read the playable
+     * list alone, which means any save where they HAVE drifted — an older save, a partial
+     * write, a rescue recorded before both lists existed — silently keeps the pages of a
+     * wizard the player can see on their own roster screen. That is unfalsifiable from
+     * inside the game: the hero is standing there freed and the altar acts as though they
+     * are still behind the gate.
+     *
+     * The union costs nothing and makes the rule the player was told: the element is
+     * available from the moment its wizard is out, and it stays available.
+     */
+    const have = new Set<string>([...meta.wizards, ...meta.freed, FIRST_WIZARD]);
+    return ELEMENT_SPELLS.filter((sp) => have.has(sp.id));
+  };
 
   const startPageMenu = (): string[] => {
     const pool = rosterPages().map((sp) => sp.id).filter((id) => id !== gifted);
