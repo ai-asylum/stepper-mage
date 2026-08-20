@@ -205,6 +205,22 @@ const DOUSES: Partial<Record<Substance, readonly Element[]>> = {
  * a stone on the flagstones, not terrain — and neither will the clay, which is the
  * point of it being the precious one.
  */
+/**
+ * The component a substance hands you when you STAND in it, or null when it hands you
+ * nothing.
+ *
+ * Deliberately only the three that exist as fixture components. Ice and the plants
+ * read as frost and plant (`SUBSTANCE_ELEMENT`), and those are PAGE elements — handing
+ * one over would give a player an element their roster has not freed, which is the one
+ * thing the page pools are gated on. A tile cannot be allowed to undo that; the ground
+ * lends you what the room could have lent you anyway.
+ */
+export const SUBSTANCE_COMPONENT: Readonly<Partial<Record<Substance, string>>> = {
+  fire: 'flame',
+  water: 'water',
+  oil: 'oil',
+};
+
 export function substanceOf(id: string): Substance | null {
   if (id === 'water') return 'water';
   if (id === 'oil') return 'oil';
@@ -452,6 +468,20 @@ export class Ground {
    * cannot itself grow this round — otherwise a single seed floods the room on the
    * first tick instead of walking outward a ring at a time.
    */
+  /**
+   * Take turns of life off ONE tile, and clear it if that empties it.
+   *
+   * `age` is the floor's own clock and ages everything by one; this is a tile being
+   * SPENT — standing in a substance draws off it, so the patch that arms you drains
+   * faster than the patch you are only walking past.
+   */
+  drain(i: number, turns = 1): void {
+    const had = this.patch.get(i);
+    if (!had) return;
+    had.turns -= turns;
+    if (had.turns <= 0) this.patch.delete(i);
+  }
+
   age(): void {
     /**
      * FIRE TRAVELS ON FUEL, and this is the whole rule.

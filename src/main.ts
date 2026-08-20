@@ -49,9 +49,9 @@ import { DEFAULT_STEP, setPixelStep } from './art/steps';
 import {
   CATCH_UP_DRAWS, CHEST_HEAL_SPREAD, ENGAGE_RADIUS, PLAYER_MAX_HP, THREAT_REACH,
   chestHealBase, fallDamage, healable,
-  POUR_TURNS_PER_UNIT,
+  POUR_TURNS_PER_UNIT, GROUND_ARM_DRAIN,
 } from './game/tuning';
-import { substanceOf } from './game/ground';
+import { substanceOf, SUBSTANCE_COMPONENT } from './game/ground';
 import { setGilded, setPageRanks } from './book/pageTexture';
 import {
   NODE_BY_ID, TREE, derivedBeltSlots, derivedGolemInfusion, derivedGolemsKept, derivedPouchTier,
@@ -810,17 +810,64 @@ async function boot(): Promise<void> {
    * borrowed rather than owned: gold is the book's colour, on every page edge and in
    * every merge glow, so a card from the room wears the element's instead.
    */
-  const addHarvestCard = (id: string): void => {
+  const addHarvestCard = (id: string, locked = false): void => {
     const card = harvestCard(id);
     if (!card) return;
     // A torn page flies from wherever the page was. This rises into the hand from
     // below the fan, which from inside the book's camera is where the room is.
-    fan.add(card, new THREE.Vector3(0, -0.16, -0.34), new THREE.Quaternion());
+    fan.add(card, new THREE.Vector3(0, -0.16, -0.34), new THREE.Quaternion(), locked);
     const p = fan.pages[fan.pages.length - 1];
     if (!p) return;
     const col = harvestColour(id);
     p.mat.uniforms.uGold.value.setHex(col);
     (p.glow.material as THREE.ShaderMaterial).uniforms.uColor.value.setHex(col);
+  };
+
+  /**
+   * STANDING IN IT ARMS YOU.
+   *
+   * Once per round, the substance under the player's feet fills a hand slot with its
+   * element — and the tile burns down faster for it. The card is LOCKED: it cannot be
+   * stowed or put back, and the only ways to be rid of it are to cast it or to step
+   * off the tile.
+   *
+   * This is the pillar stated one step further. The room is already a pouch you reach
+   * into; this says the floor you are standing on is already in your hand, and it
+   * charges what standing in a substance charges — burning ground hurts, ice is slick,
+   * oil is waiting for a spark. It also pays for itself: a patch that arms you drains
+   * faster, so the strong position is temporary by construction and nobody can camp a
+   * bonfire and farm it.
+   *
+   * IT NEVER TAKES THE LAST FREE SLOT. At a hand of one — where a new save lives for
+   * three floors — a locked card would BE the whole hand, and the book would be
+   * unreachable while the player's feet were wet. The mechanic switches itself on with
+   * `hand2` instead, arriving as a reward at the moment there are slots to spare, which
+   * is the same job the belt's unlock does.
+   */
+  const standingArms = (): void => {
+    if (dead || loading || busy) return;
+    const cap = handSize();
+    // The last free slot is never taken: at a hand of one this is the whole feature
+    // being off, which is deliberate.
+    if (cap < 2 || fan.count >= cap - 1) return;
+    const g = floor.grid;
+    const i = g.idx(stepper.x, stepper.y);
+    const what = floor.ground.at(i);
+    if (!what) return;
+    const id = SUBSTANCE_COMPONENT[what];
+    if (!id) return;
+    addHarvestCard(id, true);
+    hud.tornIds = fan.gameIds;
+    hud.addLog(
+      `The ${what} under you fills your hand.`, SPELL_BY_ID[id]?.colour ?? 0xffcf5c,
+    );
+    /**
+     * And the tile pays for it. Doubling the drain is what stops a big patch being a
+     * supply: whatever it would have lasted, standing in it halves.
+     */
+    floor.ground.drain(i, GROUND_ARM_DRAIN);
+    combat.syncGround();
+    refreshTargets();
   };
 
   // -------------------------------------------------------------------- the belt
@@ -939,6 +986,15 @@ async function boot(): Promise<void> {
     if (!BELT_ENABLED) return false;
     const card = fan.gameIds[index];
     if (!card) return false;
+    /**
+     * A card the FLOOR gave you does not come off your hand. Cast it, or step off the
+     * tile — see `standingArms`. Said out loud rather than silently ignored, because a
+     * tap that does nothing reads as a tap the game missed.
+     */
+    if (fan.isLocked(index)) {
+      speakRefusal('The floor is filling your hand. Cast it, or step away.');
+      return false;
+    }
     if (!pouchable(card)) {
       speakRefusal('A pouch will not hold a page.');
       return false;
@@ -1044,8 +1100,10 @@ async function boot(): Promise<void> {
    * and what is targetable is recomputed. There is no bill to clear any more — a
    * hand costs nothing to assemble, so putting it back cannot owe anything.
    */
-  const returnHand = (): void => {
-    fan.clear();
+  const returnHand = (keepLocked = true): void => {
+    // The player's own CLEAR keeps what the floor gave them; only a floor change takes
+    // everything, because the tile that was arming them is not on the next floor.
+    fan.clear(keepLocked);
     refreshTargets();
   };
 
@@ -1073,6 +1131,11 @@ async function boot(): Promise<void> {
    */
   const returnComponent = (index: number): boolean => {
     if (dead || fan.busy) return false;
+    // The floor's own card cannot be put back — the tile is holding your hand open.
+    if (fan.isLocked(index)) {
+      speakRefusal('The floor is filling your hand. Cast it, or step away.');
+      return false;
+    }
     const id = fan.gameIds[index];
     const spell = fan.removeAt(index);
     if (!spell) return false;
@@ -3034,6 +3097,14 @@ async function boot(): Promise<void> {
      * than between two patches of floor, and answered with a small burst at the far
      * end so the arrival lands as a hit and not just as light.
      */
+    /**
+     * Every round, the floor under the player offers what it is made of.
+     *
+     * Wired here with the rest of the combat callbacks, and fired by `enemyRound` after
+     * the room has acted, so anything the round did to the ground is already true.
+     */
+    combat.onRoundEnd = () => standingArms();
+
     combat.onChainFx = (from, to, colour) => {
       const a = entityPos(from, new THREE.Vector3());
       const b = entityPos(to, new THREE.Vector3());
@@ -3052,7 +3123,19 @@ async function boot(): Promise<void> {
     loading = true;
     busy = true;
     document.getElementById('boot')?.classList.remove('gone');
-    if (floor) { engine.scene.remove(floor.group); floor.dispose(); }
+    if (floor) {
+      /**
+       * Everything comes out of the hand, the floor's own card included: the tile that
+       * was holding it open is not on the next floor.
+       *
+       * Here rather than at the top of `enterFloor`, because on the FIRST floor there is
+       * no `floor` yet and `refreshTargets` reads its grid — which is exactly how this
+       * crashed the boot when it was written two lines earlier.
+       */
+      returnHand(false);
+      engine.scene.remove(floor.group);
+      floor.dispose();
+    }
 
     state.depth = depth;
     // The progression event the retention gates read. Depth is the only number that

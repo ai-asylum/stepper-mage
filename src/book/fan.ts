@@ -36,6 +36,15 @@ export const FAN_SCALE = 0.26;
 
 interface FloatPage {
   spell: SpellDef;
+  /**
+   * Given by the GROUND the player is standing in, and not removable.
+   *
+   * A card the floor put in your hand cannot be stowed or put back — the only ways to
+   * be rid of it are to cast it or to step off the tile. It is on the card rather than
+   * tracked by index in `main.ts` because indices shift every time a card leaves, and
+   * a lock that drifts onto the wrong card is worse than no lock.
+   */
+  locked?: boolean;
   group: THREE.Group;
   mat: PageMaterial;
   glow: THREE.Mesh;
@@ -78,7 +87,7 @@ export class Fan {
   }
 
   /** Add a ripped page. World transform comes from the book's page. */
-  add(spell: SpellDef, worldPos: THREE.Vector3, worldQuat: THREE.Quaternion) {
+  add(spell: SpellDef, worldPos: THREE.Vector3, worldQuat: THREE.Quaternion, locked = false) {
     const art = pageArt(spell, SPELLS.indexOf(spell));
     const mat = pageMaterial(art.torn, blankPageTexture());
     mat.uniforms.uProgress.value = 0.03;
@@ -103,6 +112,7 @@ export class Fan {
 
     this.pages.push({
       spell,
+      locked,
       group,
       mat,
       glow,
@@ -193,6 +203,16 @@ export class Fan {
    * `slot(i, n)` derives every position from the index and the count, so `update`
    * re-lays the fan out on the next frame.
    */
+  /** Is the card in this slot one the ground gave you? */
+  isLocked(i: number): boolean {
+    return !!this.pages[i]?.locked;
+  }
+
+  /** How many locked cards are in the hand right now. */
+  get lockedCount(): number {
+    return this.pages.reduce((n, p) => n + (p.locked ? 1 : 0), 0);
+  }
+
   removeAt(i: number): SpellDef | null {
     if (this.merging || i < 0 || i >= this.pages.length) return null;
     const [p] = this.pages.splice(i, 1);
@@ -202,12 +222,25 @@ export class Fan {
   }
 
   /** Return all pages to the book (refund flow). */
-  clear() {
+  /**
+   * Empty the hand.
+   *
+   * `keepLocked` is what the player's own CLEAR passes: a card the ground put in your
+   * hand is not yours to put back, so the button that returns everything has to leave
+   * it — otherwise CLEAR is a way around the lock, and the rule would hold everywhere
+   * except at the one control built for dropping things.
+   *
+   * A floor change clears everything, locked included: the tile that was holding your
+   * hand open is not on this floor.
+   */
+  clear(keepLocked = false) {
+    const kept: FloatPage[] = [];
     for (const p of this.pages) {
+      if (keepLocked && p.locked) { kept.push(p); continue; }
       camera.remove(p.group);
       p.mat.dispose();
     }
-    this.pages = [];
+    this.pages = kept;
   }
 
   private update(dt: number, t: number) {

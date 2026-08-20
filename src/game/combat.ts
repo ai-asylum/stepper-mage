@@ -351,6 +351,15 @@ export class Combat {
    * nothing anywhere prices it.
    */
   onFusion: (name: string, colour: number) => void = () => {};
+  /**
+   * A round finished. Fired once per turn, after the room has acted.
+   *
+   * The hand lives in `main.ts` and the ground lives here, and "standing in a substance
+   * arms you" needs both — so combat says when a turn ended and main decides what that
+   * does to the hand. One hook rather than main polling, because a turn is a discrete
+   * thing that happens and polling for it would be re-deriving the fact.
+   */
+  onRoundEnd: () => void = () => {};
 
   /** A floor's boss has fallen. The deed that unlocks starting below it. */
   onBossKilled: (depth: number) => void = () => {};
@@ -1908,6 +1917,9 @@ export class Combat {
     const pt = this.playerTile;
     if (pt && this.floor.grid.inside(pt.x, pt.y)) this.floor.cull(pt.x, pt.y);
     if (engaged) await delay(ROUND_PACE_MS);
+    // Last, so anything the round did to the floor is already true when the hand is
+    // asked what it is standing in.
+    this.onRoundEnd();
     return engaged;
   }
 

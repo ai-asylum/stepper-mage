@@ -375,8 +375,12 @@ needs anyway now that the altars widen the hand on their own.
 - **It does not stack past the hand.** Full hand, nothing happens, no refusal
   message — this is ambient, and a refusal every round for standing still would be
   unbearable.
-- **Which substances:** all of them, via `SUBSTANCE_ELEMENT`. Ice gives frost,
-  bramble and briar give plant, and the two liquids give themselves.
+- **Which substances: only the three that exist as fixture components** — fire,
+  water and oil. Ice reads as frost and the plants as plant, and those are PAGE
+  elements: handing one over would give the player an element their roster has not
+  freed, which is the single thing every page pool is gated on. A tile must not be
+  able to undo the roster. The rule the ground follows is "it lends you what the
+  room could have lent you anyway".
 - **It is not a harvest** and must not be priced as one: no adjacency, no facing,
   no cost, but you have to be *in* it. **Long Reach** (tree proposal, chain B) stays about
   reaching fixtures from further away; this is about standing in the consequences.

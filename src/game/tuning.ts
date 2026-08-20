@@ -606,3 +606,12 @@ export const PLANT_TURNS = 3;
  * around and one is a smear.
  */
 export const POUR_TURNS_PER_UNIT = 2;
+
+/**
+ * Extra turns of life a tile loses each round it arms the player standing in it.
+ *
+ * One on top of the ordinary tick, so a patch you stand in lasts half as long as one
+ * you walk past. That is the whole self-limit on the mechanic: the strong position is
+ * temporary by construction, and nobody can camp a bonfire and farm it.
+ */
+export const GROUND_ARM_DRAIN = 1;
