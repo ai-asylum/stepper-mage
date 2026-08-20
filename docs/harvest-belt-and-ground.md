@@ -54,6 +54,28 @@ That placement also carries a meaning the old strip did not: the portrait is
 *you*, and the belt is what you are carrying — a column of things on your person,
 beside the picture of your person.
 
+**And it rolls up into the portrait when the book is away.** The belt unrolls
+downward out of the portrait when the grimoire is open and rolls back up into it
+when the grimoire is closed — one piece of furniture with the book, on the book's
+own signal (`hud.bookClosed`), with the same easing so the two read as one motion.
+
+That is not decoration, it is the left edge being contested. Walking and turning
+are swipes in the world area, and the left edge is where a thumb naturally lands
+for them; a column of touch targets living there permanently would eat movement
+gestures during the part of the game that is nothing but movement. Collapsing
+removes the hit rects and the clutter together, so while you are stepping the
+screen is the dungeon.
+
+The portrait becomes the belt's **handle**: tap it to unroll, tap it again to roll
+up, so the belt is reachable without opening the book. And it must keep a **count
+badge** while collapsed — a small numeral of what you are carrying — because a
+container that hides how full it is turns "can I harvest this" into a guess.
+
+One edge worth getting right: a **harvest that lands while the belt is rolled up
+should unroll it for a beat and let it roll back**. The player has to see where the
+thing went, or the harvest reads as having done nothing — which is the same defect
+as a lever that moves a door nobody watched.
+
 ### 1.3 The UX, decided rather than left open
 
 The messy part is fill order and movement, so here is a rule set. It borrows the
