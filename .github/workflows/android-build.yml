@@ -51,6 +51,28 @@ jobs:
           VITE_APPSFLYER_DEV_KEY: ${{ secrets.VITE_APPSFLYER_DEV_KEY }}
         run: npm run build
 
+      # The gate on surface tagging. analytics.ts registers native_platform /
+      # app_platform / is_native_app / game_version as super properties, and
+      # that register() call is the ONLY thing separating a Play install from a
+      # browser session (the Capacitor WebView's UA is ordinary mobile Chrome).
+      # Super properties attach at capture time, so an AAB that ships without
+      # them produces analytics that can never be backfilled — which is why this
+      # fails the build rather than warning. Checking the BUNDLE, not the source:
+      # a correct module that got tree-shaken, or a stale dist/, reads fine in
+      # review and still ships untagged. Property names survive minification
+      # (minifiers rewrite identifiers, never object keys).
+      - name: Verify the bundle carries PostHog surface tagging
+        run: |
+          missing=
+          for p in native_platform app_platform is_native_app game_version; do
+            grep -rlq "$p" dist/ || missing="$missing $p"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::dist/ ships no$missing — every event would land in the 'unknown' platform bucket, and super properties cannot be backfilled. Check posthog.register() in the analytics module and that boot calls initAnalytics()."
+            exit 1
+          fi
+          echo "surface tagging present in dist/"
+
       - name: Sync web bundle into the Android project
         run: npx cap sync android
 
