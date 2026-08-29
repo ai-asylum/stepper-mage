@@ -199,6 +199,36 @@ interface Meta {
 const META_KEY = 'stepper-mage.meta.v1';
 
 /**
+ * The activation flag, and why it is NOT in `Meta`.
+ *
+ * `ftue_completed` is the only input to FOUNDRY's D0 activation column, and it
+ * has to fire exactly once per player, ever. That is a different lifetime from
+ * everything in `Meta`: wiping progress (`resetProgress`) is a thing a player
+ * does to start over, not a thing that makes them a new activation, so this
+ * lives in its own key that the reset deliberately does not remove.
+ *
+ * This game has no tutorial, so there is no FTUE to finish. The nearest honest
+ * reading of "activated" is that the player actually got into a floor rather
+ * than bouncing off the boot screen, which is why it fires from `enterFloor`
+ * and not from boot — fired at boot it would be 1:1 with `session_start` and
+ * the column would read 100% forever, which answers nothing.
+ */
+const FTUE_KEY = 'stepper-mage.ftue.v1';
+
+/** Fire `ftue_completed` the first time this player reaches a floor, once ever. */
+const trackFtueOnce = (depth: number): void => {
+  try {
+    if (localStorage.getItem(FTUE_KEY)) return;
+    localStorage.setItem(FTUE_KEY, '1');
+  } catch {
+    // Private mode: nothing persists, so firing every session would inflate
+    // activation. Staying silent under-counts instead, which is the safer bias.
+    return;
+  }
+  track('ftue_completed', { depth });
+};
+
+/**
  * FOV, and why the default moved.
  *
  * 90 was the value the game shipped with, and it is too narrow for a grid: a body one
@@ -3196,6 +3226,7 @@ async function boot(): Promise<void> {
     // says how far a session actually got, and it is written here rather than at the
     // stairs so a deep START (`Descent_Unlocks`) counts as the floor it opens on.
     track('floor_entered', { depth });
+    trackFtueOnce(depth);
     const theme = THEMES[Math.min(THEMES.length - 1, depth - 1)];
     /**
      * WHO IS BEHIND THE GATE on this floor, decided here rather than in the generator.
