@@ -4074,10 +4074,62 @@ async function boot(): Promise<void> {
    * Every boot, including boots of the copy inside the AAB — see `notifyBootOk`.
    */
   void import('./systems/liveUpdates').then(async (m) => {
+    // Awaited: the resume check below can end in reload(), and swapping the bundle
+    // out from under a notifyAppReady that has not landed yet would let the
+    // rollback timer condemn a bundle that was perfectly fine.
     await m.notifyBootOk();
     // And ask what it is serving, so the settings stamp can disagree with itself out
     // loud when a staged bundle is not the one running. Null off-device.
     hud.bundleVersion = await m.currentBundle();
+    hud.betaUpdates = m.betaEnabled();
+    /**
+     * Re-assert the update channel on EVERY launch, not just when the toggle is
+     * touched.
+     *
+     * Installing a new APK runs the plugin's native cleanup (`resetWhenUpdate`),
+     * which clears the persisted custom id — while this app's own preference, in
+     * localStorage, survives. The two then disagree silently: the switch reads
+     * "on" and the device is checking as a non-beta player, forever. That is
+     * exactly what happened to match-merge across builds 467, 468 and 469.
+     *
+     * The native check has already gone out by the time this runs, so it takes
+     * effect on the next launch.
+     */
+    await m.applyBetaChannel();
+    /**
+     * Check on every return to the app, and apply immediately.
+     *
+     * The plugin checks on foreground by itself, but with `directUpdate: false`
+     * it only downloads — the swap waits for the next trip to the background,
+     * and the one after that to be running. From the player's side that is
+     * indistinguishable from nothing happening.
+     *
+     * Reported through the log rather than a loading screen: this game has no
+     * boot overlay to hold open, and an update that applies reloads the WebView
+     * anyway, so the only thing worth saying out loud is the case that does NOT
+     * resolve itself.
+     */
+    m.checkOnResume({
+      onStart: () => {},
+      onIdle: () => {},
+      // There is a newer bundle and this APK is too old to run it. The server
+      // refuses to serve it, which is correct but silent — from the device's
+      // side a refusal looks exactly like having nothing new, so a player would
+      // simply stop receiving updates and never learn why.
+      onStoreUpdate: (info) => {
+        hud.storeUpdate = info;
+        hud.addLog('Update from the Play Store for the latest version.', 0xffcf5c);
+      },
+    });
+    // Take a known-good copy of the save while the PUBLIC bundle is running. A
+    // copy taken mid-beta would be in whatever shape the beta uses, which is
+    // exactly what the public bundle cannot read — so this is the only moment it
+    // is worth taking.
+    void m.checkpointIfPublic();
+    // Listeners go on in the same breath. An update that fails is exactly the
+    // case where nothing else reports, so this must not depend on anything later
+    // in boot succeeding.
+    void m.installUpdateTelemetry();
   });
 
   /**
@@ -4717,6 +4769,10 @@ async function boot(): Promise<void> {
       case 'settings':
         hud.settingsOpen = !hud.settingsOpen;
         hud.resetArmed = false;
+        // Both confirmations disarm with the panel, for the same reason: an armed
+        // destructive control that survives the screen being closed is one that
+        // fires on a tap the player thinks is their first.
+        hud.betaRevertArmed = false;
         break;
       case 'resetProgress': resetProgress(); break;
       case 'invertGestures':
@@ -4724,6 +4780,40 @@ async function boot(): Promise<void> {
         hud.invertGestures = meta.invertGestures;
         saveMeta(meta);
         break;
+      /**
+       * BETA UPDATES, and the one confirmation in this panel that is not about
+       * wiping anything.
+       *
+       * Turning it ON is free: the worst case is running code a little earlier
+       * than everyone else. Turning it OFF can be a code DOWNGRADE — the public
+       * bundle reads a save that newer code wrote — so the save is rolled back
+       * to the last copy taken while a public bundle was running.
+       *
+       * That is only worth warning about when it would actually cost something.
+       * `betaRevertWouldLoseProgress` answers exactly that, and both cheap cases
+       * (already in sync, or beta played but nothing changed) answer false. A
+       * warning shown when nothing is at stake teaches people to click through
+       * the one that matters.
+       *
+       * The optimistic flag flip is deliberate: the switch has to move under the
+       * finger. Turning beta on can end in a reload — the WebView is replaced
+       * mid-call — so there is no "after" in which to update it.
+       */
+      case 'betaUpdates': {
+        const turningOff = hud.betaUpdates;
+        void (async () => {
+          const m = await import('./systems/liveUpdates');
+          if (turningOff && (await m.betaRevertWouldLoseProgress()) && !hud.betaRevertArmed) {
+            hud.betaRevertArmed = true;
+            hud.addLog('Leaving beta rolls your save back. Tap again to confirm.', 0xff8a8a);
+            return;
+          }
+          hud.betaRevertArmed = false;
+          hud.betaUpdates = !turningOff;
+          await m.setBetaEnabled(!turningOff);
+        })();
+        break;
+      }
       // Looking is free and picking is not, which is why they are two actions. A tap on a
       // face used to START A RUN, and a roster you can begin a run by brushing is a roster
       // nobody reads.
@@ -4910,7 +5000,7 @@ async function boot(): Promise<void> {
   const UI_CONTROLS: ReadonlySet<string> = new Set([
     'cast', 'clear', 'descend', 'cycle', 'altar', 'chest', 'harvest',
     'belt', 'card', 'tree', 'bestiary', 'settings', 'resetProgress',
-    'wizardPeek', 'wizardPick', 'wizardBack', 'invertGestures', 'rescue', 'rescueDone',
+    'wizardPeek', 'wizardPick', 'wizardBack', 'invertGestures', 'betaUpdates', 'rescue', 'rescueDone',
     // The belt's own controls, for the reason the whole set exists: these sit over the
     // world and the book, and a tap that leaked past them would step the player.
     'beltToggle', 'beltOpen', 'beltClose', 'beltMove', 'beltDrop', 'beltAmount',

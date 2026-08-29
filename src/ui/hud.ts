@@ -239,6 +239,7 @@ export type UiAction =
    * has ever banked is not a control, it is a trap.
    */
   | { kind: 'resetProgress' }
+  | { kind: 'betaUpdates' }
   | { kind: 'offer'; offer: AltarOffer }
   | { kind: 'altar'; entity: Entity }
   | { kind: 'chest'; entity: Entity }
@@ -618,8 +619,29 @@ export class Hud {
    * Written by `main.ts` once the updater answers; only shown when it disagrees with
    * the version compiled into this bundle — see the stamp at the foot of the settings
    * panel.
+   *
+   * `isPublic` is null when the published index could not be read. That is a third
+   * state, not a synonym for beta: the label is a statement of fact to whoever reads
+   * it out during a test, so "cannot tell" must print as nothing rather than guess.
    */
-  bundleVersion: string | null = null;
+  bundleVersion: { version: string; isPublic: boolean | null } | null = null;
+  /** Whether the player has opted into beta bundles — drawn as the settings toggle. */
+  betaUpdates = false;
+  /**
+   * Armed state for leaving the beta, the same two-tap shape as RESET PROGRESS.
+   *
+   * Only ever set when the revert would actually roll the save back; the cheap
+   * cases flip straight over without a confirmation.
+   */
+  betaRevertArmed = false;
+  /**
+   * Set when a newer bundle exists that this APK is too old to run.
+   *
+   * The endpoint refuses to serve it, and a refusal is indistinguishable from
+   * "nothing new" on the device — so without a word here the player simply stops
+   * receiving updates and is never told why.
+   */
+  storeUpdate: { version: string; minNative: string; native: string } | null = null;
   /**
    * How far the belt is rolled out, 0 at the portrait and 1 fully hung.
    *
@@ -2433,6 +2455,50 @@ export class Hud {
       action: { kind: 'invertGestures' },
     });
 
+    /**
+     * ---- beta updates ------------------------------------------------------
+     *
+     * Only on a device. The web build is continuously deployed and is always
+     * "latest" by definition, so there is nothing there to opt into — and a
+     * switch that does nothing is worse than no switch, because a tester will
+     * flip it and then trust what it says.
+     *
+     * `bundleVersion` is the tell: `main.ts` fills it from the updater and
+     * leaves it null in a browser.
+     */
+    const onDevice = this.bundleVersion !== null;
+    const betaY = cbY + 26;
+    if (onDevice) {
+      const bLabel = 'BETA UPDATES';
+      ctx.font = 'bold 11px ui-monospace, monospace';
+      const bTextW = ctx.measureText(bLabel).width;
+      const bW = box + 8 + bTextW;
+      const bX = Math.round((W - bW) / 2);
+      rr(ctx, bX, betaY, box, box, 3);
+      ctx.fillStyle = this.betaUpdates ? 'rgba(255,207,92,0.85)' : 'rgba(20,14,26,0.9)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,207,92,0.6)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      if (this.betaUpdates) {
+        ctx.strokeStyle = 'rgba(26,16,6,0.95)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(bX + 3.5, betaY + 7.5);
+        ctx.lineTo(bX + 6, betaY + 10.5);
+        ctx.lineTo(bX + 10.5, betaY + 4);
+        ctx.stroke();
+      }
+      ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(232,217,176,0.9)';
+      ctx.fillText(bLabel, bX + box + 8, betaY + 3);
+      ctx.textAlign = 'center';
+      this.hits.push({
+        rect: [bX - 10, betaY - 8, bW + 20, box + 16],
+        action: { kind: 'betaUpdates' },
+      });
+    }
+
     // ---- reset -------------------------------------------------------------
     const armed = this.resetArmed;
     const label = armed ? 'TAP AGAIN TO WIPE' : 'RESET PROGRESS';
@@ -2446,7 +2512,7 @@ export class Hud {
      * top of the subtitle. Stacked off the track's own bottom edge so adding a third
      * setting moves one number.
      */
-    const resetTop = cbY + 46;
+    const resetTop = (onDevice ? betaY : cbY) + 46;
     ctx.font = '9px ui-monospace, monospace';
     ctx.fillStyle = armed ? 'rgba(255,138,138,0.85)' : 'rgba(232,217,176,0.5)';
     ctx.fillText(sub, W / 2, resetTop);
@@ -2502,10 +2568,15 @@ export class Hud {
     ctx.textAlign = 'center';
     ctx.font = '8px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(232,217,176,0.32)';
-    const served = this.bundleVersion && this.bundleVersion !== OTA_VERSION
-      ? `  ·  serving ${this.bundleVersion}`
+    const served = this.bundleVersion && this.bundleVersion.version !== OTA_VERSION
+      ? `  ·  serving ${this.bundleVersion.version}`
       : '';
-    ctx.fillText(`${BUILD}  ·  bundle ${OTA_VERSION}${served}`, W / 2, by + 38);
+    // Only ever "Beta". Public is the normal state and needs no label, and an
+    // unreadable index prints nothing at all — see `isPublic`. Saying "Public"
+    // whenever we simply failed to ask is how match-merge ended up showing a
+    // bright amber Beta to players who had never opted into anything.
+    const channel = this.bundleVersion?.isPublic === false ? '  ·  BETA' : '';
+    ctx.fillText(`${BUILD}  ·  bundle ${OTA_VERSION}${served}${channel}`, W / 2, by + 38);
 
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     this.hits.push({ rect: [bx, by, tw, 30], action: { kind: 'settings' } });
