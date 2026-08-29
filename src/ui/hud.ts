@@ -234,11 +234,21 @@ export type UiAction =
   /** Dismiss the rescue card. */
   | { kind: 'rescueDone' }
   /**
-   * Wipe the save. Fires only on the SECOND tap of the reset row, because the first
-   * one arms it — see `Hud.resetArmed`. A single tap that deletes every star a player
-   * has ever banked is not a control, it is a trap.
+   * Wipe the save. Fires only from the confirmation that appears after a three-second
+   * HOLD on the reset row — see `Hud.resetHoldStart`. A single tap that deletes every
+   * star a player has ever banked is not a control, it is a trap, and two taps is the
+   * weakest possible guard against one: a mis-tap repeated is the single most likely
+   * way to hit the same button twice.
    */
   | { kind: 'resetProgress' }
+  /** Press-and-hold began on the reset row. */
+  | { kind: 'resetHold' }
+  /** Open one of the policy pages in the system browser. */
+  | { kind: 'openPage'; page: 'privacy' | 'terms' | 'deletion' }
+  /** Put the anonymous analytics id on the clipboard. */
+  | { kind: 'copyAnalyticsId' }
+  /** Back out of the confirmation without wiping anything. */
+  | { kind: 'resetCancel' }
   | { kind: 'betaUpdates' }
   | { kind: 'offer'; offer: AltarOffer }
   | { kind: 'altar'; entity: Entity }
@@ -606,13 +616,37 @@ export class Hud {
   bestiaryOpen = false;
   settingsOpen = false;
   /**
-   * Has the reset row been tapped once already?
+   * How long the reset row has to be held. Three seconds, matching match-merge.
+   *
+   * Long enough that it cannot be done by accident and short enough that a player who
+   * means it is not left wondering whether the button works.
+   */
+  static readonly RESET_HOLD_MS = 3000;
+  /**
+   * When the current press on the reset row began, or null if nothing is held.
    *
    * Lives on the HUD rather than in `main.ts` because it is a property of the PANEL
-   * being open: closing settings has to disarm it, and the only thing that knows the
+   * being open: closing settings has to drop it, and the only thing that knows the
    * panel closed is the thing that draws it.
    */
-  resetArmed = false;
+  resetHoldStart: number | null = null;
+  /** The hold completed; the confirmation is up and nothing has been wiped yet. */
+  resetConfirm = false;
+  /**
+   * The anonymous id every event this player sends is filed under, or null when
+   * analytics never came up. Written by `main.ts` when the panel opens, rather than
+   * read in the draw — the getter touches PostHog, and the draw runs every frame.
+   */
+  analyticsId: string | null = null;
+  /** Transient "Copied" acknowledgement under the id. */
+  analyticsIdCopied = false;
+  /**
+   * Why nothing happened, after a hold that was let go early.
+   *
+   * Without it the button reads as broken, and the next attempt is a harder, angrier
+   * press rather than a longer one.
+   */
+  resetStatus = '';
   /**
    * The bundle the OTA plugin says it is serving, or null off-device.
    *
@@ -2499,38 +2533,169 @@ export class Hud {
       });
     }
 
-    // ---- reset -------------------------------------------------------------
-    const armed = this.resetArmed;
-    const label = armed ? 'TAP AGAIN TO WIPE' : 'RESET PROGRESS';
-    const sub = armed
-      ? `${this.bankedStars} stars, every node, and the bestiary`
-      : 'every star, node and fusion you have banked';
-
     /**
-     * Below the slider, not beside it. These two y values used to be +20 and +48, from
-     * when reset was the only thing on the screen, and the slider landed straight on
-     * top of the subtitle. Stacked off the track's own bottom edge so adding a third
-     * setting moves one number.
+     * ---- reset -----------------------------------------------------------
+     *
+     * A three-second HOLD, then an explicit confirmation. Ported from
+     * match-merge, whose comment is worth keeping: two taps is the weakest
+     * possible guard, because a mis-tap repeated is the single most likely way
+     * to hit the same button twice.
+     *
+     * The hold is measured here, in the draw, rather than on a timer. The bar
+     * has to track the finger frame by frame anyway — a fill driven by one
+     * clock and a completion driven by another is how the bar reaches the end
+     * and nothing happens.
      */
     const resetTop = (onDevice ? betaY : cbY) + 46;
-    ctx.font = '9px ui-monospace, monospace';
-    ctx.fillStyle = armed ? 'rgba(255,138,138,0.85)' : 'rgba(232,217,176,0.5)';
-    ctx.fillText(sub, W / 2, resetTop);
+    let held = 0;
+    if (this.resetHoldStart !== null) {
+      held = Math.min(1, (performance.now() - this.resetHoldStart) / Hud.RESET_HOLD_MS);
+      if (held >= 1) {
+        this.resetHoldStart = null;
+        this.resetConfirm = true;
+        this.resetStatus = '';
+      }
+    }
 
-    ctx.font = 'bold 11px ui-monospace, monospace';
-    const rw = Math.max(ctx.measureText(label).width + 44, 190);
-    const rx = (W - rw) / 2, ry = resetTop + 20;
-    rr(ctx, rx, ry, rw, 32, 8);
-    ctx.fillStyle = armed ? 'rgba(58,16,20,0.96)' : 'rgba(26,18,32,0.96)';
-    ctx.fill();
-    ctx.strokeStyle = armed ? 'rgba(255,110,110,0.9)' : 'rgba(255,207,92,0.55)';
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = armed ? '#ffdede' : '#fff4dc';
-    ctx.fillText(label, W / 2, ry + 16);
-    ctx.textBaseline = 'top';
-    this.hits.push({ rect: [rx, ry, rw, 32], action: { kind: 'resetProgress' } });
+    if (this.resetConfirm) {
+      // The confirmation replaces the row rather than sitting under it: the
+      // question is "this or nothing", and leaving the thing you just held
+      // on screen invites a fourth press onto whatever moved into its place.
+      ctx.font = '9px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(255,138,138,0.85)';
+      ctx.fillText(`${this.bankedStars} stars, every node, and the bestiary`, W / 2, resetTop);
+
+      ctx.font = 'bold 11px ui-monospace, monospace';
+      const gap = 8;
+      const bwid = 92;
+      const cy = resetTop + 20;
+      const leftX = W / 2 - bwid - gap / 2;
+      const rightX = W / 2 + gap / 2;
+
+      // CANCEL first and on the left, where the thumb that just finished a hold
+      // is NOT. The safe option is the one a stray press should find.
+      rr(ctx, leftX, cy, bwid, 32, 8);
+      ctx.fillStyle = 'rgba(26,18,32,0.96)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,207,92,0.55)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff4dc';
+      ctx.fillText('CANCEL', leftX + bwid / 2, cy + 16);
+
+      rr(ctx, rightX, cy, bwid, 32, 8);
+      ctx.fillStyle = 'rgba(58,16,20,0.96)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,110,110,0.9)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.fillStyle = '#ffdede';
+      ctx.fillText('WIPE', rightX + bwid / 2, cy + 16);
+      ctx.textBaseline = 'top';
+
+      this.hits.push({ rect: [leftX, cy, bwid, 32], action: { kind: 'resetCancel' } });
+      this.hits.push({ rect: [rightX, cy, bwid, 32], action: { kind: 'resetProgress' } });
+    } else {
+      const label = 'RESET PROGRESS';
+      const sub = this.resetStatus || 'every star, node and fusion you have banked';
+      ctx.font = '9px ui-monospace, monospace';
+      ctx.fillStyle = this.resetStatus
+        ? 'rgba(255,207,92,0.8)'
+        : 'rgba(232,217,176,0.5)';
+      ctx.fillText(sub, W / 2, resetTop);
+
+      ctx.font = 'bold 11px ui-monospace, monospace';
+      const rw = Math.max(ctx.measureText(label).width + 44, 190);
+      const rx = (W - rw) / 2, ry = resetTop + 20;
+      rr(ctx, rx, ry, rw, 32, 8);
+      ctx.fillStyle = 'rgba(26,18,32,0.96)';
+      ctx.fill();
+
+      // The fill, clipped to the button's own rounded rect so it cannot square
+      // off the corners as it passes them.
+      if (held > 0) {
+        ctx.save();
+        rr(ctx, rx, ry, rw, 32, 8);
+        ctx.clip();
+        ctx.fillStyle = 'rgba(255,110,110,0.42)';
+        ctx.fillRect(rx, ry, rw * held, 32);
+        ctx.restore();
+      }
+
+      rr(ctx, rx, ry, rw, 32, 8);
+      ctx.strokeStyle = held > 0 ? 'rgba(255,110,110,0.9)' : 'rgba(255,207,92,0.55)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = held > 0 ? '#ffdede' : '#fff4dc';
+      ctx.fillText(label, W / 2, ry + 16);
+      ctx.textBaseline = 'top';
+      // `resetHold` on press, not `resetProgress` on release: this row starts a
+      // hold and can never itself be the thing that wipes.
+      this.hits.push({ rect: [rx, ry, rw, 32], action: { kind: 'resetHold' } });
+    }
+
+    /**
+     * ---- data & privacy ----------------------------------------------------
+     *
+     * The same two pages the Play listing links to, reachable from inside the
+     * game. A policy a player can only find on a store page is one they cannot
+     * find at the moment they actually want it, which is always while they are
+     * looking at the thing collecting the data.
+     *
+     * The id is shown because it IS the request: nobody here is ever identified,
+     * so this anonymous handle is the only thing a deletion can name.
+     */
+    const privY = (this.resetConfirm ? resetTop + 20 : resetTop + 20) + 46;
+    ctx.font = 'bold 9px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.45)';
+    ctx.fillText('DATA & PRIVACY', W / 2, privY);
+
+    const links: { label: string; page: 'privacy' | 'deletion' }[] = [
+      { label: 'PRIVACY POLICY', page: 'privacy' },
+      { label: 'DELETE MY DATA', page: 'deletion' },
+    ];
+    ctx.font = 'bold 10px ui-monospace, monospace';
+    const lw = links.map((l) => ctx.measureText(l.label).width + 20);
+    const lgap = 10;
+    let lx = (W - (lw[0] + lw[1] + lgap)) / 2;
+    const ly = privY + 14;
+    for (let i = 0; i < links.length; i++) {
+      const w = lw[i];
+      ctx.fillStyle = 'rgba(255,207,92,0.82)';
+      ctx.fillText(links[i].label, lx + w / 2, ly + 2);
+      // Underlined, because on a canvas there is nothing else that says "this
+      // leaves the game" — no cursor change, no colour a player already knows.
+      ctx.strokeStyle = 'rgba(255,207,92,0.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      const tw2 = ctx.measureText(links[i].label).width;
+      ctx.moveTo(lx + w / 2 - tw2 / 2, ly + 13);
+      ctx.lineTo(lx + w / 2 + tw2 / 2, ly + 13);
+      ctx.stroke();
+      this.hits.push({
+        rect: [lx, ly - 6, w, 24],
+        action: { kind: 'openPage', page: links[i].page },
+      });
+      lx += w + lgap;
+    }
+
+    // The id itself, and a tap to copy it. Smallest text on the panel: it is a
+    // UUID, it means nothing to look at, and it matters only when it is needed.
+    ctx.font = '8px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.4)';
+    const idText = this.analyticsIdCopied
+      ? 'copied'
+      : (this.analyticsId ?? 'analytics disabled');
+    ctx.fillText(idText, W / 2, ly + 22);
+    if (this.analyticsId) {
+      const idw = Math.max(ctx.measureText(idText).width + 24, 120);
+      this.hits.push({
+        rect: [(W - idw) / 2, ly + 18, idw, 18],
+        action: { kind: 'copyAnalyticsId' },
+      });
+    }
 
     // CLOSE sits where the bestiary's does, because they are the same kind of screen
     // and a player who has closed one has learnt where the other closes.

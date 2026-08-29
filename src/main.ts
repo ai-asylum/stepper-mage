@@ -3782,8 +3782,15 @@ async function boot(): Promise<void> {
     hud.addLog(`${w.name} is free.`, 0xffcf5c);
   };
 
+  /**
+   * Wipe the save.
+   *
+   * No guard of its own any more: reaching this means the row was held for three
+   * seconds AND the confirmation was answered, which is the guard. A second one
+   * here would be a third press on a control that has already been deliberate
+   * twice.
+   */
   const resetProgress = (): void => {
-    if (!hud.resetArmed) { hud.resetArmed = true; return; }
     try { localStorage.removeItem(META_KEY); } catch { /* private mode: nothing saved */ }
     location.reload();
   };
@@ -4768,13 +4775,50 @@ async function boot(): Promise<void> {
        */
       case 'settings':
         hud.settingsOpen = !hud.settingsOpen;
-        hud.resetArmed = false;
-        // Both confirmations disarm with the panel, for the same reason: an armed
-        // destructive control that survives the screen being closed is one that
-        // fires on a tap the player thinks is their first.
+        // Read once, on open. The getter touches PostHog and the draw runs every
+        // frame, so asking there would be a lookup per frame for a string that
+        // cannot change while the panel is up.
+        if (hud.settingsOpen) {
+          void import('./systems/privacy').then((m) => {
+            hud.analyticsId = m.getAnonymousId();
+          });
+        }
+        hud.analyticsIdCopied = false;
+        // Every destructive control disarms with the panel, for the same reason: one
+        // that survives the screen being closed is one that fires on a press the
+        // player thinks is their first.
+        hud.resetHoldStart = null;
+        hud.resetConfirm = false;
+        hud.resetStatus = '';
         hud.betaRevertArmed = false;
         break;
       case 'resetProgress': resetProgress(); break;
+      // The press that STARTS the hold is handled on pointerdown, so by the time a
+      // release resolves to this the hold has already been aborted. Nothing to do.
+      case 'resetHold': break;
+      case 'resetCancel':
+        hud.resetConfirm = false;
+        hud.resetStatus = '';
+        break;
+      case 'openPage': {
+        const page = a.page;
+        void import('./systems/privacy').then((m) => {
+          m.openExternal(
+            page === 'privacy' ? m.PRIVACY_URL
+              : page === 'terms' ? m.TERMS_URL
+                : m.dataDeletionUrl(),
+          );
+        });
+        break;
+      }
+      case 'copyAnalyticsId':
+        void import('./systems/privacy').then(async (m) => {
+          // Only claims success when the clipboard actually took it. A button
+          // that says "copied" over a failed write sends someone to paste
+          // nothing into a deletion request.
+          hud.analyticsIdCopied = await m.copyAnonymousId();
+        });
+        break;
       case 'invertGestures':
         meta.invertGestures = !meta.invertGestures;
         hud.invertGestures = meta.invertGestures;
@@ -5001,6 +5045,7 @@ async function boot(): Promise<void> {
     'cast', 'clear', 'descend', 'cycle', 'altar', 'chest', 'harvest',
     'belt', 'card', 'tree', 'bestiary', 'settings', 'resetProgress',
     'wizardPeek', 'wizardPick', 'wizardBack', 'invertGestures', 'betaUpdates', 'rescue', 'rescueDone',
+    'resetHold', 'resetCancel', 'openPage', 'copyAnalyticsId',
     // The belt's own controls, for the reason the whole set exists: these sit over the
     // world and the book, and a tap that leaked past them would step the player.
     'beltToggle', 'beltOpen', 'beltClose', 'beltMove', 'beltDrop', 'beltAmount',
@@ -5042,6 +5087,21 @@ async function boot(): Promise<void> {
     // time the drag starts. Before the book test, because settings covers the book.
     const grabbed = hud.fovAt(x, y);
     if (grabbed !== null) { fovDrag = true; setFov(grabbed); return; }
+    /**
+     * RESET IS HELD, not tapped, so it begins on the way down.
+     *
+     * Same reason the slider is grabbed on press: the control's whole behaviour is
+     * about the finger being down, and a hold measured from a release has already
+     * missed the thing it was supposed to measure.
+     */
+    if (hud.settingsOpen) {
+      const pressed = hud.hit(x, y);
+      if (pressed.kind === 'resetHold') {
+        hud.resetHoldStart = performance.now();
+        hud.resetStatus = '';
+        return;
+      }
+    }
     st = performance.now();
     px0 = x; py0 = y; lastX = x; lastT = st; vx = 0;
     deniedThisDrag = false;
@@ -5151,11 +5211,27 @@ async function boot(): Promise<void> {
     }
   });
 
+  /**
+   * Let go of the reset row before the three seconds are up and nothing happens —
+   * but it has to SAY nothing happened, or the button reads as broken and the next
+   * attempt is a harder, angrier press rather than a longer one.
+   *
+   * Returns whether it consumed the release: a press that was holding reset is not
+   * also a tap on whatever is underneath.
+   */
+  const abortResetHold = (): boolean => {
+    if (hud.resetHoldStart === null) return false;
+    hud.resetHoldStart = null;
+    hud.resetStatus = 'Keep holding for three seconds to reset.';
+    return true;
+  };
+
   stage.addEventListener('pointerup', (e) => {
     // The head comes back level whatever the release turns out to mean. Released here
     // and not in the swipe branch below, because a drag that resolves to nothing at all
     // still has to give the view back.
     peekYawTarget = 0; peekPitchTarget = 0;
+    if (abortResetHold()) { touches.delete(e.pointerId); return; }
     const { x, y } = local(e);
     if (touches.has(e.pointerId)) touches.set(e.pointerId, { x, y });
     if (two?.ids.includes(e.pointerId)) twoEnd();
@@ -5280,6 +5356,9 @@ async function boot(): Promise<void> {
     // A cancelled pointer never reaches `pointerup`, so without this the head stays
     // turned for the rest of the run.
     peekYawTarget = 0; peekPitchTarget = 0;
+    // And without this the reset bar keeps filling after the finger is gone — a
+    // cancelled pointer is exactly the case a hold must not survive.
+    abortResetHold();
   });
   // Desktop's scroll, since the tree is taller than any window it will be read in.
   stage.addEventListener('wheel', (e) => {
