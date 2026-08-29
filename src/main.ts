@@ -161,6 +161,13 @@ interface Meta {
    */
   fov: number;
   /**
+   * How little motion a swipe needs before it counts, 0..100 — see `swipeTravel`.
+   *
+   * 50 is the default and reproduces the fixed threshold this replaced, so an
+   * existing save plays identically until the slider is touched.
+   */
+  swipeSensitivity: number;
+  /**
    * The wizards this save has unlocked, in no particular order.
    *
    * NOT a count and not a high-water mark: the roster is a chain (`Wizard.frees`) and a
@@ -265,6 +272,50 @@ const clampFov = (v: unknown): number => {
 };
 
 /**
+ * HOW FAR A FINGER HAS TO TRAVEL BEFORE IT IS A MOVE.
+ *
+ * A press that travels less than the threshold is a tap and resolves against the
+ * HUD; anything more is a swipe and steps or turns you. The number was fixed at
+ * 24px, and a swipe that fell short of it did nothing at all — no step, and no
+ * tap either, because there was nothing under the finger to hit. Silent, and
+ * indistinguishable from the game ignoring you.
+ *
+ * The scale is expressed as SENSITIVITY, not as pixels: higher means the game
+ * takes less convincing. 50 is the default and maps to exactly the old 24px, so
+ * the setting changes nothing until it is deliberately moved.
+ */
+const SWIPE_SENS_DEFAULT = 50;
+/** Travel in px at sensitivity 0 and 100. Chosen so the midpoint is exactly 24. */
+const SWIPE_PX_AT_0 = 38;
+const SWIPE_PX_AT_100 = 10;
+
+const clampSwipeSens = (v: unknown): number => {
+  const n = Number(v);
+  return Number.isFinite(n)
+    ? Math.min(100, Math.max(0, Math.round(n)))
+    : SWIPE_SENS_DEFAULT;
+};
+
+/** Pixels of travel required, for a given sensitivity. */
+const swipeTravel = (sens: number): number =>
+  SWIPE_PX_AT_0 + (SWIPE_PX_AT_100 - SWIPE_PX_AT_0) * (sens / 100);
+
+/**
+ * And how long the finger may take about it.
+ *
+ * The distance threshold is only half of why a swipe goes nowhere: a drag that
+ * travelled far enough but took longer than this window is discarded just as
+ * silently. A slow, deliberate swipe — which is exactly what someone does after
+ * a few have failed — hits this one instead. So the same control widens both,
+ * or raising sensitivity would fix the fast misses and leave the careful ones
+ * still failing.
+ */
+const SWIPE_MS_AT_0 = 550;
+const SWIPE_MS_AT_100 = 1000;
+const swipeWindow = (sens: number): number =>
+  SWIPE_MS_AT_0 + (SWIPE_MS_AT_100 - SWIPE_MS_AT_0) * (sens / 100);
+
+/**
  * The loadout is a book, and the book holds elements only. Animate used to sit
  * in the starting three, so every save from before the split has an id in here
  * that no longer has a page — those are dropped rather than migrated to
@@ -355,6 +406,10 @@ function loadMeta(): Meta {
         // A save from before the slider has no fov; `clampFov` reads undefined as the
         // default, so an old save opens at the new 100 rather than at a NaN frustum.
         fov: clampFov(m.fov),
+        // Absent on a save from before the slider, and `clampSwipeSens` reads
+        // undefined as the default — which is the old fixed threshold, so nobody's
+        // controls change under them on upgrade.
+        swipeSensitivity: clampSwipeSens(m.swipeSensitivity),
         wizards: sanitizeWizards(m.wizards),
         // Default ON, and absent means ON — a save written before this setting existed
         // should behave like a new one rather than silently opting out.
@@ -366,6 +421,7 @@ function loadMeta(): Meta {
   return applyTree({
     stars: 0, loadout: [...DEFAULT_LOADOUT], slots: 0, handSize: 0, best: 0, nodes: [],
     giftedPage: null, pinned: null, bestiary: [], bossKills: [], fov: DEFAULT_FOV,
+    swipeSensitivity: SWIPE_SENS_DEFAULT,
     wizards: [FIRST_WIZARD], invertGestures: true, freed: [],
   });
 }
@@ -3302,6 +3358,7 @@ async function boot(): Promise<void> {
     // camera was at 115 would be the one control in the game that lies.
     hud.fov = meta.fov;
     hud.fovRange = [FOV_MIN, FOV_MAX];
+    hud.swipeSensitivity = meta.swipeSensitivity;
     hud.invertGestures = meta.invertGestures;
     // Re-seeded per floor with the rest of the run's readouts, so the portrait beside the
     // health bar survives the stairs.
@@ -4228,6 +4285,7 @@ async function boot(): Promise<void> {
   let enemyLean = 0;
   /** Latched while the FOV knob is held, so a drag off the track keeps the grab. */
   let fovDrag = false;
+  let swipeDrag = false;
 
   /**
    * The sign every gesture is read through — see `Meta.invertGestures`.
@@ -4251,6 +4309,21 @@ async function boot(): Promise<void> {
     engine.setFov(meta.fov);
     hud.fov = meta.fov;
     saveMeta(meta);
+  };
+
+  /**
+   * The sensitivity twin of `setFov`, with one difference: it does NOT save on
+   * every change.
+   *
+   * FOV writes per change because each one is visible in the world and a player
+   * may well close the panel by walking away from it. This value is only read
+   * when a swipe is resolved, so a write on release is soon enough — and a drag
+   * across the track is dozens of changes, where FOV's are spread over a slower
+   * gesture that people actually stop and look through.
+   */
+  const setSwipeSens = (v: number): void => {
+    meta.swipeSensitivity = clampSwipeSens(v);
+    hud.swipeSensitivity = meta.swipeSensitivity;
   };
 
   /** Signed shortest way round from a to b, in radians. */
@@ -5087,6 +5160,8 @@ async function boot(): Promise<void> {
     // time the drag starts. Before the book test, because settings covers the book.
     const grabbed = hud.fovAt(x, y);
     if (grabbed !== null) { fovDrag = true; setFov(grabbed); return; }
+    const sens = hud.swipeAt(x, y);
+    if (sens !== null) { swipeDrag = true; setSwipeSens(sens); return; }
     /**
      * RESET IS HELD, not tapped, so it begins on the way down.
      *
@@ -5147,11 +5222,29 @@ async function boot(): Promise<void> {
       treeScreen.scrollTo(treeScroll0 - dy);
       return;
     }
+    /**
+     * A slider already being dragged tracks the thumb WHEREVER it goes.
+     *
+     * `fovAt`/`swipeAt` answer "is this press on the track", which is the right
+     * question on the way down and the wrong one during a drag: they return null
+     * once the finger is more than 16px past the end, so a quick flick to the
+     * edge stopped updating and left the knob short of the end it was thrown at.
+     * Pinning the x into the track first asks the question that is actually being
+     * asked here — "how far along is the thumb, clamped" — and makes both ends
+     * reachable at speed.
+     */
+    const alongTrack = (t: { x: number; w: number } | null): number =>
+      t ? Math.max(t.x, Math.min(t.x + t.w, local(e).x)) : 0;
     if (fovDrag) {
-      // Clamped inside `fovAt`, so a thumb that slides past the end of the track pins
-      // to the end rather than dropping the knob.
-      const v = hud.fovAt(local(e).x, hud.fovTrack ? hud.fovTrack.y : 0);
+      const t = hud.fovTrack;
+      const v = hud.fovAt(alongTrack(t), t ? t.y : 0);
       if (v !== null) setFov(v);
+      return;
+    }
+    if (swipeDrag) {
+      const t = hud.swipeTrack;
+      const v = hud.swipeAt(alongTrack(t), t ? t.y : 0);
+      if (v !== null) setSwipeSens(v);
       return;
     }
     if (twoClaimed) return;
@@ -5247,6 +5340,7 @@ async function boot(): Promise<void> {
       return;
     }
     if (fovDrag) { fovDrag = false; return; }
+    if (swipeDrag) { swipeDrag = false; saveMeta(meta); return; }
     if (claimed) return;
     /**
      * SETTINGS EATS THE TAP, and eats the swipe with it.
@@ -5330,13 +5424,13 @@ async function boot(): Promise<void> {
      * stuck: they are pressing the screen and it is not answering, which is exactly
      * when somebody is trying to work out what the input even is.
      */
-    if (moved < 24) {
+    if (moved < swipeTravel(meta.swipeSensitivity)) {
       const a = hud.hit(x, y);
       if (a.kind === 'none') hud.idleTap();
       act(a);
       return;
     }
-    if (performance.now() - st < 700) {
+    if (performance.now() - st < swipeWindow(meta.swipeSensitivity)) {
       const dx = x - px0, dy = y - py0;
       if (Math.abs(dy) > Math.abs(dx)) {
         // Same rule as the turn: the world follows the finger. Drag down and the floor
@@ -5359,6 +5453,11 @@ async function boot(): Promise<void> {
     // And without this the reset bar keeps filling after the finger is gone — a
     // cancelled pointer is exactly the case a hold must not survive.
     abortResetHold();
+    // A slider mid-drag when the pointer is cancelled keeps its value but must let
+    // go, or the next press anywhere on the panel drags it. Saved here because the
+    // release that would normally have written it never arrives.
+    if (swipeDrag) { swipeDrag = false; saveMeta(meta); }
+    fovDrag = false;
   });
   // Desktop's scroll, since the tree is taller than any window it will be read in.
   stage.addEventListener('wheel', (e) => {

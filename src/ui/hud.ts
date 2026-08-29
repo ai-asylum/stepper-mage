@@ -713,6 +713,10 @@ export class Hud {
   fovRange: readonly [number, number] = [85, 120];
   /** Track geometry from the last draw, so a drag can be resolved against it. */
   fovTrack: { x: number; y: number; w: number } | null = null;
+  /** Mirror of `Meta.swipeSensitivity`, pushed in by `main.ts` like `fov` is. */
+  swipeSensitivity = 50;
+  /** Where the sensitivity track was last drawn — see `swipeAt`. */
+  swipeTrack: { x: number; y: number; w: number } | null = null;
   /** Mirror of `Meta.invertGestures`, pushed in by `main.ts` like `fov` is. */
   invertGestures = false;
   /**
@@ -2381,6 +2385,23 @@ export class Hud {
   }
 
   /**
+   * The sensitivity slider, resolved the same way the FOV one is: by position on
+   * the track rather than by a hit rect, so a press anywhere along it jumps the
+   * knob there instead of requiring the knob itself to be grabbed.
+   *
+   * The vertical band is tighter than the FOV slider's lower edge because the
+   * two now sit close together, and a press meant for one must not be read by
+   * the other.
+   */
+  swipeAt(x: number, y: number): number | null {
+    const t = this.swipeTrack;
+    if (!t || !this.settingsOpen) return null;
+    if (y < t.y - 12 || y > t.y + 18) return null;
+    if (x < t.x - 16 || x > t.x + t.w + 16) return null;
+    return Math.round(100 * Math.max(0, Math.min(1, (x - t.x) / t.w)));
+  }
+
+  /**
    * SETTINGS. One option today, and built as a list so the second one costs nothing.
    *
    * The reset row is a TWO-TAP control and the two states say different sentences:
@@ -2450,13 +2471,63 @@ export class Hud {
      */
     this.fovTrack = { x: tx, y: ty, w: tw2 };
 
+    /**
+     * ---- swipe sensitivity -------------------------------------------------
+     *
+     * How little the finger has to travel before a swipe counts as a move. Named
+     * for what it does to the game rather than for the pixels behind it: nobody
+     * knows what "24 pixels of travel" feels like, and everybody knows whether
+     * the game is answering them.
+     *
+     * A percentage rather than a distance for the same reason, and because the
+     * two ends are not symmetrical — the low end is a few px of slack, the high
+     * end is most of a thumb.
+     */
+    // +48, not +34: the FOV track's own "narrow / wide" captions hang 14px below
+    // it in 8px type, and this label sits 14px above its track. At +34 the two
+    // overlapped.
+    const sy = ty + 48;
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 10px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.75)';
+    ctx.fillText(`SWIPE SENSITIVITY   ${Math.round(this.swipeSensitivity)}%`, W / 2, sy - 14);
+
+    const sfrac = Math.max(0, Math.min(1, this.swipeSensitivity / 100));
+    rr(ctx, tx, sy, tw2, 6, 3);
+    ctx.fillStyle = 'rgba(20,14,26,0.9)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,207,92,0.35)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    if (sfrac > 0) {
+      rr(ctx, tx, sy, Math.max(4, tw2 * sfrac), 6, 3);
+      ctx.fillStyle = 'rgba(255,207,92,0.55)';
+      ctx.fill();
+    }
+    const skx = tx + tw2 * sfrac;
+    ctx.beginPath();
+    ctx.arc(skx, sy + 3, 6, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff4dc';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(120,80,20,0.9)';
+    ctx.stroke();
+
+    ctx.font = '8px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(232,217,176,0.4)';
+    ctx.textAlign = 'left';
+    ctx.fillText('firm', tx, sy + 14);
+    ctx.textAlign = 'right';
+    ctx.fillText('light', tx + tw2, sy + 14);
+    ctx.textAlign = 'center';
+    this.swipeTrack = { x: tx, y: sy, w: tw2 };
+
     // ---- invert gestures ----------------------------------------------------
     /**
      * A real checkbox, because this is a boolean and a boolean should look like one. The
      * label says what the setting DOES rather than naming the flag — "invertGestures" is
      * true of the code and meaningless to a player mid-swipe.
      */
-    const cbY = ty + 34;
+    const cbY = sy + 34;
     const box = 14;
     const cbLabel = 'INVERT SWIPE & DRAG';
     ctx.font = 'bold 11px ui-monospace, monospace';
