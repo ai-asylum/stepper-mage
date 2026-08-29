@@ -1,0 +1,13 @@
+targets: [claude, cursor]
+skills:
+  - loadout-discovery
+  # Telemetry — the FOUNDRY surface split, the ftue_completed activation event,
+  # and the built-bundle check that catches a game shipping unmeasured.
+  - analytics-integration
+  # FOUNDRY itself — learnings, experiments, and the task backlog for this game.
+  - game-foundry
+  # Infra
+  - managing-secrets
+  - deploy-to-vercel
+  # This game ships a playable ad build alongside the app.
+  - playable-kit

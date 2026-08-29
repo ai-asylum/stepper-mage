@@ -1,0 +1,8 @@
+---
+description: Discover and equip artifacts (skills, commands, hooks, rules) from the ai-asylum/loadout-library mid-project, beyond whatever is already listed in the project's .loadout.yml. Use whenever a task needs capability that might already exist in the library but isn't currently equipped — before writing a new skill/script from scratch, when a task mentions a domain the project hasn't touched before (deploy, analytics, asset generation, playtesting, etc.), or when the user asks "is there a skill for this", "check the loadout library", "what skills are available", or "equip X". 
+alwaysApply: false
+---
+
+# Skill: loadout-discovery
+
+Read the full skill instructions at `/Users/kalvin.lyle/dev/loadout-library/skills/loadout-discovery/SKILL.md` and follow them.

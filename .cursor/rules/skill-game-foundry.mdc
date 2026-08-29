@@ -1,0 +1,8 @@
+---
+description: Work with FOUNDRY — the closed-loop game validation system — through its Supabase databases directly. Two SEPARATE projects: the FOUNDRY DB holds ideas/experiments/learnings (and has no tasks table), while tasks live ONLY in the separate TASK DB (team-tasks) — FOUNDRY never stores tasks. Two workflows: (1) RECORD A LEARNING after a playtest/test (capture the discovery + next actions; actions are stored on experiments.actions[], and only mirrored to the TASK DB on request), and (2) WORK THE TASK BACKLOG inside a game repo (read this game's open tasks from the TASK DB, cite completed ones in VERSIONS.md, mark them verified in the TASK DB). Use when the user mentions: recording a learning, logging a playtest/test result, a validation experiment, FOUNDRY tasks/backlog, "what should I work on", "what tasks are open", finishing/completing a task, writing a VERSIONS.md/changelog entry, or verifying tasks. 
+alwaysApply: false
+---
+
+# Skill: game-foundry
+
+Read the full skill instructions at `/Users/kalvin.lyle/dev/loadout-library/skills/game-foundry/SKILL.md` and follow them.

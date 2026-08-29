@@ -1,0 +1,8 @@
+---
+description: The build toolchain for ai-asylum MRAID playable ads — single-file Vite build, base64 asset embedding, runtime asset shim, 5 MB budget, and a headless smoke test. Vendor it into the game repo from `kit/`; never add it as a package dependency. Use when a game needs its playable built, rebuilt, or its Playable CI job fixed, or when `npm run build:playable` / `playable-smoke` is missing or failing. 
+alwaysApply: false
+---
+
+# Skill: playable-kit
+
+Read the full skill instructions at `/Users/kalvin.lyle/dev/loadout-library/skills/playable-kit/SKILL.md` and follow them.

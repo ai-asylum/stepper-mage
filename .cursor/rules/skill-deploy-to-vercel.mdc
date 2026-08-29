@@ -1,0 +1,8 @@
+---
+description: Deploy a web project to Vercel under the ai-asylum account, always via GitHub Actions (never local `vercel deploy`, never Vercel's Git integration). Sets up the CI workflow, the three required repo secrets, and the account/project link. Use when the user mentions deploying to Vercel, Vercel setup, shipping to production, ai-asylum Vercel, or wiring up Vercel CI. 
+alwaysApply: false
+---
+
+# Skill: deploy-to-vercel
+
+Read the full skill instructions at `/Users/kalvin.lyle/dev/loadout-library/skills/deploy-to-vercel/SKILL.md` and follow them.
