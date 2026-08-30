@@ -17,6 +17,7 @@ import {
 } from './ui/hud';
 import { TreeScreen, type TreeAction } from './ui/tree';
 import { routeCost, routeTo } from './ui/treeCommon';
+import { showOta, hideOta, setOtaProgress, setOtaTitle } from './ui/otaScreen';
 import { Book } from './book/book';
 import { Fan } from './book/fan';
 import {
@@ -2848,13 +2849,28 @@ async function boot(): Promise<void> {
        * the same page, not a rung — and `learnPage` pushes it, which is what widens the
        * hand (`handSize` counts `state.pages`).
        */
-      case 'copy':
+      case 'copy': {
         learnPage(o.id);
+        /**
+         * SAY THE NUMBER, read back AFTER the page is in.
+         *
+         * "Your hand widens" is a claim the player cannot check against anything —
+         * the empty slots are only drawn once something is targetable, so between
+         * the altar and the next enemy there is nothing on screen that would
+         * disagree if the hand had not widened at all. Quoting the size makes the
+         * line falsifiable: it is read off `handSize()` itself, so it cannot say
+         * two while the game thinks one.
+         */
+        const held = handSize();
+        const words = ['', 'one', 'two', 'three'];
         hud.setShout(`A SECOND ${o.name.toUpperCase()}`, o.colour);
         hud.addLog(
-          `The altar yields a second ${o.name}. Your hand widens to hold it.`, o.colour,
+          `The altar yields a second ${o.name}. Your hand widens to hold `
+          + `${words[held] ?? held}.`,
+          o.colour,
         );
         break;
+      }
       case 'new':
         state.ranks[o.id] = 1;
         learnPage(o.id);
@@ -4182,19 +4198,35 @@ async function boot(): Promise<void> {
      * and the one after that to be running. From the player's side that is
      * indistinguishable from nothing happening.
      *
-     * Reported through the log rather than a loading screen: this game has no
-     * boot overlay to hold open, and an update that applies reloads the WebView
-     * anyway, so the only thing worth saying out loud is the case that does NOT
-     * resolve itself.
+     * BEHIND THE UPDATE SCREEN (`src/ui/otaScreen.ts`), which is why the hooks
+     * are no longer empty. A bundle can be several megabytes over a phone
+     * connection, and a download with no progress and no way to tell that the app
+     * is busy is both the thing that reads as a hang and the thing the stores
+     * object to. `onStart` raises it, `onIdle` lowers it when there was nothing
+     * to fetch, and nothing lowers it on success — `reload()` replaces the
+     * WebView underneath it, so the screen is the last thing the old bundle draws
+     * and the new one boots behind it.
      */
+    // Bound BEFORE the check runs, or the first percents arrive with nothing
+    // listening — on a fast connection that is most of them.
+    void m.onDownloadProgress({
+      onPercent: setOtaProgress,
+      onComplete: () => setOtaTitle('applying'),
+      // A failed update must never hold the game behind the screen. The player
+      // keeps the bundle they have and the automatic flow tries again later.
+      onFailed: hideOta,
+    });
     m.checkOnResume({
-      onStart: () => {},
-      onIdle: () => {},
+      onStart: showOta,
+      onIdle: hideOta,
       // There is a newer bundle and this APK is too old to run it. The server
       // refuses to serve it, which is correct but silent — from the device's
       // side a refusal looks exactly like having nothing new, so a player would
       // simply stop receiving updates and never learn why.
       onStoreUpdate: (info) => {
+        // Down first: this branch applies nothing, so the screen would otherwise
+        // sit over a message the player is being asked to read.
+        hideOta();
         hud.storeUpdate = info;
         hud.addLog('Update from the Play Store for the latest version.', 0xffcf5c);
       },

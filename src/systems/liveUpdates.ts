@@ -233,6 +233,54 @@ export async function installUpdateTelemetry(): Promise<void> {
   }
 }
 
+/**
+ * Report download progress to the update screen.
+ *
+ * Separate from `installUpdateTelemetry` on purpose, even though both bind the
+ * same plugin events. That one is analytics and must never be load-bearing —
+ * every one of its listeners swallows and its failure is a warning. This one is
+ * the only thing standing between the player and a progress bar that never
+ * moves, so it is bound on its own and its failure is worth knowing about.
+ *
+ * `download` fires repeatedly with a percent; `downloadComplete` marks the end
+ * of the bytes and the start of the part with nothing to report (set + reload).
+ * Both failures lower the screen, because a failed update must not be able to
+ * hold the game behind it — the automatic flow will try again on the next
+ * launch, and the bundle already installed is a working game in the meantime.
+ */
+export async function onDownloadProgress(cbs: {
+  onPercent: (pct: number) => void;
+  onComplete?: () => void;
+  onFailed?: () => void;
+}): Promise<void> {
+  if (!updaterReady()) return;
+  try {
+    const { api: CapacitorUpdater } = await updater();
+    const add = (
+      CapacitorUpdater as unknown as {
+        addListener: (e: string, cb: (s: unknown) => void) => Promise<unknown>;
+      }
+    ).addListener;
+    const bind = (event: string, fn: (s: unknown) => void): void => {
+      add.call(CapacitorUpdater, event, (state: unknown) => {
+        try { fn(state); } catch { /* the screen is not worth a crash */ }
+      }).catch(() => {
+        // An event this plugin version does not know about is not fatal: the
+        // screen still raises and lowers, it just cannot draw the middle.
+      });
+    };
+    bind('download', (s) => {
+      const pct = (s as { percent?: number })?.percent;
+      if (typeof pct === 'number') cbs.onPercent(pct);
+    });
+    bind('downloadComplete', () => cbs.onComplete?.());
+    bind('downloadFailed', () => cbs.onFailed?.());
+    bind('updateFailed', () => cbs.onFailed?.());
+  } catch (err) {
+    console.warn('[live-updates] progress listener not installed', err);
+  }
+}
+
 // ===== Beta channel =====
 //
 // An OTA reaches players without store review, so a bundle can be held as

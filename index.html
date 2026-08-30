@@ -56,6 +56,31 @@
     background: var(--ink); z-index: 10; transition: opacity .5s ease;
   }
   #boot.gone { opacity: 0; pointer-events: none; }
+  /* THE UPDATE SCREEN.
+     Deliberately DOM and not the canvas HUD: it has to be able to stand over a
+     WebView that is about to be replaced, and it must paint before the game's
+     render loop exists — an update can arrive on a cold start, ahead of the
+     first floor. It also has to say, in plain words, that the app is fetching
+     something and that closing it now is a bad idea; a silent background
+     download with no progress is what the stores object to. */
+  #ota {
+    position: absolute; inset: 0; z-index: 15; display: none;
+    place-items: center; align-content: center; gap: 13px;
+    background: var(--ink); color: #7a6a52;
+    font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
+    text-align: center; padding: 24px;
+  }
+  #ota.on { display: grid; }
+  #ota .bar {
+    width: min(62vw, 240px); height: 6px;
+    border: 1px solid #3d3348; background: #14101c;
+  }
+  #ota .fill {
+    height: 100%; width: 0%; background: var(--gold);
+    transition: width .25s linear;
+  }
+  #ota .pct { color: var(--parch); letter-spacing: .3em; }
+  #ota .hint { color: #55483c; font-size: 9px; }
   #err {
     position: absolute; inset: 0; z-index: 20; display: none; padding: 16px;
     background: #16060a; color: #ff9d8a; font-size: 11px; line-height: 1.5;
@@ -92,6 +117,12 @@
     <canvas id="view"></canvas>
     <canvas id="ui"></canvas>
     <div id="boot">lighting the torches</div>
+    <div id="ota" role="status" aria-live="polite">
+      <div id="ota-title">updating</div>
+      <div class="bar"><div class="fill" id="ota-fill"></div></div>
+      <div class="pct" id="ota-pct">0%</div>
+      <div class="hint">keep the app open</div>
+    </div>
     <pre id="err"></pre>
   </div>
 </div>
