@@ -166,6 +166,9 @@ const OFFER_LABEL: Record<string, string> = {
  * than to whichever is tested first, so neither slider can take the other's press
  * at any layout, on any screen.
  */
+/** Where a slider's bar was last drawn, in STAGE space — see `Hud.draw`. */
+interface Track { x: number; y: number; w: number }
+
 const SLIDER_GRAB_UP = 22;
 const SLIDER_GRAB_DOWN = 26;
 
@@ -745,11 +748,11 @@ export class Hud {
   fov = 100;
   fovRange: readonly [number, number] = [85, 120];
   /** Track geometry from the last draw, so a drag can be resolved against it. */
-  fovTrack: { x: number; y: number; w: number } | null = null;
+  fovTrack: Track | null = null;
   /** Mirror of `Meta.swipeSensitivity`, pushed in by `main.ts` like `fov` is. */
   swipeSensitivity = 50;
   /** Where the sensitivity track was last drawn — see `swipeAt`. */
-  swipeTrack: { x: number; y: number; w: number } | null = null;
+  swipeTrack: Track | null = null;
   /** Mirror of `Meta.invertGestures`, pushed in by `main.ts` like `fov` is. */
   invertGestures = false;
   /**
@@ -1115,14 +1118,6 @@ export class Hud {
     for (const h of this.hits) h.rect[1] += t;
   }
 
-  /**
-   * Draw in REAL STAGE PIXELS, undoing the safe-box shift for the duration.
-   *
-   * For the world overlay only. Its reticles come from `engine.worldToUi`, which
-   * projects to the stage the world is actually rendered on, so a reticle drawn in the
-   * safe box would sit `insetTop` below the creature it is pointing at. Its hit rects
-   * are unshifted to match, which cancels the shift `draw` applies to all of them.
-   */
   private atStage(ctx: CanvasRenderingContext2D, f: () => void): void {
     const t = this.engine.insetTop;
     const n0 = this.hits.length;
@@ -2502,7 +2497,26 @@ export class Hud {
      * "sixty-one percent along". So `main.ts` resolves it through `fovAt` on both press
      * and move, which is also what makes it draggable rather than tap-only.
      */
-    this.fovTrack = { x: tx, y: ty, w: tw2 };
+    /**
+     * IN STAGE SPACE, like every hit rect on this screen — hence the inset.
+     *
+     * This is the bug that killed both settings sliders on a phone while they worked
+     * in every browser. The whole HUD is drawn inside a `ctx.translate(0, insetTop)`
+     * safe box, and `draw` shifts each hit rect back out of it on the way past,
+     * because a plain number is not something `translate` can reach. These two tracks
+     * are plain numbers of exactly the same kind and were never in that correction,
+     * so they described a bar `insetTop` above the one the player could see, while
+     * `fovAt`/`swipeAt` were asked about a pointer in stage space.
+     *
+     * On a desktop `insetTop` is the stylesheet's floor, 18px, which the grab band
+     * still just about swallowed — which is precisely why every browser test passed.
+     * On a handset it is the real inset behind the status bar or the camera housing,
+     * 40px and up, and both sliders simply stopped answering.
+     *
+     * Corrected here rather than in `draw` so it cannot be applied twice: `draw` runs
+     * every frame and this runs only while the panel is open.
+     */
+    this.fovTrack = { x: tx, y: ty + this.engine.insetTop, w: tw2 };
 
     /**
      * ---- swipe sensitivity -------------------------------------------------
@@ -2552,7 +2566,8 @@ export class Hud {
     ctx.textAlign = 'right';
     ctx.fillText('light', tx + tw2, sy + 14);
     ctx.textAlign = 'center';
-    this.swipeTrack = { x: tx, y: sy, w: tw2 };
+    // Stage space, for the reason spelled out at `fovTrack` above.
+    this.swipeTrack = { x: tx, y: sy + this.engine.insetTop, w: tw2 };
 
     // ---- invert gestures ----------------------------------------------------
     /**
