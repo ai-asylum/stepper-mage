@@ -49,7 +49,27 @@ let currentBundleVersion: string | null = null;
 let currentNativeVersion: string | null = null;
 
 /** The plugin, imported lazily so the web bundle never pulls the native code in. */
+/**
+ * Is the native updater actually registered in THIS shell?
+ *
+ * The web bundle and the native shell are versioned separately the moment OTA exists,
+ * so a bundle that knows about the updater can end up running inside an APK built
+ * before the plugin was added — or one where `cap sync` did not put it in
+ * `capacitor.plugins.json`. Calling into it there throws Capacitor's "not implemented
+ * on android", which the WebView surfaces to the PLAYER as an error on boot. From a
+ * feature whose entire job is to be invisible.
+ *
+ * `isPluginAvailable` is the question Capacitor exposes for exactly this. It answers
+ * false on the web too, which is where every one of these calls was already a no-op.
+ */
+export function updaterReady(): boolean {
+  return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('CapacitorUpdater');
+}
+
 async function updater() {
+  // Guarded rather than trusted: every caller already handles a throw, but a throw the
+  // player can see is not the same as one only the log sees.
+  if (!updaterReady()) throw new Error('CapacitorUpdater is not available in this shell');
   const { CapacitorUpdater } = await import('@capgo/capacitor-updater');
   return CapacitorUpdater;
 }
@@ -72,7 +92,7 @@ async function updater() {
  * exists certifies nothing.
  */
 export async function notifyBootOk(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
+  if (!updaterReady()) return;
   try {
     const CapacitorUpdater = await updater();
     await CapacitorUpdater.notifyAppReady();
@@ -130,7 +150,7 @@ export async function notifyBootOk(): Promise<void> {
  * is watching.
  */
 export async function installUpdateTelemetry(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
+  if (!updaterReady()) return;
   try {
     const CapacitorUpdater = await updater();
 
@@ -264,7 +284,7 @@ export async function setBetaEnabled(on: boolean): Promise<boolean> {
  * @returns whether a bundle was applied
  */
 export async function fetchAndApplyNow(): Promise<boolean> {
-  if (!Capacitor.isNativePlatform()) return false;
+  if (!updaterReady()) return false;
   try {
     const CapacitorUpdater = await updater();
     const latest = await CapacitorUpdater.getLatest();
@@ -372,7 +392,7 @@ export async function currentBundle(): Promise<{
   version: string;
   isPublic: boolean | null;
 } | null> {
-  if (!Capacitor.isNativePlatform()) return null;
+  if (!updaterReady()) return null;
   try {
     const CapacitorUpdater = await updater();
     const current = await CapacitorUpdater.current().catch(() => null);
@@ -407,7 +427,7 @@ export async function storeUpdateRequired(): Promise<{
   minNative: string;
   native: string;
 } | null> {
-  if (!Capacitor.isNativePlatform()) return null;
+  if (!updaterReady()) return null;
   try {
     const CapacitorUpdater = await updater();
     const current = await CapacitorUpdater.current().catch(() => null);
@@ -460,7 +480,7 @@ export async function storeUpdateRequired(): Promise<{
  * meaningful may be awaited after it.
  */
 async function leaveBeta(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
+  if (!updaterReady()) return;
   try {
     const CapacitorUpdater = await updater();
     const current = await CapacitorUpdater.current().catch(() => null);
@@ -504,7 +524,7 @@ async function leaveBeta(): Promise<void> {
  */
 export async function betaRevertWouldLoseProgress(): Promise<boolean> {
   try {
-    if (!Capacitor.isNativePlatform()) return false;
+    if (!updaterReady()) return false;
     const CapacitorUpdater = await updater();
     const current = await CapacitorUpdater.current().catch(() => null);
     const bundle = current?.bundle;
@@ -529,7 +549,7 @@ export async function betaRevertWouldLoseProgress(): Promise<boolean> {
  * definition. An OTA bundle counts only if the index currently marks it public.
  */
 export async function checkpointIfPublic(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
+  if (!updaterReady()) return;
   try {
     const CapacitorUpdater = await updater();
     const current = await CapacitorUpdater.current().catch(() => null);
@@ -561,7 +581,7 @@ export async function checkpointIfPublic(): Promise<void> {
  * the plugin's copy) must not silently fall back to stable.
  */
 export async function applyBetaChannel(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
+  if (!updaterReady()) return;
   try {
     const CapacitorUpdater = await updater();
     await CapacitorUpdater.setCustomId({ customId: betaEnabled() ? 'beta' : '' });
@@ -609,7 +629,7 @@ export function checkOnResume({
   onIdle: () => void;
   onStoreUpdate?: (info: { version: string; minNative: string; native: string }) => void;
 }): void {
-  if (!Capacitor.isNativePlatform()) return;
+  if (!updaterReady()) return;
 
   const run = async (): Promise<void> => {
     if (checking || document.visibilityState !== 'visible') return;

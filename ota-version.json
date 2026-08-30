@@ -1,7 +1,7 @@
 {
   "version": "1.0.2",
-  "public": "1.0.2",
-  "beta": null,
+  "public": null,
+  "beta": "1.0.2",
   "minNative": "1.0",
   "keep": 3,
   "delta": true,
