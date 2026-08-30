@@ -2075,6 +2075,8 @@ async function boot(): Promise<void> {
     return {
       id, colour: def.colour, cost: null, amount: 0, maxRank: MAX_RANK, golden: false,
       kind: 'copy', name: def.name,
+      // The axis this card moves, in words the rank card beside it does NOT use.
+      ...(handWidening() ?? {}),
       // The card says WHICH copy it is, because "second copy" on the third sheet is the
       // altar miscounting a book the player can see.
       tag: held === 1 ? 'SECOND COPY' : 'THIRD COPY',
@@ -2085,6 +2087,21 @@ async function boot(): Promise<void> {
     };
   };
 
+  /**
+   * `HAND n -> n+1`, or nothing when the hand would not actually move.
+   *
+   * Shared by the two cards that add a SHEET — a second copy and a page the book
+   * did not have — because both buy the same thing and must say it the same way.
+   * The hand is `max(tree, pages)`, so on a save that has bought its width a new
+   * sheet changes nothing, and a card claiming otherwise is worse than a card that
+   * says only what it is.
+   */
+  const handWidening = (): { swing: string } | null => {
+    const from = handSize();
+    const to = Math.min(HAND_MAX, state.pages.length + 1);
+    return to > from ? { swing: `HAND ${from} \u2192 ${to}` } : null;
+  };
+
   const pageOffer = (id: string, spend: string | null): AltarOffer | null => {
     const def = SPELL_BY_ID[id];
     if (!def) return null;
@@ -2093,6 +2110,16 @@ async function boot(): Promise<void> {
     if (rank === 0) {
       return {
         ...base, kind: 'new', name: def.name, tag: 'NEW SPELL', detail: def.effect,
+        /**
+         * A page the book did not have is a sheet too, so it widens the hand exactly
+         * as a copy does — and the card has to say so, or the only offer that states
+         * its slot is the one the player is least likely to be shown.
+         *
+         * Only when it actually moves, though. On a save whose tree already pays for
+         * three, the hand is the tree's number and a new page changes nothing about
+         * it; "HAND 3 -> 3" is the card inventing a benefit.
+         */
+        ...(handWidening() ?? {}),
         rank: 0, toRank: 1,
       };
     }
@@ -2105,6 +2132,9 @@ async function boot(): Promise<void> {
     if (rank === 1) {
       return {
         ...base, kind: 'upgrade', name: rankName(id, 2), tag: 'UPGRADE',
+        // STRIKES, never HAND. A rank deepens one page; it does not buy a slot, and
+        // the card sitting beside it at the first altar does exactly that.
+        swing: 'STRIKES 1 \u2192 2',
         /**
          * "Strikes twice", not "casts as two copies".
          *
@@ -2123,6 +2153,7 @@ async function boot(): Promise<void> {
       const sp = SPELL_BY_ID[spend];
       return {
         ...base, kind: 'sacrifice', name: rankName(id, rank + 1), tag: 'SACRIFICE',
+        swing: `STRIKES ${rank} \u2192 ${rank + 1}`,
         detail: `${rankName(id, rank)} becomes ${rankName(id, rank + 1)}. `
           + `One page, strikes ${rank + 1} times.`,
         cost: `Tears out your rank-2 ${sp ? rankName(spend, 2) : spend} for good.`,

@@ -179,6 +179,21 @@ export interface AltarOffer {
    * trap, so a card must draw this.
    */
   cost: string | null;
+  /**
+   * WHAT THIS CARD MOVES, as one line the eye lands on: `HAND 1 -> 2`.
+   *
+   * The altar's two page cards are the same drawing. A second Flame and a Flame
+   * ranked to Fireball share the sigil, the border, the colour and the flame
+   * itself; all that separates them is a small tag and a sentence, and one of them
+   * is called Fireball, which is exactly what "another fire spell" sounds like. A
+   * player taking the rank and expecting a slot is not misreading the card — the
+   * card is not saying it.
+   *
+   * So each page offer states its own axis, and the two axes are different words
+   * with different numbers: a copy raises the HAND, a rank raises the STRIKES.
+   * Undefined for offers that move neither (a heal, a bundle of stars).
+   */
+  swing?: string;
   /** Health restored, stars paid, charges banked — 0 when the offer has no number. */
   amount: number;
   /** The page's rank now, or 0 when the offer is not about a page. */
@@ -4672,6 +4687,8 @@ export class Hud {
    * available and `harvestFrom` says why it will not happen.
    */
   private drawHarvest(ctx: CanvasRenderingContext2D, W: number): void {
+    // Not under the chooser. See `drawAltarPrompt`.
+    if (this.offers) return;
     const h = this.harvestTarget();
     if (!h) return;
     const def = SPELL_BY_ID[h.id];
@@ -4714,6 +4731,17 @@ export class Hud {
    * the screen with it.
    */
   private drawAltarPrompt(ctx: CanvasRenderingContext2D, W: number): void {
+    /**
+     * NOT WHILE THE CHOOSER IS OPEN.
+     *
+     * The modal owns every tap — `overBook` says so, and the offer columns are the
+     * only things meant to be hit — but this pill kept drawing underneath it AND
+     * kept pushing its hit rect, so there was a live `altar` target sitting on top
+     * of the cards. It also lands right where the offers' copy is, which is how a
+     * prompt to take the altar ended up printed across the line describing what
+     * taking it would do.
+     */
+    if (this.offers) return;
     const e = this.altarInReach;
     if (!e || !e.alive || e.spent) return;
     const t = this.engine.time;
@@ -4941,6 +4969,20 @@ export class Hud {
       for (const ln of wrapLines(ctx, o.name, cardW - 2)) {
         ctx.fillText(ln, x + cardW / 2, ty);
         ty += 18;
+      }
+
+      /**
+       * THE SWING, between the name and the prose, because it is the one line that
+       * has to survive not being read. Gold, spaced, and stating an axis and two
+       * numbers — a player comparing two cards at a glance is comparing HAND against
+       * STRIKES rather than two nearly identical flames.
+       */
+      if (o.swing) {
+        ty += 3;
+        ctx.font = 'bold 11px ui-monospace, monospace';
+        ctx.fillStyle = GOLD;
+        ctx.fillText(o.swing, x + cardW / 2, ty);
+        ty += 15;
       }
 
       ty += 2;
