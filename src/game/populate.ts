@@ -15,6 +15,31 @@ import { ROOM_ENEMIES_BASE, ROOM_ENEMIES_MAX, roomEnemyChance } from './tuning';
 export type PlacedKind = 'prop' | 'enemy' | 'altar' | 'chest' | 'boss' | 'stairs' | 'lever'
   | 'captive';
 
+/**
+ * KINDS THAT PHYSICALLY OCCUPY THEIR TILE — the one definition of it.
+ *
+ * `game/floor.ts` reads this rather than keeping its own copy. Two lists of what
+ * counts as solid is how a lever became a thing you tap, and solid with it, while
+ * generation went on believing you could stand on one.
+ *
+ * Stairs are walk-on by design and a boss is a body, but both hold a tile against
+ * FURNITURE, which is what `noOverlaps` below cares about.
+ */
+export const SOLID: ReadonlySet<PlacedKind> = new Set<PlacedKind>(
+  ['altar', 'chest', 'prop', 'enemy', 'boss', 'lever'],
+);
+
+/**
+ * Placed by the generator and NOT ours to move.
+ *
+ * A lever's tile is load-bearing: `generate.ts` chose it against the whole floor —
+ * which room is reachable with the gate shut, which corridor it must not plug — and
+ * shifting it here would silently undo that reasoning. The stairs sit under the boss
+ * and are moved to wherever it falls. So when something lands on one of these, the
+ * other thing is what moves.
+ */
+const IMMOVABLE: ReadonlySet<PlacedKind> = new Set<PlacedKind>(['lever', 'stairs']);
+
 export interface Placed {
   /** Wizard id, on a `captive` placement only. */
   captiveId?: string;
@@ -212,8 +237,33 @@ export function populate(
   };
 
   /** May something SOLID stand here at all: wide enough, and it strands nobody. */
+  /**
+   * A LEVER NEEDS ELBOW ROOM, and this is where furniture is told about it.
+   *
+   * Nothing shares a lever's tile — `taken` has seen to that since the levers were
+   * declared, and `noOverlaps` now guarantees it — but a lever is a small sprite on a
+   * floor of large ones, and a shelf or an altar STANDING BESIDE ONE swallows it. Two
+   * fixtures on neighbouring tiles read as one object with a handle sticking out of
+   * it, which is both "an altar and a switch overlapping" and, worse, a gate's second
+   * lever that the player never finds because it does not look like a lever any more.
+   * A cage that needs two thrown is then a cage that cannot be opened.
+   *
+   * Measured before this existed: on captive floors, 14 of 20 had a lever orthogonally
+   * touching another fixture.
+   *
+   * A preference and not a law: it is folded into `canFurnish`, which every primary
+   * placement filters by, while the fallbacks below deliberately drop to plain `free`.
+   * So a room with nowhere else still gets its altar — one tile from a lever beats no
+   * altar at all — but it is the last resort rather than a coin flip.
+   */
+  const besideLever = (x: number, y: number): boolean =>
+    DIR_VEC.some(([dx, dy]) => {
+      const i = grid.idx(x + dx, y + dy);
+      return grid.surface[i] === Surface.Lever;
+    });
+
   const canFurnish = (x: number, y: number): boolean =>
-    roomToPass(x, y) && !strands(x, y);
+    roomToPass(x, y) && !strands(x, y) && !besideLever(x, y);
 
   /**
    * Tiles of a room that touch a wall — where scenery belongs.
@@ -267,16 +317,35 @@ export function populate(
        * hold furniture is the same fallback the boss already uses, and for the same
        * reason: framing survives being one tile off, and being walled out does not.
        */
-      const spot = room.tiles.filter(([x, y]) => free(x, y) && canFurnish(x, y))
-        .sort((a, b) =>
-          (Math.abs(a[0] - room.cx) + Math.abs(a[1] - room.cy))
-          - (Math.abs(b[0] - room.cx) + Math.abs(b[1] - room.cy)))[0]
-        ?? [room.cx, room.cy];
-      out.push({
-        kind: 'altar', sprite: 'altar', x: spot[0], y: spot[1],
-        ox: 0, oz: 0, hover: 0, roomId: room.id,
-      });
-      furnish(spot[0], spot[1]);
+      /**
+       * THE FALLBACK MAY NOT BE AN UNTESTED TILE.
+       *
+       * `?? [room.cx, room.cy]` sat on the end of this and took the centre with no
+       * test whatsoever — which is how an altar ended up standing on a lever. Levers
+       * are claimed before any room is furnished (see above), so in a tight altar
+       * room where no tile passes both tests, that fallback dropped the altar
+       * straight onto one.
+       *
+       * A ladder instead, and every rung is checked: the best framed tile, then any
+       * free tile in the room at all, then nothing. An altar one tile off centre is
+       * a room that reads slightly worse; an altar sharing a tile with a lever is two
+       * objects the player cannot tell apart or use.
+       */
+      const byCentre = (a: [number, number], b: [number, number]): number =>
+        (Math.abs(a[0] - room.cx) + Math.abs(a[1] - room.cy))
+        - (Math.abs(b[0] - room.cx) + Math.abs(b[1] - room.cy));
+      // Three rungs, and the middle one exists only to keep the altar off a lever's
+      // shoulder: better a tile that strands nothing than a tile that hides a switch.
+      const spot = room.tiles.filter(([x, y]) => free(x, y) && canFurnish(x, y)).sort(byCentre)[0]
+        ?? room.tiles.filter(([x, y]) => free(x, y) && !besideLever(x, y)).sort(byCentre)[0]
+        ?? room.tiles.filter(([x, y]) => free(x, y)).sort(byCentre)[0];
+      if (spot) {
+        out.push({
+          kind: 'altar', sprite: 'altar', x: spot[0], y: spot[1],
+          ox: 0, oz: 0, hover: 0, roomId: room.id,
+        });
+        furnish(spot[0], spot[1]);
+      }
     } else if (room.kind === 'boss') {
       /**
        * THE BOSS STANDS IN THE MIDDLE.
@@ -326,7 +395,16 @@ export function populate(
        */
       const wall = wallTiles(room);
       const mid = room.tiles.filter(([x, y]) => free(x, y) && canFurnish(x, y));
-      const spot = rng.pick(wall.length ? wall : mid.length ? mid : room.tiles);
+      // ...and only to a FREE raw tile. `room.tiles` unfiltered included whatever a
+      // lever or a prop was already standing on.
+      // Same middle rung as the altar's, and for the same reason: a chest beside a
+      // lever is a chest with a handle on it as far as the player can tell.
+      const clear = room.tiles.filter(([x, y]) => free(x, y) && !besideLever(x, y));
+      const any = room.tiles.filter(([x, y]) => free(x, y));
+      const spot = rng.pick(
+        wall.length ? wall : mid.length ? mid : clear.length ? clear
+          : any.length ? any : room.tiles,
+      );
       out.push({
         kind: 'chest', sprite: 'chest', x: spot[0], y: spot[1],
         // A SPENT chest is furniture, and every prop in this game is a spell
@@ -445,6 +523,84 @@ export function populate(
     });
   }
 
+  return noOverlaps(out, grid);
+}
+
+/**
+ * NOTHING SOLID SHARES A TILE. The last word, after every placement.
+ *
+ * Each call site above does its own bookkeeping through `free`/`claim`, and that is
+ * where the guarantee SHOULD come from — but it is one guarantee spread across a
+ * dozen places, and it only takes a single unchecked fallback to break it. An altar
+ * had exactly one (`?? [room.cx, room.cy]`) and put itself on top of a lever. This
+ * exists so that being wrong up there is a placement moved by one tile rather than
+ * two objects in the same square, and so a call site added later cannot reintroduce
+ * the same bug without noticing.
+ *
+ * Priority is fixed rather than first-come: a lever's tile was chosen against the
+ * whole floor and the stairs belong under the boss, so those hold and everything
+ * else yields. A yielding placement walks outward to the nearest walkable tile
+ * nothing else holds, preferring its own room so the floor still reads as designed;
+ * if the floor is genuinely full it is dropped, because a thing you cannot see or
+ * reach is worse than a thing that is not there.
+ */
+function noOverlaps(placed: Placed[], grid: Grid): Placed[] {
+  const held = new Map<number, PlacedKind>();
+
+  /** The nearest tile nothing holds, by ring, out to a sane radius. */
+  const nearestFree = (x0: number, y0: number, roomId: number): [number, number] | null => {
+    for (let r = 1; r <= 6; r++) {
+      let best: [number, number] | null = null;
+      let bestRoom = false;
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;   // the ring only
+          const x = x0 + dx, y = y0 + dy;
+          if (!grid.walkable(x, y)) continue;
+          const i = grid.idx(x, y);
+          if (held.has(i)) continue;
+          if (x === grid.start.x && y === grid.start.y) continue;
+          const sameRoom = grid.roomOf[i] === roomId;
+          // Its own room wins at equal distance, so the room still frames the thing.
+          if (!best || (sameRoom && !bestRoom)) { best = [x, y]; bestRoom = sameRoom; }
+        }
+      }
+      if (best) return best;
+    }
+    return null;
+  };
+
+  /**
+   * Two passes over the ORIGINAL array rather than one over a sorted copy: the fixed
+   * things have to claim their tiles before anything is asked to yield, and emission
+   * order is worth keeping simply because nothing gains by scrambling it.
+   */
+  for (const p of placed) {
+    if (!IMMOVABLE.has(p.kind)) continue;
+    const i = grid.idx(p.x, p.y);
+    // Two immovables on one tile is a generation bug this pass cannot paper over, and
+    // quietly moving one would hide it. Say so and leave it.
+    if (held.has(i)) {
+      console.warn(`[populate] two fixed things on ${p.x},${p.y}: ${held.get(i)} + ${p.kind}`);
+      continue;
+    }
+    held.set(i, p.kind);
+  }
+
+  const out: Placed[] = [];
+  for (const p of placed) {
+    if (IMMOVABLE.has(p.kind)) { out.push(p); continue; }
+    if (!SOLID.has(p.kind)) { out.push(p); continue; }
+    const i = grid.idx(p.x, p.y);
+    if (!held.has(i)) { held.set(i, p.kind); out.push(p); continue; }
+    const spot = nearestFree(p.x, p.y, p.roomId);
+    if (!spot) {
+      console.warn(`[populate] nowhere to put ${p.kind} near ${p.x},${p.y} — dropped`);
+      continue;
+    }
+    held.set(grid.idx(spot[0], spot[1]), p.kind);
+    out.push({ ...p, x: spot[0], y: spot[1] });
+  }
   return out;
 }
 

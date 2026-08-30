@@ -14,7 +14,9 @@ import { STEP_H } from '../art/tiles';
 import { Sprite, preloadSprites, loadSprite } from '../dungeon/sprites';
 import { viewsFor, type SpriteView } from '../art/views';
 import { harvestDepthOf } from '../spells/spells';
-import { populate, spriteIdsFor, type CaptiveSpot, type Placed, type PlacedKind } from './populate';
+import {
+  populate, spriteIdsFor, SOLID, type CaptiveSpot, type Placed, type PlacedKind,
+} from './populate';
 import { themeForDepth, type Theme } from '../art/theme';
 import { bossHp, enemyHp, isFast, FAST_HP_MULT, FAST_SPEED } from './tuning';
 import { Ground } from './ground';
@@ -87,7 +89,7 @@ export interface Entity {
 /** How far behind its tile a staircase stands, to lose every sort tie on it. */
 const STAIRS_BACK = 0.12;
 
-const SOLID: ReadonlySet<string> = new Set(['altar', 'chest', 'prop', 'enemy', 'boss', 'lever']);
+
 
 /**
  * Turn a body to look at a tile. A no-op when it is already standing there.
