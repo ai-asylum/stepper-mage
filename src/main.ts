@@ -2913,9 +2913,20 @@ async function boot(): Promise<void> {
          */
         const held = handSize();
         const words = ['', 'one', 'two', 'three'];
-        hud.setShout(`A SECOND ${o.name.toUpperCase()}`, o.colour);
+        /**
+         * WHICH copy this is, counted off the book rather than assumed.
+         *
+         * Both lines said "a second Flame" whatever sheet it was, so the third copy
+         * announced itself as the second and then said the hand now held three — the
+         * game contradicting itself inside one sentence. The card above it had the
+         * count right the whole time (`copyOffer` tags SECOND or THIRD), which is
+         * exactly why the mismatch reads as the game losing track.
+         */
+        const copies = state.pages.filter((pg) => pg === o.id).length;
+        const nth = copies >= 3 ? 'third' : 'second';
+        hud.setShout(`A ${nth.toUpperCase()} ${o.name.toUpperCase()}`, o.colour);
         hud.addLog(
-          `The altar yields a second ${o.name}. Your hand widens to hold `
+          `The altar yields a ${nth} ${o.name}. Your hand widens to hold `
           + `${words[held] ?? held}.`,
           o.colour,
         );
