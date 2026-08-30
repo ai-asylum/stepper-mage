@@ -39,6 +39,9 @@ import {
 } from './spells/belt';
 import { BELT_ENABLED } from './flags';
 import { Rng } from './core/rng';
+import {
+  SWIPE_SENS_DEFAULT, SWIPE_WINDOW_MS, clampSwipeSens, swipeTravel,
+} from './game/swipe';
 import { DIR_VEC, Surface, type Dir } from './dungeon/grid';
 import type { LayoutId } from './dungeon/layouts';
 import { STEP_H, WALL_H } from './art/tiles';
@@ -162,7 +165,13 @@ interface Meta {
    */
   fov: number;
   /**
-   * How little motion a swipe needs before it counts, 0..100 — see `swipeTravel`.
+   * How far a finger must travel before it counts as a swipe, 0..100 — see
+   * `swipeTravel`, which turns it into pixels.
+   *
+   * Stored as a fraction rather than as pixels only so no save needs migrating; the
+   * settings panel prints the pixels. It governs DISTANCE alone — the time a swipe
+   * may take is a constant (`SWIPE_WINDOW_MS`), because one control measuring both
+   * distance and speed is a control that feels like it is measuring pressure.
    *
    * 50 is the default and reproduces the fixed threshold this replaced, so an
    * existing save plays identically until the slider is touched.
@@ -271,50 +280,6 @@ const clampFov = (v: unknown): number => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.min(FOV_MAX, Math.max(FOV_MIN, Math.round(n))) : DEFAULT_FOV;
 };
-
-/**
- * HOW FAR A FINGER HAS TO TRAVEL BEFORE IT IS A MOVE.
- *
- * A press that travels less than the threshold is a tap and resolves against the
- * HUD; anything more is a swipe and steps or turns you. The number was fixed at
- * 24px, and a swipe that fell short of it did nothing at all — no step, and no
- * tap either, because there was nothing under the finger to hit. Silent, and
- * indistinguishable from the game ignoring you.
- *
- * The scale is expressed as SENSITIVITY, not as pixels: higher means the game
- * takes less convincing. 50 is the default and maps to exactly the old 24px, so
- * the setting changes nothing until it is deliberately moved.
- */
-const SWIPE_SENS_DEFAULT = 50;
-/** Travel in px at sensitivity 0 and 100. Chosen so the midpoint is exactly 24. */
-const SWIPE_PX_AT_0 = 38;
-const SWIPE_PX_AT_100 = 10;
-
-const clampSwipeSens = (v: unknown): number => {
-  const n = Number(v);
-  return Number.isFinite(n)
-    ? Math.min(100, Math.max(0, Math.round(n)))
-    : SWIPE_SENS_DEFAULT;
-};
-
-/** Pixels of travel required, for a given sensitivity. */
-const swipeTravel = (sens: number): number =>
-  SWIPE_PX_AT_0 + (SWIPE_PX_AT_100 - SWIPE_PX_AT_0) * (sens / 100);
-
-/**
- * And how long the finger may take about it.
- *
- * The distance threshold is only half of why a swipe goes nowhere: a drag that
- * travelled far enough but took longer than this window is discarded just as
- * silently. A slow, deliberate swipe — which is exactly what someone does after
- * a few have failed — hits this one instead. So the same control widens both,
- * or raising sensitivity would fix the fast misses and leave the careful ones
- * still failing.
- */
-const SWIPE_MS_AT_0 = 550;
-const SWIPE_MS_AT_100 = 1000;
-const swipeWindow = (sens: number): number =>
-  SWIPE_MS_AT_0 + (SWIPE_MS_AT_100 - SWIPE_MS_AT_0) * (sens / 100);
 
 /**
  * The loadout is a book, and the book holds elements only. Animate used to sit
@@ -5555,7 +5520,7 @@ async function boot(): Promise<void> {
       act(a);
       return;
     }
-    if (performance.now() - st < swipeWindow(meta.swipeSensitivity)) {
+    if (performance.now() - st < SWIPE_WINDOW_MS) {
       const dx = x - px0, dy = y - py0;
       if (Math.abs(dy) > Math.abs(dx)) {
         // Same rule as the turn: the world follows the finger. Drag down and the floor

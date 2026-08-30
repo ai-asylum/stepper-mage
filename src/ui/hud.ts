@@ -30,6 +30,7 @@ import { drawPortrait, PORTRAIT_ASPECT } from './portraits';
 import type { Wizard } from '../game/wizards';
 import { drawCentered, CELL_H } from '../art/bitfont';
 import { BUILD, BUILD_NO, OTA_VERSION } from '../version';
+import { swipeTravelPx } from '../game/swipe';
 import * as THREE from 'three';
 import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
 import { PORTAL_HUES, STEP_H } from '../art/tiles';
@@ -2537,7 +2538,16 @@ export class Hud {
     ctx.textAlign = 'center';
     ctx.font = 'bold 10px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(232,217,176,0.75)';
-    ctx.fillText(`SWIPE SENSITIVITY   ${Math.round(this.swipeSensitivity)}%`, W / 2, sy - 14);
+    /**
+     * THE PIXELS, not a percentage of nothing.
+     *
+     * "SENSITIVITY 50%" names no quantity the player can feel, and the ends were
+     * captioned firm and light — the vocabulary of PRESSURE, which this has never
+     * measured and now cannot: the setting is distance alone (`swipeTravel`), and
+     * the time a swipe may take is a constant. So the readout is the actual travel
+     * a swipe must make, in px, and the ends say long and short.
+     */
+    ctx.fillText(`SWIPE DISTANCE   ${swipeTravelPx(this.swipeSensitivity)}px`, W / 2, sy - 14);
 
     const sfrac = Math.max(0, Math.min(1, this.swipeSensitivity / 100));
     rr(ctx, tx, sy, tw2, 6, 3);
@@ -2562,9 +2572,9 @@ export class Hud {
     ctx.font = '8px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(232,217,176,0.4)';
     ctx.textAlign = 'left';
-    ctx.fillText('firm', tx, sy + 14);
+    ctx.fillText('long', tx, sy + 14);
     ctx.textAlign = 'right';
-    ctx.fillText('light', tx + tw2, sy + 14);
+    ctx.fillText('short', tx + tw2, sy + 14);
     ctx.textAlign = 'center';
     // Stage space, for the reason spelled out at `fovTrack` above.
     this.swipeTrack = { x: tx, y: sy + this.engine.insetTop, w: tw2 };
