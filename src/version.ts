@@ -18,7 +18,7 @@
  * exactly which commit is running.
  */
 declare const __BUILD_NO__: string;
-declare const __BUILD__: string;
+declare const __BUILT__: string;
 declare const __OTA_VERSION__: string;
 
 /**
@@ -31,8 +31,14 @@ declare const __OTA_VERSION__: string;
  */
 export const BUILD_NO: string = typeof __BUILD_NO__ === 'string' ? __BUILD_NO__ : '?';
 
-/** Short commit plus UTC build minute, e.g. `45f3159 · 2026-08-20T12:36Z`. */
-export const BUILD: string = typeof __BUILD__ === 'string' ? __BUILD__ : 'dev';
+/**
+ * WHEN this build was made, in words: `30 Aug 2026`.
+ *
+ * The commit hash that used to lead this line is gone. `BUILD_NO` names the code
+ * exactly and a person can repeat it; a hash is precise and unreadable, and having
+ * both on screen meant the unreadable one was the first thing the eye landed on.
+ */
+export const BUILT: string = typeof __BUILT__ === 'string' ? __BUILT__ : 'dev';
 
 /**
  * The OTA bundle version from `ota-version.json` — the number the updater

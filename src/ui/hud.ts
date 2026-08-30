@@ -29,7 +29,7 @@ import { Pix, hex } from '../art/pixel';
 import { drawPortrait, PORTRAIT_ASPECT } from './portraits';
 import type { Wizard } from '../game/wizards';
 import { drawCentered, CELL_H } from '../art/bitfont';
-import { BUILD, BUILD_NO, OTA_VERSION } from '../version';
+import { BUILT, BUILD_NO, OTA_VERSION } from '../version';
 import { swipeTravelPx } from '../game/swipe';
 import * as THREE from 'three';
 import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
@@ -2844,9 +2844,9 @@ export class Hud {
     /**
      * THE BUILD STAMP, under everything.
      *
-     * `BUILD` is the commit the running web bundle was made from and `OTA_VERSION` is
-     * the bundle version the updater compares — the two answer different questions and
-     * an OTA test needs both: which code am I running, and which bundle is it. On a
+     * `BUILD_NO` is which code the running web bundle was made from and `OTA_VERSION`
+     * is the bundle version the updater compares — the two answer different questions
+     * and an OTA test needs both: which code am I running, and which bundle is it. On a
      * phone this is the only way to tell whether an update landed, because a downloaded
      * bundle and the one packaged in the AAB are indistinguishable from the outside.
      *
@@ -2882,7 +2882,7 @@ export class Hud {
     // whenever we simply failed to ask is how match-merge ended up showing a
     // bright amber Beta to players who had never opted into anything.
     const channel = this.bundleVersion?.isPublic === false ? '  ·  BETA' : '';
-    ctx.fillText(`${BUILD}  ·  bundle ${OTA_VERSION}${served}${channel}`, W / 2, by + 57);
+    ctx.fillText(`${BUILT}  ·  bundle ${OTA_VERSION}${served}${channel}`, W / 2, by + 57);
 
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     this.hits.push({ rect: [bx, by, tw, 30], action: { kind: 'settings' } });

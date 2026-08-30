@@ -19,13 +19,6 @@ import { defineConfig } from 'vite';
  * the same trap that broke the OTA version scheme — so the commit falls back to
  * the CI-provided env var and then to a marker.
  */
-const commit = (() => {
-  try {
-    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
-  } catch {
-    return (process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || 'nogit').slice(0, 7);
-  }
-})();
 
 /**
  * THE BUILD NUMBER — the one number that is the same everywhere.
@@ -49,6 +42,26 @@ const buildNo = (() => {
   }
 })();
 
+/**
+ * WHEN, in words. No hash.
+ *
+ * The stamp used to lead with `commit` and the ISO minute, which is precise and
+ * unreadable — a seven-character hash is not something anyone can carry from a
+ * phone screen to a sentence. `BUILD n` names the code exactly (the count is
+ * one-to-one with a commit on main) and a date says how fresh it is, which is the
+ * only other thing a person ever wants off this line.
+ *
+ * Formatted by hand rather than through `toLocaleDateString`, because CI's locale
+ * is nobody's choice and a stamp reading 8/30/2026 to a British user is the same
+ * class of wrong as the hash was.
+ */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const builtOn = (() => {
+  const d = new Date();
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+})();
+
 const otaVersion = (() => {
   try {
     return JSON.parse(readFileSync('ota-version.json', 'utf8')).version || 'unknown';
@@ -63,7 +76,7 @@ export default defineConfig({
   build: { target: 'es2022', assetsInlineLimit: 0, chunkSizeWarningLimit: 2000 },
   define: {
     __BUILD_NO__: JSON.stringify(buildNo),
-    __BUILD__: JSON.stringify(`${commit} · ${new Date().toISOString().slice(0, 16)}Z`),
+    __BUILT__: JSON.stringify(builtOn),
     __OTA_VERSION__: JSON.stringify(otaVersion),
   },
 });
