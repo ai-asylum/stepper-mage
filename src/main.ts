@@ -2130,6 +2130,25 @@ async function boot(): Promise<void> {
      * 2; "Frost becomes Frostbolt" is the same fact in the game's own words.
      */
     if (rank === 1) {
+      /**
+       * BREADTH BEFORE DEPTH. No rank is offered until the hand can hold two.
+       *
+       * At a hand of one, a rank-up is the only altar card that leaves the player
+       * exactly where they were: they still hold one page, still cast one card, and
+       * the thing the whole game is built on — putting two pages together — is still
+       * out of reach. Worse, it sits beside the card that WOULD open it wearing the
+       * same parchment, the same border and the same flame, under the name FIREBALL,
+       * which is precisely what "another fire spell" sounds like. Every time that
+       * choice was offered it could be read as the generous one, and taking it cost
+       * the player the slot they came for.
+       *
+       * So the first altar has one fire card and it is the one that widens the hand.
+       * Depth becomes available the moment breadth exists — `handSize() >= 2`, which
+       * a second sheet or the star tree can both supply — and at that point a rank is
+       * a real choice against a real alternative rather than a trap wearing a bigger
+       * name.
+       */
+      if (handSize() < 2) return null;
       return {
         ...base, kind: 'upgrade', name: rankName(id, 2), tag: 'UPGRADE',
         // STRIKES, never HAND. A rank deepens one page; it does not buy a slot, and

@@ -1,5 +1,5 @@
 {
-  "$comment": "The art bible. Every sprite in the game is one row here. Shared style + framing live in tools/genart.py so this file stays about CONTENT. Five floors, each with a palette identity, three enemies, four animatable props, and a boss. Every prop has a matching golem form \u2014 animating the room is the core verb, so the golem roster is first-class content, not a variant.",
+  "$comment": "The art bible. Every sprite in the game is one row here. Shared style + framing live in tools/genart.py so this file stays about CONTENT. Five floors, each with a palette identity, three enemies, four animatable props, and a boss. Every prop has a matching golem form — animating the room is the core verb, so the golem roster is first-class content, not a variant.",
   "assets": [
     {
       "id": "altar",
@@ -13,8 +13,8 @@
       "kind": "prop",
       "height": 133,
       "seed": 1014,
-      "prompt": "A SPENT SPELL ALTAR: the SAME waist-high stone pedestal carved with arcane runes as the active altar, identical shape, identical proportions, identical three thin candles melted down its sides \u2014 but SPENT. No book, nothing floating above it. The runes are dark and dead, no violet glow at all. The candle wicks are snuffed, with one faint thread of grey smoke rising straight up into the empty space where the spellbook used to float. A shallow dusty depression on top where the book rested, a few torn scraps of parchment left behind. Cold, abandoned, used up. Same camera angle and same framing as the active altar, with clear empty space above the pedestal.",
-      "$note": "Shorter than altar's 148 ON PURPOSE. World size is pixels/spritePpu, so a variant cropped to content and scaled to the same height renders its pedestal larger \u2014 the active altar spends most of its 148 on the floating book. 133 makes the two pedestals the same size; tools/padvariant.py then pads the canvas back to altar's so both occupy identical space."
+      "prompt": "A SPENT SPELL ALTAR: the SAME waist-high stone pedestal carved with arcane runes as the active altar, identical shape, identical proportions, identical three thin candles melted down its sides — but SPENT. No book, nothing floating above it. The runes are dark and dead, no violet glow at all. The candle wicks are snuffed, with one faint thread of grey smoke rising straight up into the empty space where the spellbook used to float. A shallow dusty depression on top where the book rested, a few torn scraps of parchment left behind. Cold, abandoned, used up. Same camera angle and same framing as the active altar, with clear empty space above the pedestal.",
+      "$note": "Shorter than altar's 148 ON PURPOSE. World size is pixels/spritePpu, so a variant cropped to content and scaled to the same height renders its pedestal larger — the active altar spends most of its 148 on the floating book. 133 makes the two pedestals the same size; tools/padvariant.py then pads the canvas back to altar's so both occupy identical space."
     },
     {
       "id": "chest",
@@ -609,7 +609,7 @@
       "kind": "creature",
       "height": 165,
       "seed": 9103,
-      "prompt": "AN ASH MOURNER: a kneeling petrified figure caught mid-grief, hands over its face, entirely grey \u2014 but risen and walking, cracked at every joint, ash pouring from the fractures.",
+      "prompt": "AN ASH MOURNER: a kneeling petrified figure caught mid-grief, hands over its face, entirely grey — but risen and walking, cracked at every joint, ash pouring from the fractures.",
       "attack": "the hands torn away from the petrified face to reveal a hollow of glowing ash, both arms flung outward, a cloud of grey ash driven forward"
     },
     {
@@ -657,7 +657,7 @@
       "kind": "creature",
       "height": 155,
       "seed": 10101,
-      "prompt": "A HOLLOW REGENT: a standing suit of black regalia \u2014 ermine collar, sash, heavy rings \u2014 with absolutely nothing inside it, the clothing holding a royal posture. Where the head should be, a floating thin gold circlet and a smear of starless dark.",
+      "prompt": "A HOLLOW REGENT: a standing suit of black regalia — ermine collar, sash, heavy rings — with absolutely nothing inside it, the clothing holding a royal posture. Where the head should be, a floating thin gold circlet and a smear of starless dark.",
       "attack": "the empty sleeves flung wide in a commanding gesture and the floating circlet driven forward, the starless dark inside the collar reaching out"
     },
     {
@@ -980,22 +980,22 @@
       "kind": "prop",
       "height": 126,
       "seed": 1315,
-      "prompt": "AN UNTHROWN IRON LEVER on a stone plinth: a heavy iron lever with a clearly VISIBLE straight handle angled sharply UPWARD at forty-five degrees toward the viewer's right, its tip well above the plinth \u2014 cocked, ready to be thrown. Brass collar at the pivot, bolted to a small carved stone base. The rune etched into the plinth is DARK and unlit, cold. The handle must be present and obvious; overall shape roughly as tall as it is wide."
+      "prompt": "AN UNTHROWN IRON LEVER on a stone plinth: a heavy iron lever with a clearly VISIBLE straight handle angled sharply UPWARD at forty-five degrees toward the viewer's right, its tip well above the plinth — cocked, ready to be thrown. Brass collar at the pivot, bolted to a small carved stone base. The rune etched into the plinth is DARK and unlit, cold. The handle must be present and obvious; overall shape roughly as tall as it is wide."
     },
     {
       "id": "lever_pulled",
       "kind": "prop",
       "height": 126,
       "seed": 1311,
-      "prompt": "A THROWN IRON LEVER on a stone plinth: a heavy iron lever with a clearly VISIBLE straight handle angled sharply DOWNWARD at forty-five degrees toward the viewer's right, its tip level with the top of the plinth \u2014 thrown, not removed. Brass collar at the pivot, bolted to a small carved stone base. The rune etched into the plinth GLOWS bright amber. The handle must be present and obvious; overall shape roughly as tall as it is wide."
+      "prompt": "A THROWN IRON LEVER on a stone plinth: a heavy iron lever with a clearly VISIBLE straight handle angled sharply DOWNWARD at forty-five degrees toward the viewer's right, its tip level with the top of the plinth — thrown, not removed. Brass collar at the pivot, bolted to a small carved stone base. The rune etched into the plinth GLOWS bright amber. The handle must be present and obvious; overall shape roughly as tall as it is wide."
     },
     {
       "id": "gate",
       "kind": "prop",
       "height": 128,
       "seed": 1320,
-      "prompt": "A SHUT IRON PORTCULLIS filling a stone doorway: seven thick vertical iron bars with WIDE OPEN GAPS between them that you can see straight through, hanging from a heavy horizontal stone lintel across the top, two thin horizontal iron ties crossing the bars, sharpened spikes on the bottom end of every bar. Pitted dark iron, rust at the joints. The gaps between the bars are EMPTY \u2014 nothing behind them. Roughly square, as wide as it is tall.",
-      "extra": "CRITICAL: the spaces between the bars must be pure flat white background, completely empty, with nothing drawn in them \u2014 no wall, no room, no shading, no darkness. Only the bars, the ties and the lintel are drawn.",
+      "prompt": "A SHUT IRON PORTCULLIS filling a stone doorway: seven thick vertical iron bars with WIDE OPEN GAPS between them that you can see straight through, hanging from a heavy horizontal stone lintel across the top, two thin horizontal iron ties crossing the bars, sharpened spikes on the bottom end of every bar. Pitted dark iron, rust at the joints. The gaps between the bars are EMPTY — nothing behind them. Roughly square, as wide as it is tall.",
+      "extra": "CRITICAL: the spaces between the bars must be pure flat white background, completely empty, with nothing drawn in them — no wall, no room, no shading, no darkness. Only the bars, the ties and the lintel are drawn.",
       "holes": true
     },
     {
@@ -1014,7 +1014,7 @@
       "seed": 1322,
       "holes": true,
       "prompt": "A PENDULUM BLADE hanging from above: a long straight iron shaft descending from the top of the frame, ending in a heavy brass pivot collar, below which hangs a huge curved crescent axe blade like a scythe, its outer edge honed bright silver and razor sharp, the inner body dark pitted iron. The whole thing hangs straight DOWN, vertical, the blade at the bottom.",
-      "extra": "CRITICAL: the shaft must reach the very TOP edge of the image and the blade must hang at the bottom. Vertical, centered, hanging straight down. No ceiling, no room, no chain \u2014 one rigid shaft and one crescent blade."
+      "extra": "CRITICAL: the shaft must reach the very TOP edge of the image and the blade must hang at the bottom. Vertical, centered, hanging straight down. No ceiling, no room, no chain — one rigid shaft and one crescent blade."
     },
     {
       "id": "ladder",
@@ -1023,7 +1023,7 @@
       "seed": 1323,
       "holes": true,
       "prompt": "A DUNGEON LADDER seen straight on: two heavy vertical wooden stiles bound with iron straps, joined by SIX evenly spaced horizontal wooden rungs with WIDE OPEN GAPS between them that you can see straight through. Worn timber, iron nails, damp and old. Tall and narrow.",
-      "extra": "CRITICAL: the gaps between the rungs must be pure flat white background, completely empty, nothing drawn in them \u2014 no wall, no shadow, no darkness. Only the two stiles and the six rungs are drawn."
+      "extra": "CRITICAL: the gaps between the rungs must be pure flat white background, completely empty, nothing drawn in them — no wall, no shadow, no darkness. Only the two stiles and the six rungs are drawn."
     },
     {
       "id": "trapdoor",
@@ -1062,7 +1062,7 @@
       "prompt": "A CLUSTER OF THORN SPIKES: sparse, tall, spear-straight woody stalks driven up out of the stone at angles, each one a rigid yellow spine tipped with a hard point, very few leaves. Open and see-through between the stalks, more a bed of spikes than a bush. Ochre and pale gold, hard and dry. Reads as a trap you would not step into. Knee-to-waist high, standing on bare dungeon stone. Dark shadowed gaps deep inside it so it reads as a volume and not a flat panel. NOT woven, NOT a basket, NOT a lattice, NOT a fence, no repeating pattern, no border."
     },
     {
-      "$comment": "THE ROSTER. One portrait per page element \u2014 see src/game/wizards.ts. Kind `portrait` is the only framing in the pipeline that crops its subject, because a full body at thumbnail size is a portrait with no face in it. Each prompt carries the character's REASON, not just their element: Ash is hate, Kela is a hunter, Zel is greed, Vane is delight, Vess is dying, Yew is late."
+      "$comment": "THE ROSTER. One portrait per page element — see src/game/wizards.ts. Kind `portrait` is the only framing in the pipeline that crops its subject, because a full body at thumbnail size is a portrait with no face in it. Each prompt carries the character's REASON, not just their element: Ash is hate, Kela is a hunter, Zel is greed, Vane is delight, Vess is dying, Yew is late."
     },
     {
       "id": "portrait_ash",
@@ -1070,7 +1070,7 @@
       "height": 96,
       "colors": 32,
       "seed": 20011,
-      "prompt": "ASH THE FIREWIZARD: a HARD, MEAN, BRUTAL-LOOKING man in his late twenties, FULL OF HATE. UGLY THICK BURN SCARS covering the whole left side of his face, jaw and neck \u2014 raw, ropey, puckered scar tissue, one eyebrow burned away. Crooked broken nose. SNARLING, teeth slightly bared, brows drawn down hard, eyes narrowed to furious slits. WEATHERED SUN-DAMAGED TAN SKIN, stubble, dirt and soot ground into his face. Hair hacked short and uneven, singed. He wears a DEEP CRIMSON mantle over blackened battered leather with a BRASS buckle. Harsh ember-orange light on the scarred side, COOL TEAL rim light behind. He looks like a violent man who has lost everything. ABSOLUTELY NOT handsome, NOT pretty, NOT smooth-skinned, NOT a vampire, NOT elegant, no pale flawless skin."
+      "prompt": "ASH THE FIREWIZARD: a HARD, MEAN, BRUTAL-LOOKING man in his late twenties, FULL OF HATE. UGLY THICK BURN SCARS covering the whole left side of his face, jaw and neck — raw, ropey, puckered scar tissue, one eyebrow burned away. Crooked broken nose. SNARLING, teeth slightly bared, brows drawn down hard, eyes narrowed to furious slits. WEATHERED SUN-DAMAGED TAN SKIN, stubble, dirt and soot ground into his face. Hair hacked short and uneven, singed. He wears a DEEP CRIMSON mantle over blackened battered leather with a BRASS buckle. Harsh ember-orange light on the scarred side, COOL TEAL rim light behind. He looks like a violent man who has lost everything. ABSOLUTELY NOT handsome, NOT pretty, NOT smooth-skinned, NOT a vampire, NOT elegant, no pale flawless skin."
     },
     {
       "id": "portrait_kela",
@@ -1078,7 +1078,7 @@
       "height": 96,
       "colors": 32,
       "seed": 20022,
-      "prompt": "KELA THE WINTERMAIDEN: a demon hunter in her thirties, face full of CONTAINED FURY \u2014 not calm, not neutral, not blank. Jaw clenched hard, muscle tight in her cheek, brows drawn down and inward, pale grey eyes narrowed and locked on something with absolute intent, mouth pressed into a thin flat line. The look of a woman who has decided. A thin scar across the bridge of her nose. White-blonde hair pulled back hard, frost on the ends. RUDDY WIND-BURNT SKIN, red at the nose and cheekbones. She wears a DEEP INDIGO BLUE coat with OXBLOOD RED straps and a GREEN GLASS amulet. Pale blue frost light from the left, WARM AMBER lamplight on her right cheek. Intense and readable. NOT expressionless, NOT serene, NOT vacant, NOT a blank stare."
+      "prompt": "KELA THE WINTERMAIDEN: a demon hunter in her thirties, face full of CONTAINED FURY — not calm, not neutral, not blank. Jaw clenched hard, muscle tight in her cheek, brows drawn down and inward, pale grey eyes narrowed and locked on something with absolute intent, mouth pressed into a thin flat line. The look of a woman who has decided. A thin scar across the bridge of her nose. White-blonde hair pulled back hard, frost on the ends. RUDDY WIND-BURNT SKIN, red at the nose and cheekbones. She wears a DEEP INDIGO BLUE coat with OXBLOOD RED straps and a GREEN GLASS amulet. Pale blue frost light from the left, WARM AMBER lamplight on her right cheek. Intense and readable. NOT expressionless, NOT serene, NOT vacant, NOT a blank stare."
     },
     {
       "id": "portrait_zel",
@@ -1086,7 +1086,7 @@
       "height": 96,
       "colors": 32,
       "seed": 20023,
-      "prompt": "ZEL THE STORMWRIGHT: a young woman with a SULTRY, HUNGRY, KNOWING expression \u2014 chin tilted down, looking UP at the viewer through her lashes, HALF-LIDDED heavy eyes, one eyebrow raised, a slow crooked SMIRK at one corner of her mouth. Covetous and confident, like someone appraising something she has already decided to take. CALM and composed, NOT startled. Sleek FIERY COPPER-ORANGE hair falling loose over one eye, NOT standing on end. A few lazy ELECTRIC YELLOW-WHITE sparks drifting from her fingertips near her jaw, throwing warm yellow light up onto her face. Warm fair freckled skin, bright well-lit face. She wears a COBALT BLUE coat open low with GOLD buttons. YELLOW, GOLD and BLUE, vivid and saturated. NOT shocked, NOT electrocuted, NOT wide-eyed, NOT manic, NOT hair standing up, NOT grinning with teeth."
+      "prompt": "ZEL THE STORMWRIGHT: a young woman with a SULTRY, HUNGRY, KNOWING expression — chin tilted down, looking UP at the viewer through her lashes, HALF-LIDDED heavy eyes, one eyebrow raised, a slow crooked SMIRK at one corner of her mouth. Covetous and confident, like someone appraising something she has already decided to take. CALM and composed, NOT startled. Sleek FIERY COPPER-ORANGE hair falling loose over one eye, NOT standing on end. A few lazy ELECTRIC YELLOW-WHITE sparks drifting from her fingertips near her jaw, throwing warm yellow light up onto her face. Warm fair freckled skin, bright well-lit face. She wears a COBALT BLUE coat open low with GOLD buttons. YELLOW, GOLD and BLUE, vivid and saturated. NOT shocked, NOT electrocuted, NOT wide-eyed, NOT manic, NOT hair standing up, NOT grinning with teeth."
     },
     {
       "id": "portrait_vane",
@@ -1102,7 +1102,7 @@
       "height": 96,
       "colors": 32,
       "seed": 20005,
-      "prompt": "VESS THE PLAGUEBOUND: a gaunt man with sunken cheeks, visibly dying and entirely calm about it. His skin has a GREY-GREEN pallor with BLACK creeping veins up his throat. He wears a rich DEEP TEAL physician's coat with a BRIGHT SAFFRON YELLOW silk scarf knotted at the throat and BRASS buckles \u2014 strongly coloured clothing against his grey skin. Strong WARM AMBER lantern light on the right of his face, COOL TEAL shadow on the left. TEAL AND GOLD complementary colour scheme, vivid and saturated, definitely NOT a grey or monochrome image."
+      "prompt": "VESS THE PLAGUEBOUND: a gaunt man with sunken cheeks, visibly dying and entirely calm about it. His skin has a GREY-GREEN pallor with BLACK creeping veins up his throat. He wears a rich DEEP TEAL physician's coat with a BRIGHT SAFFRON YELLOW silk scarf knotted at the throat and BRASS buckles — strongly coloured clothing against his grey skin. Strong WARM AMBER lantern light on the right of his face, COOL TEAL shadow on the left. TEAL AND GOLD complementary colour scheme, vivid and saturated, definitely NOT a grey or monochrome image."
     },
     {
       "id": "portrait_yew",
@@ -1110,7 +1110,7 @@
       "height": 96,
       "colors": 32,
       "seed": 20026,
-      "prompt": "YEW THE GREENWARDEN: a girl of about fourteen with a FIERCE, DEFIANT, STUBBORN expression \u2014 chin lifted and jutting forward, brows drawn down and together in a hard scowl, wide bright hazel eyes BLAZING with determination and a flicker of fear underneath, mouth pressed into a tight stubborn line. The face of a child nobody would listen to who came down anyway. Freckles across her nose, a smudge of dirt on one cheek, a small cut on her eyebrow. Messy sun-bleached light brown hair full of leaves, VIVID EMERALD GREEN moss, tiny WHITE flowers and SCARLET RED berries tangled in it, one green shoot curling behind her ear. Warm freckled sun-tanned skin, flushed cheeks. WARM OCHRE-GOLD smock, DEEP BLUE scarf. Bright dappled golden-green light from the upper right, cool blue shadow. Vivid and saturated. NOT calm, NOT serene, NOT blank, NOT expressionless, NOT smiling politely, NOT an adult, NOT an old man."
+      "prompt": "YEW THE GREENWARDEN: a girl of about fourteen with a FIERCE, DEFIANT, STUBBORN expression — chin lifted and jutting forward, brows drawn down and together in a hard scowl, wide bright hazel eyes BLAZING with determination and a flicker of fear underneath, mouth pressed into a tight stubborn line. The face of a child nobody would listen to who came down anyway. Freckles across her nose, a smudge of dirt on one cheek, a small cut on her eyebrow. Messy sun-bleached light brown hair full of leaves, VIVID EMERALD GREEN moss, tiny WHITE flowers and SCARLET RED berries tangled in it, one green shoot curling behind her ear. Warm freckled sun-tanned skin, flushed cheeks. WARM OCHRE-GOLD smock, DEEP BLUE scarf. Bright dappled golden-green light from the upper right, cool blue shadow. Vivid and saturated. NOT calm, NOT serene, NOT blank, NOT expressionless, NOT smiling politely, NOT an adult, NOT an old man."
     },
     {
       "id": "hero_kela",
@@ -1151,6 +1151,16 @@
       "colors": 32,
       "seed": 20105,
       "prompt": "YEW THE GREENWARDEN, A CAPTIVE: a girl of about fourteen held fast inside a cage of living THORNED BRIAR that has grown up around her and clamped shut, thorns inches from her arms. Messy hair with leaves, WARM OCHRE-GOLD smock, DEEP BLUE scarf, dirt on her cheek. Scowling, chin up, defiant and frightened. Green-gold dappled light. Full body, head to boots."
+    },
+    {
+      "id": "logo_title",
+      "kind": "icon",
+      "height": 176,
+      "seed": 20301,
+      "holes": true,
+      "keyline": false,
+      "prompt": "A GAME TITLE LOGO reading the two words \"UNBOUND DESCENT\", stacked on two lines, UNBOUND above and DESCENT below, both words spelled exactly and completely. Heavy carved stone lettering in a bold fantasy serif, chiselled and worn, edged in tarnished gold, lit by a cold violet arcane glow from behind the letters. Beneath the words a small emblem: an open spellbook with a single torn page lifting away from it. Dark, occult, weighty.",
+      "extra": "CRITICAL: the lettering is the subject and it must be PERFECTLY LEGIBLE — correct spelling, evenly spaced, every letter separate and unbroken, no extra or invented words, no gibberish glyphs, no runes in place of letters. Two lines of text only. Centered, on a plain flat black background, no scene and no border frame."
     }
   ]
 }

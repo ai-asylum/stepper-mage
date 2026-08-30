@@ -52,10 +52,23 @@
   #ui { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   #boot {
     position: absolute; inset: 0; display: grid; place-items: center;
+    align-content: center; gap: 26px;
     color: #7a6a52; font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
     background: var(--ink); z-index: 10; transition: opacity .5s ease;
   }
   #boot.gone { opacity: 0; pointer-events: none; }
+  /* THE MARK, on both waiting screens.
+     `pixelated` is not decoration: the logo is a 205px-wide pixel-art asset off the
+     same Scenario pipeline as every sprite in the game, and letting the browser
+     smooth it on the way up would make the one image the player stares at while
+     waiting the only blurry thing in a game with no anti-aliasing anywhere. */
+  .mark {
+    width: min(62vw, 250px); height: auto; display: block;
+    image-rendering: pixelated; image-rendering: crisp-edges;
+    filter: drop-shadow(0 6px 18px rgba(120, 70, 200, 0.22));
+    animation: markIn .8s ease both;
+  }
+  @keyframes markIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   /* THE UPDATE SCREEN.
      Deliberately DOM and not the canvas HUD: it has to be able to stand over a
      WebView that is about to be replaced, and it must paint before the game's
@@ -66,6 +79,8 @@
   #ota {
     position: absolute; inset: 0; z-index: 15; display: none;
     place-items: center; align-content: center; gap: 13px;
+    /* The mark sits above the row of copy and needs more air than the lines below
+       it do, so the grid gap stays tight and this one edge is opened up. */
     background: var(--ink); color: #7a6a52;
     font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
     text-align: center; padding: 24px;
@@ -81,6 +96,7 @@
   }
   #ota .pct { color: var(--parch); letter-spacing: .3em; }
   #ota .hint { color: #55483c; font-size: 9px; }
+  #ota .mark { margin-bottom: 14px; }
   #err {
     position: absolute; inset: 0; z-index: 20; display: none; padding: 16px;
     background: #16060a; color: #ff9d8a; font-size: 11px; line-height: 1.5;
@@ -116,8 +132,12 @@
   <div id="stage">
     <canvas id="view"></canvas>
     <canvas id="ui"></canvas>
-    <div id="boot">lighting the torches</div>
+    <div id="boot">
+      <img class="mark" src="art/logo_title.png" alt="Unbound Descent" />
+      <div>lighting the torches</div>
+    </div>
     <div id="ota" role="status" aria-live="polite">
+      <img class="mark" src="art/logo_title.png" alt="Unbound Descent" />
       <div id="ota-title">updating</div>
       <div class="bar"><div class="fill" id="ota-fill"></div></div>
       <div class="pct" id="ota-pct">0%</div>
