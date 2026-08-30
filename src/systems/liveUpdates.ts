@@ -66,12 +66,33 @@ export function updaterReady(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('CapacitorUpdater');
 }
 
-async function updater() {
+/**
+ * The plugin, BOXED — and the box is the whole point.
+ *
+ * A Capacitor plugin is a `Proxy` whose `get` trap answers EVERY property name with a
+ * callable that dispatches to native (`@capacitor/core`, `createPluginMethodWrapper`);
+ * only `$$typeof`, `toJSON`, `addListener` and `removeListener` are special-cased.
+ * `then` is not among them.
+ *
+ * So returning the proxy from an `async` function hands it to `Promise.resolve`, which
+ * asks whether it is a thenable by reading `.then` — gets a function, because everything
+ * is a function here — and calls it. That is a bridge call to a native method named
+ * `then`, which no plugin implements, and Capacitor throws
+ * `"CapacitorUpdater.then()" is not implemented on android`. On EVERY path, on a shell
+ * where the plugin is present and working, at boot, in the player's face.
+ *
+ * `updaterReady()` could never have caught it: the plugin was available the whole time.
+ * The await was the bug. Boxed in a plain object, nothing reads `.then` off the proxy
+ * and the await resolves to an ordinary value.
+ */
+type Updater = (typeof import('@capgo/capacitor-updater'))['CapacitorUpdater'];
+
+async function updater(): Promise<{ api: Updater }> {
   // Guarded rather than trusted: every caller already handles a throw, but a throw the
   // player can see is not the same as one only the log sees.
   if (!updaterReady()) throw new Error('CapacitorUpdater is not available in this shell');
   const { CapacitorUpdater } = await import('@capgo/capacitor-updater');
-  return CapacitorUpdater;
+  return { api: CapacitorUpdater };
 }
 
 /**
@@ -94,7 +115,7 @@ async function updater() {
 export async function notifyBootOk(): Promise<void> {
   if (!updaterReady()) return;
   try {
-    const CapacitorUpdater = await updater();
+    const { api: CapacitorUpdater } = await updater();
     await CapacitorUpdater.notifyAppReady();
     // The far end of the funnel below: this bundle not only installed, it booted
     // far enough to say so, which is the only thing that stops the rollback
@@ -152,7 +173,7 @@ export async function notifyBootOk(): Promise<void> {
 export async function installUpdateTelemetry(): Promise<void> {
   if (!updaterReady()) return;
   try {
-    const CapacitorUpdater = await updater();
+    const { api: CapacitorUpdater } = await updater();
 
     /**
      * Bind one plugin event to one analytics event. The names are translated
@@ -286,7 +307,7 @@ export async function setBetaEnabled(on: boolean): Promise<boolean> {
 export async function fetchAndApplyNow(): Promise<boolean> {
   if (!updaterReady()) return false;
   try {
-    const CapacitorUpdater = await updater();
+    const { api: CapacitorUpdater } = await updater();
     const latest = await CapacitorUpdater.getLatest();
     const manifest = (latest as { manifest?: unknown[] })?.manifest;
     if (!latest?.version || (!latest.url && !manifest?.length)) return false;
@@ -394,7 +415,7 @@ export async function currentBundle(): Promise<{
 } | null> {
   if (!updaterReady()) return null;
   try {
-    const CapacitorUpdater = await updater();
+    const { api: CapacitorUpdater } = await updater();
     const current = await CapacitorUpdater.current().catch(() => null);
     const bundle = current?.bundle;
     if (!bundle) return null;
@@ -429,7 +450,7 @@ export async function storeUpdateRequired(): Promise<{
 } | null> {
   if (!updaterReady()) return null;
   try {
-    const CapacitorUpdater = await updater();
+    const { api: CapacitorUpdater } = await updater();
     const current = await CapacitorUpdater.current().catch(() => null);
     const native = current?.native;
     if (!native) return null;
@@ -482,7 +503,7 @@ export async function storeUpdateRequired(): Promise<{
 async function leaveBeta(): Promise<void> {
   if (!updaterReady()) return;
   try {
-    const CapacitorUpdater = await updater();
+    const { api: CapacitorUpdater } = await updater();
     const current = await CapacitorUpdater.current().catch(() => null);
     const bundle = current?.bundle;
 
@@ -525,7 +546,7 @@ async function leaveBeta(): Promise<void> {
 export async function betaRevertWouldLoseProgress(): Promise<boolean> {
   try {
     if (!updaterReady()) return false;
-    const CapacitorUpdater = await updater();
+    const { api: CapacitorUpdater } = await updater();
     const current = await CapacitorUpdater.current().catch(() => null);
     const bundle = current?.bundle;
     if (bundle?.id === 'builtin') return false;
@@ -551,7 +572,7 @@ export async function betaRevertWouldLoseProgress(): Promise<boolean> {
 export async function checkpointIfPublic(): Promise<void> {
   if (!updaterReady()) return;
   try {
-    const CapacitorUpdater = await updater();
+    const { api: CapacitorUpdater } = await updater();
     const current = await CapacitorUpdater.current().catch(() => null);
     const bundle = current?.bundle;
     if (!bundle) return;
@@ -583,7 +604,7 @@ export async function checkpointIfPublic(): Promise<void> {
 export async function applyBetaChannel(): Promise<void> {
   if (!updaterReady()) return;
   try {
-    const CapacitorUpdater = await updater();
+    const { api: CapacitorUpdater } = await updater();
     await CapacitorUpdater.setCustomId({ customId: betaEnabled() ? 'beta' : '' });
   } catch (err) {
     // Never let update plumbing break the game: the worst case is the player
