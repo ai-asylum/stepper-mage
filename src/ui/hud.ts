@@ -151,6 +151,24 @@ const OFFER_LABEL: Record<string, string> = {
   startPage: 'carry',
 };
 
+/**
+ * HOW BIG A SLIDER IS TO A THUMB, as opposed to how big its bar is drawn.
+ *
+ * The bar is 6px. The two settings sliders were grabbed within a 30px strip each,
+ * asymmetric and hand-tuned to keep them from stealing each other's presses, with
+ * 16px of dead space between the two rows where a press did nothing at all. On a
+ * phone, a thumb aiming at the sensitivity track that lands a few pixels high hits
+ * that dead space, and the slider reads as broken rather than as missed.
+ *
+ * The band covers the whole row now — the label above the bar and the end captions
+ * below it — and the two rows are allowed to meet. Overlap is safe because
+ * `main.ts` resolves a press that both bands accept to the NEARER track rather
+ * than to whichever is tested first, so neither slider can take the other's press
+ * at any layout, on any screen.
+ */
+const SLIDER_GRAB_UP = 22;
+const SLIDER_GRAB_DOWN = 26;
+
 export interface AltarOffer {
   kind: AltarOfferKind;
   /**
@@ -2392,7 +2410,7 @@ export class Hud {
   fovAt(x: number, y: number): number | null {
     const t = this.fovTrack;
     if (!t || !this.settingsOpen) return null;
-    if (y < t.y - 14 || y > t.y + 20) return null;
+    if (y < t.y - SLIDER_GRAB_UP || y > t.y + SLIDER_GRAB_DOWN) return null;
     if (x < t.x - 16 || x > t.x + t.w + 16) return null;
     const [lo, hi] = this.fovRange;
     const f = Math.max(0, Math.min(1, (x - t.x) / t.w));
@@ -2411,7 +2429,7 @@ export class Hud {
   swipeAt(x: number, y: number): number | null {
     const t = this.swipeTrack;
     if (!t || !this.settingsOpen) return null;
-    if (y < t.y - 12 || y > t.y + 18) return null;
+    if (y < t.y - SLIDER_GRAB_UP || y > t.y + SLIDER_GRAB_DOWN) return null;
     if (x < t.x - 16 || x > t.x + t.w + 16) return null;
     return Math.round(100 * Math.max(0, Math.min(1, (x - t.x) / t.w)));
   }

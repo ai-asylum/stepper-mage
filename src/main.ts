@@ -5265,10 +5265,28 @@ async function boot(): Promise<void> {
     }
     // The slider is grabbed on PRESS, so the knob is already under the thumb by the
     // time the drag starts. Before the book test, because settings covers the book.
-    const grabbed = hud.fovAt(x, y);
-    if (grabbed !== null) { fovDrag = true; setFov(grabbed); return; }
-    const sens = hud.swipeAt(x, y);
-    if (sens !== null) { swipeDrag = true; setSwipeSens(sens); return; }
+    /**
+     * THE NEARER SLIDER WINS, not the one tested first.
+     *
+     * The two tracks used to be kept apart by hand-tuned bands that could not
+     * overlap, which meant the gap between them was dead — a thumb aiming at
+     * sensitivity and landing a little high changed nothing, and a slider that does
+     * nothing when you touch it reads as broken. The bands cover their whole rows
+     * now and are allowed to meet, so the tie has to be broken here: by which track
+     * the press is actually closer to. Testing `fovAt` first and returning would
+     * have handed every contested press to the top slider.
+     */
+    const fovGrab = hud.fovAt(x, y);
+    const sensGrab = hud.swipeAt(x, y);
+    if (fovGrab !== null || sensGrab !== null) {
+      const dFov = fovGrab !== null && hud.fovTrack
+        ? Math.abs(y - hud.fovTrack.y) : Infinity;
+      const dSens = sensGrab !== null && hud.swipeTrack
+        ? Math.abs(y - hud.swipeTrack.y) : Infinity;
+      if (dSens < dFov) { swipeDrag = true; setSwipeSens(sensGrab as number); }
+      else { fovDrag = true; setFov(fovGrab as number); }
+      return;
+    }
     /**
      * RESET IS HELD, not tapped, so it begins on the way down.
      *
