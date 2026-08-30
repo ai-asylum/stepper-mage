@@ -27,6 +27,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           lfs: true
+          # The full history, because the build stamp counts it: `versionCode` and
+          # the BUILD NUMBER the app prints are both `git rev-list --count HEAD`,
+          # and a shallow clone counts 1. The Android workflow already does this.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:

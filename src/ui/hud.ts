@@ -29,7 +29,7 @@ import { Pix, hex } from '../art/pixel';
 import { drawPortrait, PORTRAIT_ASPECT } from './portraits';
 import type { Wizard } from '../game/wizards';
 import { drawCentered, CELL_H } from '../art/bitfont';
-import { BUILD, OTA_VERSION } from '../version';
+import { BUILD, BUILD_NO, OTA_VERSION } from '../version';
 import * as THREE from 'three';
 import { DIR_VEC, Tile, type Dir } from '../dungeon/grid';
 import { PORTAL_HUES, STEP_H } from '../art/tiles';
@@ -2850,6 +2850,18 @@ export class Hud {
      * is a version string in the way.
      */
     ctx.textAlign = 'center';
+    /**
+     * THE BUILD NUMBER IS READABLE. The rest is fine print.
+     *
+     * This whole line used to be one dim 8px string led by a commit hash, which is
+     * exact and impossible to remember or repeat — reporting a bug meant copying
+     * `f3f4456` off a phone screen by eye. The number that matters is the same one
+     * the Play Console shows, so it goes first, in type a person can actually read,
+     * and the hash stays underneath for when exactness is the question.
+     */
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(255,207,92,0.62)';
+    ctx.fillText(`BUILD ${BUILD_NO}`, W / 2, by + 45);
     ctx.font = '8px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(232,217,176,0.32)';
     const served = this.bundleVersion && this.bundleVersion.version !== OTA_VERSION
@@ -2860,7 +2872,7 @@ export class Hud {
     // whenever we simply failed to ask is how match-merge ended up showing a
     // bright amber Beta to players who had never opted into anything.
     const channel = this.bundleVersion?.isPublic === false ? '  ·  BETA' : '';
-    ctx.fillText(`${BUILD}  ·  bundle ${OTA_VERSION}${served}${channel}`, W / 2, by + 38);
+    ctx.fillText(`${BUILD}  ·  bundle ${OTA_VERSION}${served}${channel}`, W / 2, by + 57);
 
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     this.hits.push({ rect: [bx, by, tw, 30], action: { kind: 'settings' } });

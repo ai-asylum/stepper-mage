@@ -27,6 +27,28 @@ const commit = (() => {
   }
 })();
 
+/**
+ * THE BUILD NUMBER — the one number that is the same everywhere.
+ *
+ * `versionCode` in the Play Console is `git rev-list --count HEAD`, so the commit
+ * count IS the build number the store shows, and making the app print the same
+ * thing means the number on the screen, the number in the Console and the number
+ * in a bug report are one number. A short commit hash is exact and impossible to
+ * hold in your head; "build 244" is both.
+ *
+ * A shallow clone counts 1, which is worse than useless because it looks like a
+ * real answer — so both CI workflows check out with `fetch-depth: 0`, and a count
+ * that comes back as 1 or fails outright is reported as `?` rather than as a lie.
+ */
+const buildNo = (() => {
+  try {
+    const n = Number(execFileSync('git', ['rev-list', '--count', 'HEAD'], { encoding: 'utf8' }).trim());
+    return Number.isFinite(n) && n > 1 ? String(n) : '?';
+  } catch {
+    return '?';
+  }
+})();
+
 const otaVersion = (() => {
   try {
     return JSON.parse(readFileSync('ota-version.json', 'utf8')).version || 'unknown';
@@ -40,6 +62,7 @@ export default defineConfig({
   server: { host: true, port: 5199 },
   build: { target: 'es2022', assetsInlineLimit: 0, chunkSizeWarningLimit: 2000 },
   define: {
+    __BUILD_NO__: JSON.stringify(buildNo),
     __BUILD__: JSON.stringify(`${commit} · ${new Date().toISOString().slice(0, 16)}Z`),
     __OTA_VERSION__: JSON.stringify(otaVersion),
   },

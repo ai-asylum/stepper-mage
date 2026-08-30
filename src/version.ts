@@ -17,8 +17,19 @@
  * deliberate: the stamp should never read "dev" on a machine that can tell you
  * exactly which commit is running.
  */
+declare const __BUILD_NO__: string;
 declare const __BUILD__: string;
 declare const __OTA_VERSION__: string;
+
+/**
+ * THE NUMBER TO SAY OUT LOUD, e.g. `244`.
+ *
+ * The same integer Play calls `versionCode` — `git rev-list --count HEAD` — so
+ * the app, the Play Console and a sentence in chat all name the build the same
+ * way. `BUILD` below stays for the cases where exactness matters (which commit,
+ * built when); this is the one a person can remember and repeat.
+ */
+export const BUILD_NO: string = typeof __BUILD_NO__ === 'string' ? __BUILD_NO__ : '?';
 
 /** Short commit plus UTC build minute, e.g. `45f3159 · 2026-08-20T12:36Z`. */
 export const BUILD: string = typeof __BUILD__ === 'string' ? __BUILD__ : 'dev';
