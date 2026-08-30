@@ -2454,12 +2454,26 @@ async function boot(): Promise<void> {
    * than dropping it — and dropping it costs nothing, because holding it cost nothing.
    */
   const burnPage = (id: string): void => {
-    state.pages = state.pages.filter((p) => p !== id);
-    delete state.ranks[id];
+    /**
+     * ONE SHEET, not every copy of the page.
+     *
+     * The sacrifice card prices itself as "tears out your rank-2 <page> for good",
+     * which is one page — and a book that holds two Flames holds two sheets now
+     * (`setBookPages`), so filtering by id burnt both and took two hand slots for a
+     * cost the card quoted as one. The rank only goes when the last sheet does: a
+     * rank is how deeply the wizard knows the element, not a property of the paper.
+     */
+    const at = state.pages.indexOf(id);
+    if (at < 0) return;
+    state.pages = state.pages.filter((_, i) => i !== at);
+    const left = state.pages.includes(id);
+    if (!left) delete state.ranks[id];
     setPageRanks(state.ranks);
     setBookPages(state.pages);
     book.refresh();
-    if (fan.gameIds.includes(id)) fan.clear();
+    // Only when the page is gone outright — a copy still in the book is a card the
+    // hand is entitled to keep holding.
+    if (!left && fan.gameIds.includes(id)) fan.clear();
   };
 
   /**

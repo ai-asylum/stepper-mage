@@ -129,10 +129,47 @@ export const ALL_PAGES: SpellDef[] = ORDER.map((gameId) => {
  */
 export const SPELLS: SpellDef[] = [];
 
-/** Rebuild the book in place from the ids the player holds. */
+/**
+ * Sheets beyond the first, kept ALIVE between rebuilds.
+ *
+ * `setBookPages` runs on every learn, burn, floor and load, and the book holds
+ * object references into `SPELLS` — `spellAt` hands one back and `indexOf` turns it
+ * into the page to flip to. Minting a fresh clone per rebuild would make yesterday's
+ * reference unfindable, so each duplicate sheet is created once and reused, keyed by
+ * which copy it is. `id` (the sigil) is shared with the original deliberately:
+ * `pageArt` caches on it, so both sheets are the same drawing at no extra cost.
+ */
+const SHEETS = new Map<string, SpellDef>();
+const sheet = (p: SpellDef, n: number): SpellDef => {
+  const key = `${p.gameId}#${n}`;
+  let dup = SHEETS.get(key);
+  if (!dup) { dup = { ...p }; SHEETS.set(key, dup); }
+  return dup;
+};
+
+/**
+ * Rebuild the book in place from the ids the player holds.
+ *
+ * `ids` IS A LIST AND NOT A SET, and holding two of a page means two sheets.
+ *
+ * This deduped, which quietly cancelled the altar's second-copy card: `learnPage`
+ * pushes the id (so `handSize` widens to two, correctly) and then the book was
+ * rebuilt through a `Set` and came back exactly as wide as before — one Flame, and
+ * `canFlip` false because a one-page book cannot be leafed. The player took the card
+ * that says "your hand widens to hold both", got a second slot with nothing that
+ * could fill it, and read that as the altar having done nothing. Repeatedly.
+ *
+ * Duplicates sit next to their original, so the second Flame is the next page over
+ * rather than somewhere across the book.
+ */
 export function setBookPages(ids: string[]): void {
-  const want = new Set(ids);
-  const next = ALL_PAGES.filter((p) => want.has(p.gameId));
+  const held = new Map<string, number>();
+  for (const id of ids) held.set(id, (held.get(id) ?? 0) + 1);
+  const next: SpellDef[] = [];
+  for (const p of ALL_PAGES) {
+    const n = held.get(p.gameId) ?? 0;
+    for (let i = 0; i < n; i++) next.push(i === 0 ? p : sheet(p, i));
+  }
   SPELLS.length = 0;
   SPELLS.push(...(next.length ? next : ALL_PAGES.slice(0, 1)));
   CHAPTERS.length = 0;
