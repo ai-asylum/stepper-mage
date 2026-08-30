@@ -4228,22 +4228,36 @@ async function boot(): Promise<void> {
      * are no longer empty. A bundle can be several megabytes over a phone
      * connection, and a download with no progress and no way to tell that the app
      * is busy is both the thing that reads as a hang and the thing the stores
-     * object to. `onStart` raises it, `onIdle` lowers it when there was nothing
-     * to fetch, and nothing lowers it on success — `reload()` replaces the
-     * WebView underneath it, so the screen is the last thing the old bundle draws
-     * and the new one boots behind it.
+     * object to. The first DOWNLOAD EVENT raises it — not the start of the check,
+     * which knows nothing yet — `onIdle` lowers it if it ever went up, and nothing
+     * lowers it on success: `reload()` replaces the WebView underneath it, so the
+     * screen is the last thing the old bundle draws and the new one boots behind it.
      */
     // Bound BEFORE the check runs, or the first percents arrive with nothing
     // listening — on a fast connection that is most of them.
     void m.onDownloadProgress({
-      onPercent: setOtaProgress,
+      /**
+       * THE SCREEN GOES UP HERE, on the first byte — not when the check starts.
+       *
+       * `onStart` used to raise it, and that fires before anything is known: on a
+       * cold start with nothing to download it is up, a network round trip, and
+       * down again. A flash. And because this screen carries the same mark the boot
+       * screen does, what the player sees is the LOGO flickering on and off as the
+       * game starts — every launch, update or no update.
+       *
+       * A download event means bytes are actually moving, which is the only moment
+       * a progress bar has anything true to say.
+       */
+      onPercent: (pct) => { showOta(); setOtaProgress(pct); },
       onComplete: () => setOtaTitle('applying'),
       // A failed update must never hold the game behind the screen. The player
       // keeps the bundle they have and the automatic flow tries again later.
       onFailed: hideOta,
     });
     m.checkOnResume({
-      onStart: showOta,
+      // Deliberately nothing. Raising a progress screen before there is progress —
+      // or before an update is even known to exist — is what made the boot flash.
+      onStart: () => {},
       onIdle: hideOta,
       // There is a newer bundle and this APK is too old to run it. The server
       // refuses to serve it, which is correct but silent — from the device's

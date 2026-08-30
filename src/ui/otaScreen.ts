@@ -44,13 +44,31 @@ function arm(): void {
   }, STALL_MS);
 }
 
-/** Raise the screen. Safe to call repeatedly. */
+/**
+ * A SCREEN THAT APPEARS MUST STAY LONG ENOUGH TO BE READ.
+ *
+ * Raised and lowered inside a few frames, this reads as the game flickering — and
+ * it carries the same mark the boot screen does, so the logo appears to flash on
+ * and off. The cause is fixed at the call site (it is only raised once bytes are
+ * actually moving) and this is the floor under it: once up, it stays up for at
+ * least this long, so no path can ever blink it.
+ */
+const MIN_VISIBLE_MS = 600;
+let shownAt = 0;
+let pendingHide: ReturnType<typeof setTimeout> | null = null;
+
+/** Raise the screen. Safe to call repeatedly — a second call is a no-op. */
 export function showOta(): void {
   const box = el('ota');
   if (!box) return;
+  if (pendingHide) { clearTimeout(pendingHide); pendingHide = null; }
+  // Already up: do NOT reset the bar to 0, or a second call mid-download throws the
+  // progress away and starts the thing crawling again from the left.
+  if (box.classList.contains('on')) { arm(); return; }
   setOtaProgress(0);
   setOtaTitle('updating');
   box.classList.add('on');
+  shownAt = performance.now();
   arm();
 }
 
@@ -81,10 +99,21 @@ export function setOtaProgress(pct: number): void {
   if (n >= 100) setOtaTitle('applying');
 }
 
-/** Lower it. Also cancels the deadline, so a hidden screen holds no timer. */
+/** Lower it, never sooner than `MIN_VISIBLE_MS` after it went up. */
 export function hideOta(): void {
+  const box = el('ota');
+  if (!box || !box.classList.contains('on')) {
+    if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+    return;
+  }
+  const left = MIN_VISIBLE_MS - (performance.now() - shownAt);
+  if (left > 0) {
+    if (!pendingHide) pendingHide = setTimeout(hideOta, left);
+    return;
+  }
+  if (pendingHide) { clearTimeout(pendingHide); pendingHide = null; }
   if (watchdog) { clearTimeout(watchdog); watchdog = null; }
-  el('ota')?.classList.remove('on');
+  box.classList.remove('on');
 }
 
 /** Is it up? Read by the boot overlay, which must not fight it for the screen. */
