@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
+// @ts-expect-error — a plain .mjs helper, shared with the OTA publisher so the
+// stamp and the served bundle can never name different versions.
+import { otaVersion } from './scripts/ota-version.mjs';
 
 /**
  * WHICH BUILD IS THIS — resolved at build time and inlined.
@@ -62,13 +64,20 @@ const builtOn = (() => {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 })();
 
-const otaVersion = (() => {
-  try {
-    return JSON.parse(readFileSync('ota-version.json', 'utf8')).version || 'unknown';
-  } catch {
-    return 'unknown';
-  }
-})();
+/**
+ * The bundle version this build publishes, for the settings stamp.
+ *
+ * Through the SAME derivation the publisher uses (`scripts/ota-version.mjs`), or
+ * the number on the screen and the number being served are two opinions and the
+ * one place they are compared — "did the update land" — cannot answer. It used to
+ * read `version` out of `ota-version.json`, which is the field that went stale for
+ * eleven builds and no longer exists.
+ *
+ * A stamp is diagnostic, so a version that cannot be derived shows "unknown" here.
+ * The publisher treats the same case as a hard error, because publishing a bundle
+ * nobody can name is how the first attempt shipped 0.1.0 to everyone.
+ */
+const otaVersionStamp = otaVersion() ?? 'unknown';
 
 export default defineConfig({
   base: './',
@@ -77,6 +86,6 @@ export default defineConfig({
   define: {
     __BUILD_NO__: JSON.stringify(buildNo),
     __BUILT__: JSON.stringify(builtOn),
-    __OTA_VERSION__: JSON.stringify(otaVersion),
+    __OTA_VERSION__: JSON.stringify(otaVersionStamp),
   },
 });

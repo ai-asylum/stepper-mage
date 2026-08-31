@@ -25,7 +25,10 @@
 // fixed — see readVersion and carryForward below.
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync,
+} from "node:fs";
+import { otaVersion, resolvePublic } from "./ota-version.mjs";
 import { join } from "node:path";
 import { writeBlobs, deltaBytes } from "./ota-blobs.mjs";
 
@@ -54,7 +57,8 @@ function readRelease() {
     // null means there is no beta. Not "" and not the public version copied in
     // by hand — an explicit absence, so the default state is expressible.
     beta: d.beta == null ? null : String(d.beta),
-    publicVersion: d.public == null ? null : String(d.public),
+    // "auto" resolves to whatever this build publishes; see `resolvePublic`.
+    publicVersion: d.public,
     keep: Number.isFinite(Number(d.keep)) ? Math.max(1, Number(d.keep)) : 3,
     // Recorded PER BUNDLE, not globally: an old bundle carried forward keeps
     // whatever it was published with. A global value would retroactively claim
@@ -126,26 +130,33 @@ async function carryForward(keepCount, freshVersion) {
 /**
  * The version the plugin compares against the running bundle.
  *
- * Read from a COMMITTED file rather than derived at build time, for two reasons
- * that both broke match-merge's first attempt:
+ * Derived — see `scripts/ota-version.mjs` for why that is safe now and why it was
+ * not the first time. The short version: the count is available in CI since the
+ * deploy workflow stopped checking out shallow, `1.0.<n>` is always above the
+ * Android versionName by construction, and this REFUSES to publish rather than
+ * falling back to a number nobody chose.
  *
- *  1. It was `git rev-list --count HEAD`, but a Vercel build has no usable git
- *     history — the call failed, the fallback returned 0, and every bundle
- *     published as "0.1.0". Nothing would ever have updated twice.
- *  2. It must stay ABOVE the Android versionName ("1.0"). On a fresh install the
- *     plugin reports versionName as the running version, so a "0.1.x" bundle is
- *     never newer and is never offered.
- *
- * Committing it also makes publishing deliberate: redeploying the website does
- * not silently hand every installed player a fresh download.
+ * What the committed file bought was making publishing deliberate. That is exactly
+ * what went wrong: forgetting to bump it published nothing, silently, for eleven
+ * builds. `public: "auto"` keeps the deliberate part where it belongs — on holding
+ * a release BACK, not on letting one out.
  */
 function readVersion() {
-  if (process.env.OTA_VERSION) return process.env.OTA_VERSION;
-  const { version } = JSON.parse(readFileSync(join(ROOT, "ota-version.json"), "utf8"));
-  if (!/^\d+(\.\d+)*$/.test(version || "")) {
-    throw new Error(`ota-version.json: "${version}" is not a dotted numeric version`);
+  const v = otaVersion();
+  if (v === null) {
+    console.error(
+      "OTA: cannot derive a bundle version — `git rev-list --count HEAD` gave no\n" +
+        "     usable answer (a shallow clone reports 1). REFUSING to publish rather\n" +
+        "     than guessing: the last time this guessed it shipped 0.1.0 to everyone\n" +
+        "     and nothing could ever update twice. Check out with fetch-depth: 0, or\n" +
+        "     set OTA_VERSION explicitly.",
+    );
+    process.exit(1);
   }
-  return version;
+  if (!/^\d+(\.\d+)*$/.test(v)) {
+    throw new Error(`OTA_VERSION "${v}" is not a dotted numeric version`);
+  }
+  return v;
 }
 const version = readVersion();
 
@@ -238,10 +249,16 @@ const entry = {
 // the end stop being referenced and are simply not carried forward again.
 const bundles = [entry, ...carried].slice(0, keep);
 
+/**
+ * The pointer, resolved. `"auto"` becomes the version just built — which is what
+ * makes shipping the default and holding back the deliberate act.
+ */
+const released = resolvePublic(publicVersion, version);
+
 const index = {
   delta,
   beta,
-  public: publicVersion,
+  public: released,
   bundles: bundles.map((b) => ({
     version: b.version,
     path: b.path,
@@ -271,8 +288,31 @@ if (prev?.files?.length) {
       `${mb(d.bytes)} MB — not ${mb(d.total)} MB`,
   );
 }
-console.log(
-  `  ota: version=${version}  public=${publicVersion ?? "(none released)"}  ` +
-    `beta=${beta ?? "(none)"}  ` +
-    `minNative=${minNative ?? "(any)"}  delta=${delta ? "on" : "OFF (zip only)"}`,
-);
+/**
+ * THE DECISION, SAID OUT LOUD, on every single build.
+ *
+ * The omission that prompted all of this was invisible: nothing failed, nothing
+ * warned, and the state — "publishing a version nobody will be offered" — was only
+ * discoverable by reading a JSON file nobody had reason to open. It is on the
+ * screen of every run now, and in the GitHub step summary, where it is impossible
+ * to ship a deploy without it having been printed.
+ */
+const verdict = released === version
+  ? `LIVE to everyone on their next launch`
+  : released
+    ? `NOT this build — devices are pinned to ${released} (a rollback, or a stale pin)`
+    : `NOBODY: public is null, so no device is offered anything`;
+const summary =
+  `  ota: version=${version}  public=${released ?? "(none released)"}  ` +
+  `beta=${beta ?? "(none)"}  ` +
+  `minNative=${minNative ?? "(any)"}  delta=${delta ? "on" : "OFF (zip only)"}\n` +
+  `  ota: ${verdict}`;
+console.log(summary);
+if (process.env.GITHUB_STEP_SUMMARY) {
+  appendFileSync(
+    process.env.GITHUB_STEP_SUMMARY,
+    `### OTA\n\n- **publishes** \`${version}\`\n`
+      + `- **public** \`${released ?? "null"}\`\n`
+      + `- ${verdict}\n`,
+  );
+}
