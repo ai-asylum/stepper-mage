@@ -51,3 +51,4 @@ played — check it before trusting it.
 | 29 | [Mana_And_Pacing](Mana_And_Pacing.md) | yes | planned |
 | 30 | [Difficulty_Rebase](Difficulty_Rebase.md) | yes | planned |
 | 31 | [Creature_Behaviour](Creature_Behaviour.md) | yes | planned |
+| 32 | [First_Steps](First_Steps.md) | yes | shipped |

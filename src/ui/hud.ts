@@ -315,6 +315,16 @@ export type UiAction =
   | { kind: 'turn'; d: -1 | 1 }
   | { kind: 'descend' }
   /**
+   * Leave the first descent's guided beats and play. Drawn under the
+   * instruction the whole time the flow is live — see `src/game/onboarding.ts`.
+   *
+   * A CONTROL, so `UI_CONTROLS` in `main.ts` has it, for the reason the CAST
+   * pill and the fan's cards are in there: it sits above the grimoire's edge but
+   * within a tap's jitter of it, and a skip that leafed a page instead would be
+   * the one control on screen that a stuck player is reaching for failing.
+   */
+  | { kind: 'ftueSkip' }
+  /**
    * Leave a finished run for the star tree. The run-end card's own button — any
    * tap on that card goes the same way, so this is the affordance rather than the
    * only route, and it exists so the thing drawn under the thumb is a real control.
@@ -635,6 +645,20 @@ export class Hud {
    * hint that failed (`Roadmap/First_Minutes.md`).
    */
   hasMoved = false;
+
+  /**
+   * The first descent's current instruction, or null once it is over.
+   *
+   * Written every frame from `Onboarding.line` (`src/game/onboarding.ts`) and
+   * drawn through `drawMoveHint`, which is the one instruction channel this HUD
+   * has. It is deliberately the SAME channel and not a second one: the guided
+   * beats and the movement hint are the same voice saying successive things, and
+   * a flow with its own banner would be two of them arguing over the one strip
+   * of world the player can read text against.
+   */
+  coachLine: string | null = null;
+  /** Is the guided flow live — should its way out be on screen? */
+  coachSkip = false;
 
   /** The nudged instruction's remaining time, and the run of fruitless taps that
    *  earns it. See `idleTap`. */
@@ -3693,7 +3717,29 @@ export class Hud {
      * `idleTap`.
      */
     const opening = !this.hasMoved && this.state.depth <= 1;
-    if ((!opening && this.nudgeT <= 0) || this.offers) return;
+    /**
+     * A MODAL OWNS THE SCREEN, so nothing is being asked of the player.
+     *
+     * The offers check was here already, and the rest are the same case: the
+     * roster at the dungeon mouth, the settings panel, the bestiary, the chart.
+     * Every one of them is a full-screen fill drawn AFTER this, so the ink was
+     * covered anyway — what was not covered is the skip's hit region, and a tap
+     * on the empty part of the settings panel landing on it would end the
+     * guided descent from a screen that is not it.
+     */
+    if (this.offers || this.roster || this.rescued || this.settingsOpen
+      || this.bestiaryOpen || this.chartOpen) return;
+
+    /**
+     * The guided descent speaks first, and speaks INSTEAD.
+     *
+     * While it is live the flow owns this line — its first beat is the movement
+     * hint, continued, so drawing both would print two instructions about one
+     * gesture. Once it has ended (or on a save that never ran it) the original
+     * behaviour is exactly what is left: the opening prompt on depth 1, and the
+     * three-fruitless-taps nudge on any floor. See `src/game/onboarding.ts`.
+     */
+    if (!this.coachLine && !opening && this.nudgeT <= 0) return;
 
     /**
      * Positioned off the CANVAS, not off the book.
@@ -3731,16 +3777,62 @@ export class Hud {
      * to swipe to move while the grimoire fills the bottom of the screen and eats the
      * gesture is worse than saying nothing.
      */
-    const line = this.bookClosed ? 'SWIPE TO MOVE' : 'SWIPE TO CAST';
-    ctx.font = 'bold 24px ui-monospace, monospace';
+    const line = this.coachLine
+      ?? (this.bookClosed ? 'SWIPE TO MOVE' : 'SWIPE TO CAST');
+    /**
+     * The guided beats are SENTENCES and the hint is three words, so they cannot
+     * share a type size: WALK UP TO A FLAME OR A BARREL AND FACE IT at 24px is
+     * wider than any phone. Wrapped at the frame rather than shrunk to fit,
+     * because a line that changes size between beats reads as the game shouting
+     * at some of them.
+     */
+    const size = this.coachLine ? 17 : 24;
+    ctx.font = `bold ${size}px ui-monospace, monospace`;
+    const rows = wrapLines(ctx, line, W - 40);
+    const lead = size + 5;
+    // Grown UPWARD off the same baseline, so the last row of a two-row beat sits
+    // where a one-row beat's only row does and the block never walks down the
+    // screen as the copy gets longer.
+    const top = y - (rows.length - 1) * lead;
     ctx.lineWidth = 4;
     ctx.strokeStyle = 'rgba(6,4,8,0.85)';
-    ctx.strokeText(line, W / 2, y);
-    ctx.fillStyle = '#fff4dc';
-    ctx.fillText(line, W / 2, y);
+    rows.forEach((row, i) => {
+      ctx.strokeText(row, W / 2, top + i * lead);
+      ctx.fillStyle = '#fff4dc';
+      ctx.fillText(row, W / 2, top + i * lead);
+    });
     ctx.restore();
+
+    /**
+     * AND THE WAY OUT, under it.
+     *
+     * Small, quiet and always there while the flow is live — the same reading as
+     * the cutscene's own TAP TO CONTINUE (`drawCinePrompt`): an offer, not an
+     * instruction, and it has to lose every fight it picks with the sentence
+     * above it. It is drawn on every beat rather than appearing once somebody is
+     * visibly stuck, because a skip you have to earn is a skip nobody finds.
+     */
+    if (this.coachSkip) this.drawCoachSkip(ctx, W, y + 18);
+
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
+  }
+
+  /**
+   * The guided descent's skip, centred under its instruction.
+   *
+   * Its hit region is deliberately larger than its ink — a 14px pill is a
+   * readable label and not a thumb target, and this is the control a player who
+   * has given up is aiming at.
+   */
+  private drawCoachSkip(ctx: CanvasRenderingContext2D, W: number, y: number): void {
+    const label = 'SKIP';
+    ctx.textAlign = 'left';
+    ctx.font = '8px ui-monospace, monospace';
+    const w = ctx.measureText(label).width + 14;
+    const x = Math.round((W - w) / 2);
+    this.pill(ctx, x, y, label, 'rgba(232,220,192,0.85)', 'rgba(154,163,173,0.5)');
+    this.hits.push({ rect: [x - 14, y - 8, w + 28, 30], action: { kind: 'ftueSkip' } });
   }
 
   /**

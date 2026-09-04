@@ -449,6 +449,12 @@ line of text.
 A **compass**, pointing at the next thing that matters: unclaimed altar → boss
 while alive → stairs once it's dead. One arrow, not a revealed map.
 
+And, on the first descent only, **six lines teaching the five verbs and the room**:
+step, turn, aim, tear, cast, harvest. Each one waits for the gesture itself and then
+never appears again ([First_Steps](../Roadmap/First_Steps.md)). Fusion is not among
+them, for the reason given under Hand size — starting at 1 is what lets the shop
+teach it, and a line of text would spend that.
+
 ## Rejected — do not re-add
 
 Kept here because each of these was considered and cut for a reason that is not

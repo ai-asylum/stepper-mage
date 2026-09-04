@@ -50,6 +50,17 @@ const page = await browser.newPage({
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
 
+/**
+ * A Play listing shows the GAME, not its tutorial. A fresh browser profile is a
+ * first-time player, so without this the guided descent's instruction
+ * (`src/game/onboarding.ts`) is burnt across the middle of every shot — and the
+ * store card that says "SWIPE UP TO STEP" is advertising a control rather than a
+ * dungeon.
+ */
+await page.addInitScript(() => {
+  try { localStorage.setItem('stepper-mage.onboarding.v1', 'done'); } catch { /* private mode */ }
+});
+
 await page.goto(url, { waitUntil: 'networkidle' });
 await page.waitForFunction(() => !!window.__game, null, { timeout: 30000 });
 // Procedural tiles and sprites are built on entry; the first frames are a

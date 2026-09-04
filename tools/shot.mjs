@@ -62,6 +62,17 @@ const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push(String(e)));
 
+/**
+ * These shots are of the ART, and a throwaway browser profile is a first-time
+ * player — so without this every one of them carries the guided descent's
+ * instruction across the middle of the frame (`src/game/onboarding.ts`). To
+ * shoot the flow itself, drop this line or call
+ * `window.__game.replayOnboarding()` once the game is up.
+ */
+await page.addInitScript(() => {
+  try { localStorage.setItem('stepper-mage.onboarding.v1', 'done'); } catch { /* private mode */ }
+});
+
 await page.goto(url, { waitUntil: 'networkidle' });
 // The world is built on boot (procedural textures take a moment); give it room.
 await page.waitForFunction(() => !!window.__game, null, { timeout: 30000 }).catch(() => {});

@@ -392,3 +392,16 @@ every phase. Never list tasks for editing this file or a phase doc.
 - [ ] Ranged creatures, and creatures that do not close in a straight line.
 - [ ] Keep `isAlerted` and the threat set honest for all of them.
 - [ ] Commit changes.
+
+## Phase 32 — First_Steps
+
+- [x] Add `onboarding.ts`: six beats, each ended by the real event or state the game reads.
+- [x] Say what to walk toward when a beat's gesture is unavailable, then give up on it.
+- [x] Restate a beat that goes unanswered, and draw a SKIP pill the whole time.
+- [x] Draw the live beat on the movement hint's line, replacing it rather than fighting it.
+- [x] Hold the grimoire shut for the first instruction only, capped well under the beat.
+- [x] Persist completion under its own versioned key; treat a save with a run as taught.
+- [x] Report the funnel — step, completed, skipped — without touching `ftue_completed`.
+- [x] Mark the flow complete for every harness and screenshot script by default.
+- [x] Add `tools/ftuetest.mjs`, and `replayOnboarding` to the debug surface.
+- [x] Commit changes.

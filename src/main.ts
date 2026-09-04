@@ -64,6 +64,7 @@ import {
   refundBlocker, sanitizeOwned, type NodeId,
 } from './meta/tree';
 import { initAnalytics, track } from './systems/analytics';
+import { Onboarding, ONBOARDING_KEY, ONBOARDING_STEPS } from './game/onboarding';
 
 /**
  * Persisted meta.
@@ -224,11 +225,16 @@ const META_KEY = 'stepper-mage.meta.v1';
  * does to start over, not a thing that makes them a new activation, so this
  * lives in its own key that the reset deliberately does not remove.
  *
- * This game has no tutorial, so there is no FTUE to finish. The nearest honest
- * reading of "activated" is that the player actually got into a floor rather
- * than bouncing off the boot screen, which is why it fires from `enterFloor`
- * and not from boot — fired at boot it would be 1:1 with `session_start` and
- * the column would read 100% forever, which answers nothing.
+ * It fires on reaching a FLOOR, and it stays there now that the game does have
+ * a tutorial (`src/game/onboarding.ts`). Moving it onto the guided descent's
+ * completion would silently redefine a live column: every existing player has
+ * already fired it against the old meaning, so the two halves of the series
+ * would measure different bars and neither would be comparable to the other.
+ * The flow reports itself separately — `onboarding_step`, `onboarding_completed`
+ * and `onboarding_skipped` — which is a funnel rather than a redefinition.
+ *
+ * Fired from `enterFloor` and not from boot: at boot it would be 1:1 with
+ * `session_start` and the column would read 100% forever, which answers nothing.
  */
 const FTUE_KEY = 'stepper-mage.ftue.v1';
 
@@ -580,6 +586,49 @@ async function boot(): Promise<void> {
   const book = new Book();
   const fan = new Fan();
 
+  /**
+   * THE FIRST DESCENT — the six guided beats, and the only thing in the game
+   * that talks to a player who has never played it. See `game/onboarding.ts`.
+   *
+   * Built here, before anything that reports to it, and its world view is five
+   * booleans read off state that is assigned later in this function: `hud`,
+   * `fan` and the derived `bookOnScreen`. That is safe because nothing calls it
+   * until the loop is running — but it is why the view is a THUNK rather than a
+   * snapshot handed over at construction, which would have read `undefined` for
+   * a HUD that does not exist until the first floor is built.
+   *
+   * `meta.best > 0` is the "this save has played" test. A run that ended is a
+   * player who has been taught by playing, and every save written before this
+   * shipped is one of those — without it the flow would open on somebody with
+   * ten runs behind them and tell them how to walk.
+   */
+  const onboarding = new Onboarding(() => ({
+    canAim: hud.candidates.length > 0,
+    aimed: !!hud.target,
+    // The same question the grimoire's own visibility asks, so the beat cannot
+    // ask for a page out of a book the rule has taken off screen.
+    bookUp: bookOnScreen() && !book.busy,
+    held: fan.count,
+    fixtureInReach: !!hud.harvestInReach,
+  }), meta.best > 0);
+  /**
+   * The funnel. One event per beat as it becomes live, plus how it ended — which
+   * is the only way to find out WHICH lesson loses people, and the flow is built
+   * out of the two failure modes that would otherwise be invisible from
+   * aggregate retention alone (a beat nobody can complete, and a beat everybody
+   * skips out of).
+   */
+  onboarding.onStep = (step, index) => track('onboarding_step', { id: step.id, index });
+  onboarding.onEnd = (how, reached) => {
+    track(how === 'done' ? 'onboarding_completed' : 'onboarding_skipped', {
+      reached, of: ONBOARDING_STEPS.length,
+      // Named as well as numbered: an index moves the next time a beat is added
+      // or dropped, and a dashboard built on one silently starts answering a
+      // different question. The id does not.
+      at: ONBOARDING_STEPS[Math.min(reached, ONBOARDING_STEPS.length - 1)].id,
+    });
+  };
+
   /** Lifted only by the debug harness, so a scripted fusion still works. */
   let handSizeBonus = 0;
   /**
@@ -620,6 +669,16 @@ async function boot(): Promise<void> {
    * "cast what you are holding first" rather than the game taking a round off you.
    */
   const ripRefusal = (spell: SpellDef): string | null => {
+    /**
+     * NOT WHILE THE FIRST INSTRUCTION IS STILL UP — see `Onboarding.holdsBook`.
+     *
+     * First, because it is a refusal about the MOMENT rather than about the page
+     * or the hand, and it is the only one of the three a player is meant to read
+     * as "in a second" instead of as "do something about it". It lasts exactly
+     * one beat and lifts on the player's first step, on the flow's clock, or on
+     * the skip — so nothing here can hold the book shut.
+     */
+    if (onboarding.holdsBook()) return 'Your feet first. The book will keep.';
     if (!state.pages.includes(spell.gameId)) return `${spell.name} is not yours yet.`;
     const n = handSize();
     if (fan.count >= n) {
@@ -849,6 +908,16 @@ async function boot(): Promise<void> {
     if (e.draws === 0) {
       hud.addLog(`The ${displayName(e.spriteId).toLowerCase()} is spent.`, 0x9aa3ad);
     }
+    /**
+     * And the room has taught the last of the guided beats. Only this path
+     * reports it: the belt-overflow branch above is a harvest too, but it needs
+     * `BELT_ENABLED` and a strap with loops on it, and the loops are a star tree
+     * node bought with stars from a run that ended — which is the exact
+     * condition under which the flow is already over. There is no first descent
+     * in which that branch can be reached, and if the belt ever ships unlocked
+     * from the start it wants the same line.
+     */
+    onboarding.note('harvest');
     // What is in the hand decides what is targetable, exactly as after a tear.
     refreshTargets();
     return true;
@@ -3560,8 +3629,10 @@ async function boot(): Promise<void> {
       checkDeath();
     };
     stepper.onArrive = async (x, y) => {
-      // The movement hint has done its job the instant the player moves once.
+      // The movement hint has done its job the instant the player moves once,
+      // and so has the first of the guided beats — same event, same reason.
       hud.hasMoved = true;
+      onboarding.note('step');
       floor.cull(x, y);
       refreshTargets();
       busy = true;
@@ -3802,7 +3873,12 @@ async function boot(): Promise<void> {
       fx.shake = Math.min(0.7, fx.shake + 0.4);
       plunge = { t: 0, from: stepper.eyeHeight };
     };
-    stepper.onTurnDone = () => refreshTargets();
+    stepper.onTurnDone = () => {
+      // On DONE rather than on the press, like the step: the beat is over when
+      // the player has been turned, not when the input was accepted.
+      onboarding.note('turn');
+      refreshTargets();
+    };
     stepper.onBump = () => { fx.shake = Math.min(1, fx.shake + 0.22); };
 
     floor.cull(stepper.x, stepper.y);
@@ -3905,6 +3981,18 @@ async function boot(): Promise<void> {
    */
   const resetProgress = (): void => {
     try { localStorage.removeItem(META_KEY); } catch { /* private mode: nothing saved */ }
+    /**
+     * AND THE FIRST DESCENT COMES BACK, unlike the activation flag above it.
+     *
+     * The two keys look alike and their lifetimes are opposites. `FTUE_KEY` is an
+     * analytics fact about a PERSON — starting over does not make somebody a new
+     * activation — so the reset deliberately leaves it. This one is a fact about
+     * a SAVE: a player who has wiped their stars is going to open floor 1 with a
+     * hand of one and a closed book, which is precisely the state the guided
+     * beats exist for. It is also the honest way to replay them without a debug
+     * key.
+     */
+    try { localStorage.removeItem(ONBOARDING_KEY); } catch { /* private mode */ }
     location.reload();
   };
 
@@ -4506,6 +4594,27 @@ async function boot(): Promise<void> {
      * through the loop for no visible gain.
      */
     if (treeOpen) treeScreen.update(dt);
+    /**
+     * THE FIRST DESCENT'S BEAT, ticked and then read into the HUD.
+     *
+     * `awake` is what the flow's clock may charge for: the beats are gestures,
+     * and a modal, a cut or a finished run is time in which no gesture is being
+     * asked for. Ticking through those would restate an instruction the player
+     * cannot see and give up on beats they never had a chance at.
+     *
+     * Read into the HUD every frame rather than pushed on change, because the
+     * HUD is REBUILT on every floor (`enterFloor`) — anything pushed once would
+     * be lost at the first staircase.
+     *
+     * FIRST IN THE FRAME, above the cut's early return further down: a line the
+     * loop stops refreshing is a line that stays on screen, and the one moment
+     * this flow is guaranteed to be interrupted by a cut is the staircase at the
+     * end of the floor it runs on.
+     */
+    onboarding.update(dt, !dead && !cine && !plunge && !hud.offers && !hud.roster
+      && !hud.settingsOpen && !hud.rescued);
+    hud.coachLine = onboarding.line;
+    hud.coachSkip = onboarding.live;
     // hitstop: freeze the world briefly on impact, but keep the UI ticking
     const scale = fx.hitstop > 0 ? 0.12 : 1;
     const wdt = dt * scale;
@@ -4822,6 +4931,10 @@ async function boot(): Promise<void> {
       if (!await combat.cast(ids, hud.target)) {
         hud.addLog('The cast comes apart in your hands.', 0xff9a6a);
       } else {
+        // Inside the branch that actually SPENT the turn, deliberately. A cast
+        // that came apart taught nothing, and crediting the beat for one would
+        // move the flow on from a lesson the player never saw land.
+        onboarding.note('cast');
         // The one place a vial is destroyed: the spell has gone off. A refused cast
         // never reaches here, which is how "consumed only on cast" is a structural
         // fact rather than a rule someone has to remember at four call sites.
@@ -5090,6 +5203,13 @@ async function boot(): Promise<void> {
       case 'move': stepper.press({ kind: 'move', m: a.m }); break;
       case 'turn': stepper.press({ kind: 'turn', d: a.d }); break;
       case 'descend': void descend(); break;
+      /**
+       * Leave the guided beats and play. It takes effect on the same frame — the
+       * line goes, the skip goes with it, and the one gate the flow holds lifts
+       * — so the gesture the player was refused a moment ago works on the next
+       * attempt rather than after some settling.
+       */
+      case 'ftueSkip': onboarding.skip(); break;
       default: break;
     }
   };
@@ -5204,7 +5324,7 @@ async function boot(): Promise<void> {
     'cast', 'clear', 'descend', 'cycle', 'altar', 'chest', 'harvest',
     'belt', 'card', 'tree', 'bestiary', 'settings', 'resetProgress',
     'wizardPeek', 'wizardPick', 'wizardBack', 'invertGestures', 'betaUpdates', 'rescue', 'rescueDone',
-    'resetHold', 'resetCancel', 'openPage', 'copyAnalyticsId',
+    'resetHold', 'resetCancel', 'openPage', 'copyAnalyticsId', 'ftueSkip',
     // The belt's own controls, for the reason the whole set exists: these sit over the
     // world and the book, and a tap that leaked past them would step the player.
     'beltToggle', 'beltOpen', 'beltClose', 'beltMove', 'beltDrop', 'beltAmount',
@@ -5657,6 +5777,24 @@ async function boot(): Promise<void> {
   // ---- screenshot / debug harness ---------------------------------------
   (window as unknown as Record<string, unknown>).__game = {
     engine, state, meta,
+    /**
+     * THE FIRST DESCENT, and the way to see it again.
+     *
+     * `onboarding` is the live flow — which beat is up, what it is saying, and
+     * whether it has ended — so a harness can assert the script without
+     * scraping the canvas for text. `replayOnboarding` puts it back to the first
+     * beat AND clears the key, so a reload replays it too; a replay you can only
+     * do once per page load is the wrong half of the feature.
+     *
+     * The reason this pair is load-bearing rather than a convenience: every
+     * harness in `tools/` drives the game through this object, and `openGame`
+     * marks the flow complete before boot so they measure the GAME. Without a
+     * way back in from here, the one part of the game a first-time player
+     * actually meets would be the one part nothing can look at.
+     */
+    onboarding,
+    onboardingSteps: () => ONBOARDING_STEPS.map((s) => s.id),
+    replayOnboarding: () => { onboarding.replay(); return onboarding.step?.id ?? null; },
     get floor() { return floor; },
     get stepper() { return stepper; },
     get combat() { return combat; },

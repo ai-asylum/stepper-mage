@@ -38,12 +38,20 @@ export const BETA_KEY = 'stepper-mage.updates.beta';
  * have — so reverting would clear the activation flag and make an existing
  * player fire `ftue_completed` a second time. Activation must be once per player
  * for the D0 column to mean anything, and a beta revert is not a new player.
+ *
+ * `stepper-mage.onboarding.v1` is there for exactly the same removal rule and the
+ * same sentence: a checkpoint taken before the guided descent existed does not
+ * carry the key, so reverting would sit a player who has already been taught
+ * through the whole tutorial again. Unlike the activation flag it IS about the
+ * save rather than the person — see `resetProgress`, which deliberately clears it
+ * — but a beta revert is not a fresh save either.
  */
 const EXCLUDED = new Set<string>([
   CHECKPOINT_KEY,
   BETA_SAVE_KEY,
   BETA_KEY,
   'stepper-mage.ftue.v1',
+  'stepper-mage.onboarding.v1',
 ]);
 
 /**

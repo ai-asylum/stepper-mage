@@ -12,7 +12,12 @@ import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
-export const PORT = 5199;
+/**
+ * 5199 unless told otherwise. Overridable because `serve()` REUSES anything
+ * already listening — so a stale dev server from another checkout does not make
+ * the harnesses fail, it makes them quietly measure a different app.
+ */
+export const PORT = Number(process.env.HARNESS_PORT ?? 5199);
 export const URL = `http://localhost:${PORT}/`;
 export const OUT = path.resolve('_shots');
 mkdirSync(OUT, { recursive: true });
@@ -53,13 +58,36 @@ export function launch() {
 }
 
 /**
+ * Mark the guided first descent complete, so a harness measures the GAME.
+ *
+ * Every harness runs in a throwaway browser profile, which is an empty
+ * localStorage, which is a first-time player — so without this each one boots
+ * into the tutorial (`src/game/onboarding.ts`): an instruction across the middle
+ * of every screenshot, and the flow's one gate holding the book shut until its
+ * tear beat, which `selectPages` goes through.
+ *
+ * Written as an init script rather than after boot, because the flow reads the
+ * key in its constructor. Pass `onboarding: true` to `openGame` to measure the
+ * flow itself; `window.__game.replayOnboarding()` is the other way in.
+ */
+export const SKIP_ONBOARDING = () => {
+  try { localStorage.setItem('stepper-mage.onboarding.v1', 'done'); } catch { /* private mode */ }
+};
+
+/**
  * A game in a fresh JS context.
  *
  * `freshSave` wipes localStorage before the app boots, which matters to anything
  * measuring the DEFAULT configuration: `meta.handSize` is persisted, so a stale
  * save silently changes the thing under test.
+ *
+ * `onboarding` opts INTO the guided first descent. Off by default, and that is
+ * the deliberate direction: a harness asserting the core loop is not asserting
+ * the tutorial, and the tutorial's own gate would refuse half of what one drives.
  */
-export async function openGame(browser, { prefix = 'h', wait = 2600, freshSave = false } = {}) {
+export async function openGame(
+  browser, { prefix = 'h', wait = 2600, freshSave = false, onboarding = false } = {},
+) {
   const page = await browser.newPage({
     viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
   });
@@ -71,6 +99,8 @@ export async function openGame(browser, { prefix = 'h', wait = 2600, freshSave =
   if (freshSave) {
     await page.addInitScript(() => { try { localStorage.clear(); } catch { /* private mode */ } });
   }
+  // After the wipe, or `freshSave` would clear it straight back out again.
+  if (!onboarding) await page.addInitScript(SKIP_ONBOARDING);
   await page.goto(URL, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => !!window.__game, null, { timeout: 40000 });
   await page.waitForTimeout(wait);
