@@ -78,7 +78,19 @@ The first release of Unbound Descent. Tear pages out of your grimoire, fuse them
 |---|---|
 | App or game | **Game** |
 | Category | **Role Playing** (alt: Adventure) |
-| Tags (≤5) | Dungeon crawler · Turn-based · Roguelike · Pixel art · Single player |
+| Tags (≤5) | **Roguelike** · **Turn-based role-playing** · Role-playing · Tactics · Adventure |
+
+> **Tags are a FIXED list and it is genre/gameplay only.** There are no art-style,
+> theme or player-count tags — no "Pixel art", no "Dungeon crawler", no "Single
+> player", no "Fantasy". This row previously listed three that do not exist, and
+> the Console silently accepts only the ones it recognises, so it reads as the
+> field being broken. The picker in Store settings is the authority; the published
+> list is at
+> https://www.apptweak.com/en/aso-blog/complete-list-of-available-google-play-store-tags
+>
+> Considered and rejected: *Tactical role-playing* (means grid-army tactics),
+> *Survival* (means survival-crafting), *Card battle* (means CCG battlers, despite
+> the hand-of-pages mechanic).
 | Email | `support@misaligned.games` *(confirm — see Fix #2)* |
 | Website | `https://unbounddescent.vercel.app` |
 | Privacy policy URL | `https://unbounddescent.vercel.app/store/privacy.html` |
