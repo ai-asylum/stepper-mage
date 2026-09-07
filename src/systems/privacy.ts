@@ -18,7 +18,7 @@ import posthog from 'posthog-js';
  * from the OTA payload, so after any over-the-air update the bundle on the
  * device does not contain these files at all.
  */
-const SITE = 'https://stepper-mage.vercel.app';
+const SITE = 'https://unbounddescent.vercel.app';
 export const PRIVACY_URL = `${SITE}/store/privacy.html`;
 export const TERMS_URL = `${SITE}/store/terms.html`;
 /**

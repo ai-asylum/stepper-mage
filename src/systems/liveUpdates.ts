@@ -36,7 +36,7 @@ import {
  * Two different hosts would mean the app reasoning about an index that does not
  * describe the bundle it is running.
  */
-const OTA_ORIGIN = 'https://stepper-mage.vercel.app';
+const OTA_ORIGIN = 'https://unbounddescent.vercel.app';
 
 /**
  * What this device is RUNNING, learned at boot and quoted in failure reports.

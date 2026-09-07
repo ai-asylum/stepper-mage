@@ -37,7 +37,22 @@ const config: CapacitorConfig = {
      * takes a store build.
      */
     CapacitorUpdater: {
-      updateUrl: 'https://stepper-mage.vercel.app/api/updates',
+      /**
+       * THE OLD HOSTNAME CAN NEVER BE RELEASED.
+       *
+       * This moved from `stepper-mage.vercel.app` — the repo's name, not the
+       * game's — to one that says what the game is. Both serve the same Vercel
+       * project, and that is not tidiness: this value is compiled into the APK,
+       * so every build up to 251 asks the OLD host for updates for the rest of its
+       * installed life. If `stepper-mage.vercel.app` is ever given up, those
+       * installs stop receiving updates silently and permanently, and the only
+       * remedy is a store update they may never take.
+       *
+       * So the project keeps both domains. Adding the new one rather than renaming
+       * the project was the whole point — a rename would have freed the old
+       * hostname the moment it took effect.
+       */
+      updateUrl: 'https://unbounddescent.vercel.app/api/updates',
       autoUpdate: false,
       directUpdate: false,
       resetWhenUpdate: true,
@@ -62,7 +77,7 @@ const config: CapacitorConfig = {
        * use, so every device-side failure was being thrown away. See
        * `api/stats.js`.
        */
-      statsUrl: 'https://stepper-mage.vercel.app/api/stats',
+      statsUrl: 'https://unbounddescent.vercel.app/api/stats',
     },
   },
 };

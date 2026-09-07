@@ -69,7 +69,7 @@ function readRelease() {
 }
 
 /** Where previously published bundles are fetched from. */
-const LIVE_ORIGIN = process.env.OTA_LIVE_ORIGIN || "https://stepper-mage.vercel.app";
+const LIVE_ORIGIN = process.env.OTA_LIVE_ORIGIN || "https://unbounddescent.vercel.app";
 
 /**
  * Carry the previously published bundles forward into this deployment.

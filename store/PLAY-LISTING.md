@@ -7,9 +7,9 @@ Everything here is checked against the code as shipped, not against the design d
 |---|---|
 | Package id | `games.misaligned.unbounddescent` (permanent) |
 | Signed AAB | [run 31649598737](https://github.com/ai-asylum/stepper-mage/actions/runs/31649598737) |
-| Privacy policy | https://stepper-mage.vercel.app/store/privacy.html |
-| Data deletion | https://stepper-mage.vercel.app/store/data-deletion.html |
-| Terms | https://stepper-mage.vercel.app/store/terms.html |
+| Privacy policy | https://unbounddescent.vercel.app/store/privacy.html |
+| Data deletion | https://unbounddescent.vercel.app/store/data-deletion.html |
+| Terms | https://unbounddescent.vercel.app/store/terms.html |
 
 ## ⚠️ Fix before the first upload
 
@@ -80,8 +80,8 @@ The first release of Unbound Descent. Tear pages out of your grimoire, fuse them
 | Category | **Role Playing** (alt: Adventure) |
 | Tags (≤5) | Dungeon crawler · Turn-based · Roguelike · Pixel art · Single player |
 | Email | `support@misaligned.games` *(confirm — see Fix #2)* |
-| Website | `https://stepper-mage.vercel.app` |
-| Privacy policy URL | `https://stepper-mage.vercel.app/store/privacy.html` |
+| Website | `https://unbounddescent.vercel.app` |
+| Privacy policy URL | `https://unbounddescent.vercel.app/store/privacy.html` |
 
 ## Graphics assets — status & spec
 
@@ -153,7 +153,7 @@ Expected result: ~PEGI 7 / ESRB Everyone 10+.
 - **Approximate location** — **Yes**, country-level, derived from IP by PostHog's
   geoIP. Collected, not shared. Purpose: Analytics.
 - Encrypted in transit: **Yes**
-- Users can request deletion: **Yes** — https://stepper-mage.vercel.app/store/data-deletion.html
+- Users can request deletion: **Yes** — https://unbounddescent.vercel.app/store/data-deletion.html
 - Collection optional/required: **Required** (no opt-out toggle ships today —
   mark optional only if one is added)
 
@@ -174,7 +174,7 @@ Expected result: ~PEGI 7 / ESRB Everyone 10+.
 | Government app | No |
 | Financial features | No |
 | Health | No |
-| Data deletion | https://stepper-mage.vercel.app/store/data-deletion.html |
+| Data deletion | https://unbounddescent.vercel.app/store/data-deletion.html |
 
 ---
 
