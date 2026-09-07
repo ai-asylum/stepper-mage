@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      THE GAME'S INK BLACK, and the only reason this file exists.
+
+      It must match the `ink` custom property in index.html (#0a0710). The WebView
+      paints that colour the moment it has anything to draw; what shows BEFORE that,
+      and behind the gesture bar, and in the app switcher's snapshot, is the WINDOW
+      background. That came from Theme.AppCompat.DayNight.NoActionBar, which is
+      white in light mode, and nothing had ever overridden it.
+
+      Reported as "a white strip across the bottom with rounded corners the same as
+      the screen's". The rounded corners are the display's own, because that strip is
+      the window itself, outside anything CSS can reach.
+    -->
+    <color name="ink">#FF0A0710</color>
+</resources>

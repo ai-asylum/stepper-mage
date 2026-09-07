@@ -13,10 +13,24 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!--
+          THE WINDOW UNDER THE WEBVIEW, and it was white.
+
+          `android:background` stays @null — that is Capacitor's own setting and stops
+          the view hierarchy double-drawing. The WINDOW background is a different
+          thing, it was inherited from Theme.AppCompat.DayNight (white in light mode),
+          and it is what shows in the two places the WebView does not cover: the strip
+          behind the gesture bar during launch, and the app-switcher's snapshot of the
+          app. Never during play, which is why it looked like a splash-screen bug.
+        -->
+        <item name="android:windowBackground">@color/ink</item>
     </style>
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
+        <!-- Same reason, for the launch window: whatever the splash drawable does not
+             cover is this colour rather than the theme's white. -->
+        <item name="android:windowBackground">@color/ink</item>
     </style>
 </resources>

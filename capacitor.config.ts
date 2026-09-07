@@ -6,6 +6,15 @@ const config: CapacitorConfig = {
   webDir: "dist", // Vite build output; `npx cap sync` copies it into the shell
   android: {
     webContentsDebuggingEnabled: true, // chrome://inspect on device builds
+    /**
+     * The WebView's own background, which defaults to WHITE.
+     *
+     * Belt and braces with `android:windowBackground` in styles.xml: that covers the
+     * window beneath, this covers the WebView itself for the frames between it being
+     * attached and having painted. Both must be the same ink as `--ink` in index.html
+     * or the seam shows as a flash of white on launch.
+     */
+    backgroundColor: '#0a0710',
   },
   plugins: {
     /**
