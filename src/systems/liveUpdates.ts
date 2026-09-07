@@ -19,6 +19,7 @@
 import { Capacitor } from '@capacitor/core';
 import { track } from './analytics';
 import { isNewer, bundleRunsOn } from '../shared/version.js';
+import { OTA_VERSION } from '../version';
 import type { OtaIndex } from '../shared/version.js';
 import {
   BETA_KEY,
@@ -359,6 +360,23 @@ export async function fetchAndApplyNow(): Promise<boolean> {
     const latest = await CapacitorUpdater.getLatest();
     const manifest = (latest as { manifest?: unknown[] })?.manifest;
     if (!latest?.version || (!latest.url && !manifest?.length)) return false;
+
+    /**
+     * THE BUNDLE INSIDE THE APK IS A VERSION TOO, and only this code knows which.
+     *
+     * The plugin reports a builtin bundle as the native `versionName` — "1.0" — not
+     * as the version it was published under, so the server cannot tell a fresh
+     * install from a device years out of date and correctly offers it the newest
+     * bundle. The device then downloads the exact web code it just installed from
+     * the store, applies it, and reloads: a wasted download on EVERY fresh install,
+     * and two loading screens where there should be none — the update screen for
+     * the download, then the boot screen after the reload.
+     *
+     * `OTA_VERSION` is compiled into this bundle by `vite.config.ts`, so the running
+     * code can answer the question the plugin cannot: I AM 1.0.251. Checked before
+     * `current`, because `current` is exactly what is unreliable here.
+     */
+    if (latest.version === OTA_VERSION) return false;
 
     const current = await CapacitorUpdater.current().catch(() => null);
     if (current?.bundle?.version === latest.version) return false;
