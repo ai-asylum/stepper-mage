@@ -13,16 +13,32 @@ const config: CapacitorConfig = {
      * same Vercel deployment that hosts the site. A web-only fix reaches installed
      * players on their next launch instead of waiting on a Play review.
      *
-     * `autoUpdate` with `directUpdate: false`: the plugin downloads in the
-     * background and swaps on the NEXT start, so nobody's run is interrupted by a
-     * bundle arriving mid-floor. `appReadyTimeout` is the rollback window — the
-     * game calls `notifyAppReady()` once the first floor is built
-     * (`src/systems/liveUpdates.ts`), and a bundle that never gets there reverts to
-     * the copy inside the AAB.
+     * `autoUpdate: false` — THE APP DRIVES THIS, and only one thing may.
+     *
+     * It was true, and the plugin then checked on foreground on its own while
+     * `checkOnResume` was also forcing an immediate check. Two mechanisms, neither
+     * able to see the other's `checking` guard, and the first real delivery proved
+     * it: the device asked for 1.0.250 at 13:02:25, began downloading, was asked
+     * AGAIN at 13:02:27 while that download was still in flight, and downloaded the
+     * same bundle a second time. The player sees the update screen appear, vanish
+     * and appear again, and pays for the bytes twice.
+     *
+     * The app's own path is the one worth keeping. The plugin's `directUpdate:
+     * false` behaviour downloads in the background and swaps on some LATER start,
+     * which from the player's side is indistinguishable from nothing happening —
+     * that is why `fetchAndApplyNow` exists and why it reloads there and then.
+     *
+     * `appReadyTimeout` still applies to bundles we set ourselves: the game calls
+     * `notifyAppReady()` once the first floor is built, and a bundle that never
+     * gets there reverts to the copy inside the AAB.
+     *
+     * NOTE this lives in the NATIVE shell (`cap sync` writes it into the APK's
+     * assets), so unlike everything else today it cannot arrive over OTA — it
+     * takes a store build.
      */
     CapacitorUpdater: {
       updateUrl: 'https://stepper-mage.vercel.app/api/updates',
-      autoUpdate: true,
+      autoUpdate: false,
       directUpdate: false,
       resetWhenUpdate: true,
       appReadyTimeout: 10000,
